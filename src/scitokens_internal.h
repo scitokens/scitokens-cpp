@@ -1,5 +1,6 @@
 
 #include <memory>
+#include <sstream>
 
 #include <jwt-cpp/jwt.h>
 
@@ -133,7 +134,7 @@ public:
     }
 
     void
-    deserialize(const std::string &data);
+    deserialize(const std::string &data, std::vector<std::string> allowed_issuers={});
 
 private:
     bool m_issuer_set{false};
@@ -144,6 +145,9 @@ private:
 };
 
 class Validator {
+
+    typedef int (*ValidatorFunction)(const char *value, char **err_msg);
+    typedef std::map<std::string, std::vector<ValidatorFunction>> ClaimValidatorMap;
 
 public:
     void verify(jwt::decoded_jwt &jwt) {
@@ -162,6 +166,27 @@ public:
         if (!jwt.has_header_claim("kid")) {
             throw jwt::token_verification_exception("'kid' claim is mandatory");
         }
+        if (!m_allowed_issuers.empty()) {
+            std::string issuer = jwt.get_issuer();
+            bool permitted = false;
+            for (const auto &allowed_issuer : m_allowed_issuers) {
+                 if (issuer == allowed_issuer) {
+                     permitted = true;
+                     break;
+                 }
+            }
+            if (!permitted) {
+                throw jwt::token_verification_exception("Token issuer is not in list of allowed issuers.");
+            }
+        }
+
+        for (const auto &claim : m_critical_claims) {
+            if (!jwt.has_payload_claim(claim)) {
+                std::stringstream ss;
+                ss << "'" << claim << "' claim is mandatory";
+                throw jwt::token_verification_exception(ss.str());
+            }
+        }
 
         std::string public_pem;
         std::string algorithm;
@@ -172,6 +197,77 @@ public:
             .allow_algorithm(key);
 
         verifier.verify(jwt);
+
+        bool must_verify_everything = true;
+        if (jwt.has_payload_claim("ver")) {
+            const jwt::claim &claim = jwt.get_payload_claim("ver");
+            if (claim.get_type() != jwt::claim::type::string) {
+                throw jwt::token_verification_exception("'ver' claim value must be a string (if present)");
+            }
+            std::string ver_string = claim.as_string();
+            if (ver_string == "scitoken:2.0") must_verify_everything = false;
+            else if (ver_string == "scitokens:1.0") must_verify_everything = m_validate_all_claims;
+            else {
+                std::stringstream ss;
+                ss << "Unknown profile version in token: " << ver_string;
+                throw jwt::token_verification_exception(ss.str());
+            }
+        } else {
+            must_verify_everything = m_validate_all_claims;
+        }
+
+        for (const auto &claim_pair : jwt.get_payload_claims()) {
+             if (claim_pair.first == "iat" || claim_pair.first == "nbf" || claim_pair.first == "exp") {
+                 continue;
+             }
+             auto iter = m_validators.find(claim_pair.first);
+             if (iter == m_validators.end() || iter->second.empty()) {
+                 bool is_issuer = claim_pair.first == "iss";
+                 if (is_issuer && !m_allowed_issuers.empty()) {
+                     // skip; we verified it above
+                 } else if (must_verify_everything) {
+                     std::stringstream ss;
+                     ss << "'" << claim_pair.first << "' claim verification is mandatory";
+                     throw jwt::token_verification_exception(ss.str());
+                 }
+             }
+             for (const auto verification_func : iter->second) {
+                 const jwt::claim &claim = jwt.get_payload_claim(claim_pair.first);
+                 if (claim.get_type() != jwt::claim::type::string) {
+                     std::stringstream ss;
+                     ss << "'" << claim_pair.first << "' claim value must be a string to verify.";
+                     throw jwt::token_verification_exception(ss.str());
+                 }
+                 std::string value = claim.as_string();
+                 char * err_msg = nullptr;
+                 if (verification_func(value.c_str(), &err_msg)) {
+                     if (err_msg) {
+                         throw jwt::token_verification_exception(err_msg);
+                     } else {
+                         std::stringstream ss;
+                         ss << "'" << claim_pair.first << "' claim verification failed.";
+                         throw jwt::token_verification_exception(ss.str());
+                     }
+                 }
+             }
+        }
+    }
+
+    void add_critical_claims(const std::vector<std::string> &claims) {
+        std::copy(claims.begin(), claims.end(), std::back_inserter(m_critical_claims));
+    }
+
+    void add_allowed_issuers(const std::vector<std::string> &allowed_issuers) {
+        std::copy(allowed_issuers.begin(), allowed_issuers.end(), std::back_inserter(m_allowed_issuers));
+    }
+
+    void add_string_validator(const std::string &claim, ValidatorFunction func) {
+        auto result = m_validators.insert({claim, std::vector<ValidatorFunction>()});
+        result.first->second.push_back(func);
+    }
+
+    void set_validate_all_claims_scitokens_1(bool new_val) {
+        m_validate_all_claims = new_val;
     }
 
 private:
@@ -179,6 +275,12 @@ private:
     void get_public_keys_from_web(const std::string &issuer, picojson::value &keys, int64_t &next_update, int64_t &expires);
     bool get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update);
     bool store_public_keys(const std::string &issuer, const picojson::value &keys, int64_t next_update, int64_t expires);
+
+    bool m_validate_all_claims{true};
+    ClaimValidatorMap m_validators;
+
+    std::vector<std::string> m_critical_claims;
+    std::vector<std::string> m_allowed_issuers;
 };
 
 }

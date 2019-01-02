@@ -1,5 +1,6 @@
 
 #include <memory>
+#include <sstream>
 
 #include <curl/curl.h>
 #include <jwt-cpp/base.h>
@@ -259,13 +260,61 @@ rs256_from_coords(const std::string &e_str, const std::string &n_str) {
     return result;
 }
 
+
+/**
+ * Normalize path: collapse etc.
+ * >>> normalize_path('/a/b///c')
+ * '/a/b/c'
+ */
+std::string
+normalize_absolute_path(const std::string &path) {
+    if ((path == "//") || (path == "/") || (path == "")) {
+        return "/";
+    }
+    std::vector<std::string> path_components;
+    auto path_iter = path.begin();
+    while (path_iter != path.end()) {
+        while (*path_iter == '/') {path_iter++;}
+        auto next_path_iter = std::find(path_iter, path.end(), '/');
+        std::string component;
+        component.reserve(std::distance(path_iter, next_path_iter));
+        component.assign(path_iter, next_path_iter);
+        path_components.push_back(component);    
+        path_iter = next_path_iter;
+    }
+    std::vector<std::string> path_components_filtered;
+    path_components_filtered.reserve(path_components.size());
+    for (const auto &component : path_components) {
+        if (component == "..") {
+            path_components_filtered.pop_back();
+        } else if (!component.empty() && component != ".") {
+            path_components_filtered.push_back(component);
+        }
+    }
+    std::stringstream ss;
+    for (const auto &component : path_components_filtered) {
+        ss << "/" << component;
+    }
+    std::string result = ss.str();
+    return result.empty() ? "/" : result;
 }
 
+
+int empty_validator(const char *, char **) {
+    return 0;
+}
+
+
+}
+
+
 void
-SciToken::deserialize(const std::string &data) {
+SciToken::deserialize(const std::string &data, const std::vector<std::string> allowed_issuers) {
     m_decoded.reset(new jwt::decoded_jwt(data));
 
     scitokens::Validator val;
+    val.add_allowed_issuers(allowed_issuers);
+    val.set_validate_all_claims_scitokens_1(false);
     val.verify(*m_decoded);
 }
 

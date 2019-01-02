@@ -99,7 +99,7 @@ int scitoken_serialize(const SciToken token, char **value, char **err_msg) {
     return 0;
 }
 
-int scitoken_deserialize(const char *value, SciToken *token, char **err_msg) {
+int scitoken_deserialize(const char *value, SciToken *token, char **allowed_issuers, char **err_msg) {
     if (value == nullptr) {
         if (err_msg) {*err_msg = strdup("Token may not be NULL");}
         return -1;
@@ -112,8 +112,15 @@ int scitoken_deserialize(const char *value, SciToken *token, char **err_msg) {
     scitokens::SciTokenKey key;
     scitokens::SciToken *real_token = new scitokens::SciToken(key);
 
+    std::vector<std::string> allowed_issuers_vec;
+    if (allowed_issuers != nullptr) {
+        for (int idx=0; allowed_issuers[idx]; idx++) {
+            allowed_issuers_vec.push_back(allowed_issuers[idx]);
+        }
+    }
+
     try {
-        real_token->deserialize(value);
+        real_token->deserialize(value, allowed_issuers_vec);
     } catch (std::exception &exc) {
         if (err_msg) {
             *err_msg = strdup(exc.what());
@@ -125,12 +132,48 @@ int scitoken_deserialize(const char *value, SciToken *token, char **err_msg) {
 }
 
 Validator validator_create() {
-    return nullptr;
+    return new Validator();
 }
 
-int validator_add(ValidatorFunction validator_func) {
-    return -1;
+int validator_add(Validator validator, const char *claim, ValidatorFunction validator_func, char **err_msg) {
+    if (validator == nullptr) {
+        if (err_msg) {*err_msg = strdup("Validator may not be a null pointer");}
+        return -1;
+    }
+    auto real_validator = reinterpret_cast<scitokens::Validator*>(validator);
+    if (claim == nullptr) {
+        if (err_msg) {*err_msg = strdup("Claim name may not be a null pointer");}
+        return -1;
+    }
+    if (validator_func == nullptr) {
+        if (err_msg) {*err_msg = strdup("Validator function may not be a null pointer");}
+        return -1;
+    }
+    real_validator->add_string_validator(claim, validator_func);
+    return 0;
 }
+
+int validator_add_critical_claims(Validator validator, const char **claims, char **err_msg) {
+    if (validator == nullptr) {
+        if (err_msg) {*err_msg = strdup("Validator may not be a null pointer");}
+        return -1;
+    }
+    auto real_validator = reinterpret_cast<scitokens::Validator*>(validator);
+    if (claims == nullptr) {
+        if (err_msg) {*err_msg = strdup("Claim list may not be a null pointer");}
+        return -1;
+    }
+    std::vector<std::string> claims_vec;
+    for (int idx=0; claims[idx]; idx++) {
+        claims_vec.push_back(claims[idx]);
+    }
+    real_validator->add_critical_claims(claims_vec);
+    return 0;
+}
+
+
+int validator_validate(Validator validator, SciToken scitoken, char **err_msg);
+
 
 Enforcer enforcer(const char *issuer, const char **audience) {
     return nullptr;

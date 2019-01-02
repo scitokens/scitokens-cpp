@@ -36,11 +36,15 @@ void scitoken_set_lifetime(SciToken token, int lifetime);
 
 int scitoken_serialize(const SciToken token, char **value, char **err_msg);
 
-int scitoken_deserialize(const char *value, SciToken *token, char **err_msg);
+int scitoken_deserialize(const char *value, SciToken *token, char **allowed_issuers, char **err_msg);
 
 Validator validator_create();
 
-int validator_add(ValidatorFunction validator_func);
+int validator_add(Validator validator, const char *claim, ValidatorFunction validator_func, char **err_msg);
+
+int validator_add_critical_claims(Validator validator, const char **claims, char **err_msg);
+
+int validator_validate(Validator validator, SciToken scitoken, char **err_msg);
 
 Enforcer enforcer(const char *issuer, const char **audience);
 
