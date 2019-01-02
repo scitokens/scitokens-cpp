@@ -20,12 +20,12 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
 
 include (FindPkgConfig)
 pkg_check_modules(LIBCRYPTO REQUIRED libcrypto)
-set (INCLUDE_DIRECTORIES ${INCLUDE_DIRECTORIES} ${LIBCRYPTO_INCLUDE_DIRS})
+pkg_check_modules(SQLITE REQUIRED sqlite3)
 
-include_directories( "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES})
+include_directories( "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS})
 
-add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp)
-target_link_libraries(SciTokens ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES})
+add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp)
+target_link_libraries(SciTokens ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES})
 set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
 
 add_executable(scitokens-test src/test.cpp)

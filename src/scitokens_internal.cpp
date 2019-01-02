@@ -271,7 +271,7 @@ SciToken::deserialize(const std::string &data) {
 
 
 void
-Validator::get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm)
+Validator::get_public_keys_from_web(const std::string &issuer, picojson::value &keys, int64_t &next_update, int64_t &expires)
 {
     std::string openid_metadata, oauth_metadata;
     get_metadata_endpoint(issuer, openid_metadata, oauth_metadata);
@@ -316,16 +316,45 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
         throw JsonException(err);
     }
 
-    auto key_obj = find_key_id(json_obj, kid);
+    auto now = std::time(NULL);
+    // TODO: take expiration time from the cache-control header in the response.
 
-    iter = key_obj.find("alg");
+    keys = json_obj;
+
+    next_update = now + 600;
+    expires = now + 4*3600;
+}
+
+void
+Validator::get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm) {
+
+    picojson::value keys;
+    int64_t next_update, expires;
+    auto now = std::time(NULL);
+    if (get_public_keys_from_db(issuer, now, keys, next_update)) {
+        if (now > next_update) {
+            try {
+                get_public_keys_from_web(issuer, keys, next_update, expires);
+                store_public_keys(issuer, keys, next_update, expires);
+            } catch (std::runtime_error &) {
+                // ignore the exception: we have a valid set of keys already/
+            }
+        }
+    } else {
+        get_public_keys_from_web(issuer, keys, next_update, expires);
+        store_public_keys(issuer, keys, next_update, expires);
+    }
+
+    auto key_obj = find_key_id(keys, kid);
+    
+    auto iter = key_obj.find("alg");
     if (iter == key_obj.end() || (!iter->second.is<std::string>())) {
         throw JsonException("Key is missing algorithm name");
-    }
+    }   
     auto alg = iter->second.get<std::string>();
     if (alg != "RS256" and alg != "ES256") {
         throw UnsupportedKeyException("Issuer is using an unsupported algorithm");
-    }
+    }   
     std::string pem;
 
     if (alg == "ES256")
@@ -333,28 +362,29 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
         iter = key_obj.find("x");
         if (iter == key_obj.end() || (!iter->second.is<std::string>())) {
             throw JsonException("Elliptic curve is missing x-coordinate");
-        }
+        }   
         auto x = iter->second.get<std::string>();
         iter = key_obj.find("y");
         if (iter == key_obj.end() || (!iter->second.is<std::string>())) {
             throw JsonException("Elliptic curve is missing y-coordinate");
-        }
+        }   
         auto y = iter->second.get<std::string>();
         pem = es256_from_coords(x, y);
     } else {
         iter = key_obj.find("e");
         if (iter == key_obj.end() || (!iter->second.is<std::string>())) {
             throw JsonException("Public key is missing exponent");
-        }
+        }   
         auto e = iter->second.get<std::string>();
         iter = key_obj.find("n");
         if (iter == key_obj.end() || (!iter->second.is<std::string>())) {
             throw JsonException("Public key is missing n-value");
-        }
+        }   
         auto n = iter->second.get<std::string>();
         pem = rs256_from_coords(e, n);
-    }
-
+    }   
+    
     public_pem = pem;
     algorithm = alg;
 }
+
