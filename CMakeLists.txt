@@ -31,6 +31,9 @@ set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PR
 add_executable(scitokens-test src/test.cpp)
 target_link_libraries(scitokens-test SciTokens ${LIBCRYPTO_LIB})
 
+add_executable(scitokens-verify src/verify.cpp)
+target_link_libraries(scitokens-verify SciTokens ${LIBCRYPTO_LIB})
+
 if (NOT DEFINED LIB_INSTALL_DIR)
   SET(LIB_INSTALL_DIR "lib")
 endif()
