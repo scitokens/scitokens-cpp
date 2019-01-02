@@ -1,0 +1,9 @@
+{
+global:
+  scitoken*;
+  validator*;
+  enforcer*;
+
+local:
+  *;
+};
