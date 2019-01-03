@@ -50,7 +50,7 @@ Enforcer enforcer_create(const char *issuer, const char **audience, char **err_m
 
 void enforcer_destroy(Enforcer);
 
-int enforcer_generate_acls(const Enforcer enf, const SciToken sci, char **Acl, char **err_msg);
+int enforcer_generate_acls(const Enforcer enf, const SciToken scitokens, Acl **acls, char **err_msg);
 
 int enforcer_test(const Enforcer enf, const SciToken sci, const Acl *acl, char **err_msg);
 

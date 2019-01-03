@@ -218,12 +218,49 @@ void enforcer_destroy(Enforcer enf) {
     delete real_enf;
 }
 
-
-int enforcer_generate_acls(const Enforcer enf, const SciToken sci, char **Acl, char **err_msg) {
-    if (err_msg) {
-        *err_msg = strdup("This function is not implemented");
+void enforcer_acl_free(Acl *acls) {
+    for (int idx=0; acls[idx].authz == nullptr && acls[idx].resource == nullptr; idx++) {
+        free(const_cast<char *>(acls[idx].authz));
+        free(const_cast<char *>(acls[idx].resource));
     }
-    return -1;
+    free(acls);
+}
+
+
+int enforcer_generate_acls(const Enforcer enf, const SciToken scitoken, Acl **acls, char **err_msg) {
+    if (enf == nullptr) {
+        if (err_msg) {*err_msg = strdup("Enforcer may not be a null pointer");}
+        return -1;
+    }
+    auto real_enf = reinterpret_cast<scitokens::Enforcer*>(enf);
+    if (scitoken == nullptr) {
+        if (err_msg) {*err_msg = strdup("SciToken may not be a null pointer");}
+        return -1;
+    }
+    auto real_scitoken = reinterpret_cast<scitokens::SciToken*>(scitoken);
+
+    scitokens::Enforcer::AclsList acls_list;
+    try {
+         acls_list = real_enf->generate_acls(*real_scitoken);
+    } catch (std::exception &exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    Acl *acl_result = static_cast<Acl*>(malloc((acls_list.size() + 1)*sizeof(Acl)));
+    size_t idx = 0;
+    for (const auto &acl : acls_list) {
+        acl_result[idx].authz = strdup(acl.first.c_str());
+        acl_result[idx].resource = strdup(acl.second.c_str());
+        if (acl_result[idx].authz == nullptr || acl_result[idx].resource == nullptr) {
+            enforcer_acl_free(acl_result);
+            return -1;
+        }
+        idx++;
+    }
+    acl_result[idx].authz = nullptr;
+    acl_result[idx].resource = nullptr;
+    *acls = acl_result;
+    return 0;
 }
 
 
@@ -245,7 +282,7 @@ int enforcer_test(const Enforcer enf, const SciToken scitoken, const Acl *acl, c
 
     try {
         return real_enf->test(*real_scitoken, acl->authz, acl->resource) == true ? 0 : -1;
-    } catch (std::exception exc) {
+    } catch (std::exception &exc) {
         if (err_msg) {*err_msg = strdup(exc.what());}
         return -1;
     }

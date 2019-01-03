@@ -326,6 +326,8 @@ private:
 class Enforcer {
 
 public:
+    typedef std::vector<std::pair<std::string, std::string>> AclsList;
+
     Enforcer(std::string issuer, std::vector<std::string> audience_list)
       : m_issuer(issuer), m_audiences(audience_list)
     {
@@ -349,6 +351,12 @@ public:
         } catch (std::runtime_error) {
             return false;
         }
+    }
+
+    AclsList generate_acls(const SciToken &scitoken) {
+        reset_state();
+        m_validator.verify(scitoken);
+        return m_gen_acls;
     }
 
 private:
@@ -386,10 +394,12 @@ private:
     void reset_state() {
         m_test_path = "";
         m_test_authz = "";
+        m_gen_acls.clear();
     }
 
     std::string m_test_path;
     std::string m_test_authz;
+    AclsList m_gen_acls;
 
     std::string m_issuer;
     std::vector<std::string> m_audiences;

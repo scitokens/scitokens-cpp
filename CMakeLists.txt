@@ -37,6 +37,9 @@ target_link_libraries(scitokens-verify SciTokens)
 add_executable(scitokens-test-access src/test_access.cpp)
 target_link_libraries(scitokens-test-access SciTokens)
 
+add_executable(scitokens-list-access src/list_access.cpp)
+target_link_libraries(scitokens-list-access SciTokens)
+
 if (NOT DEFINED LIB_INSTALL_DIR)
   SET(LIB_INSTALL_DIR "lib")
 endif()

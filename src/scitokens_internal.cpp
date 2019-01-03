@@ -465,7 +465,7 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
         path = normalize_absolute_path(path);
 
         if (me->m_test_authz.empty()) {
-            return false;  // TODO: implement ACL generation.
+            me->m_gen_acls.emplace_back(authz, path);
         } else if ((me->m_test_authz == authz) &&
                    (requested_path.substr(0, path.size()) == path)) {
             return true;
@@ -473,5 +473,5 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
 
         scope_iter = next_scope_iter;
     }
-    return false;
+    return me->m_test_authz.empty();
 }
