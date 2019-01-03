@@ -44,9 +44,17 @@ if (NOT DEFINED LIB_INSTALL_DIR)
   SET(LIB_INSTALL_DIR "lib")
 endif()
 
+if (NOT DEFINED INCLUDE_INSTALL_DIR)
+  SET(INCLUDE_INSTALL_DIR "include")
+endif()
+
 install(
   TARGETS SciTokens
   LIBRARY DESTINATION ${LIB_INSTALL_DIR} )
+
+install(
+  FILES src/scitokens.h
+  DESTINATION ${INCLUDE_INSTALL_DIR}/scitokens )
 
 set_target_properties(
   SciTokens
