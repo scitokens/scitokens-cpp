@@ -99,7 +99,7 @@ int scitoken_serialize(const SciToken token, char **value, char **err_msg) {
     return 0;
 }
 
-int scitoken_deserialize(const char *value, SciToken *token, char **allowed_issuers, char **err_msg) {
+int scitoken_deserialize(const char *value, SciToken *token, const char **allowed_issuers, const unsigned int nissuers, char **err_msg) {
     if (value == nullptr) {
         if (err_msg) {*err_msg = strdup("Token may not be NULL");}
         return -1;
@@ -114,7 +114,7 @@ int scitoken_deserialize(const char *value, SciToken *token, char **allowed_issu
 
     std::vector<std::string> allowed_issuers_vec;
     if (allowed_issuers != nullptr) {
-        for (int idx=0; allowed_issuers[idx]; idx++) {
+        for (unsigned int idx=0; idx < nissuers; idx++) {
             allowed_issuers_vec.push_back(allowed_issuers[idx]);
         }
     }

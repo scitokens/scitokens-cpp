@@ -36,7 +36,7 @@ void scitoken_set_lifetime(SciToken token, int lifetime);
 
 int scitoken_serialize(const SciToken token, char **value, char **err_msg);
 
-int scitoken_deserialize(const char *value, SciToken *token, char **allowed_issuers, char **err_msg);
+int scitoken_deserialize(const char *value, SciToken *token, const char **allowed_issuers, const unsigned int nissuers, char **err_msg);
 
 Validator validator_create();
 

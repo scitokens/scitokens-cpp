@@ -17,7 +17,7 @@ int main(int argc, const char** argv) {
 
     SciToken scitoken;
     char *err_msg = nullptr;
-    if (scitoken_deserialize(token.c_str(), &scitoken, nullptr, &err_msg)) {
+    if (scitoken_deserialize(token.c_str(), &scitoken, nullptr, 0, &err_msg)) {
         std::cout << "Failed to deserialize a token: " << err_msg << std::endl;
         return 1;
     }

@@ -44,7 +44,7 @@ int main(int argc, const char** argv) {
     //std::string test_value = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiIsImtpZCI6ImtleS1lczI1NiJ9.eyJpc3MiOiJodHRwczovL2RlbW8uc2NpdG9rZW5zLm9yZyIsImV4cCI6MTU0NjM4OTU5MiwiaWF0IjoxNTQ2Mzg4OTkyLCJuYmYiOjE1NDYzODg5OTIsImp0aSI6IjRkMzM2MTU5LWMxMDEtNGRhYy1iYzI5LWI5NDQ3ZDRkY2IxZSJ9.VfSCPj79IfdVCZHw8n0RJJupbaSU0OqMWxRVAnVUNvk1SCz0Ep3O06Boe5I0SRiZR8_0jzHw9vHZ0YOT_0kPAw";
     std::string test_value = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6ImtleS1yczI1NiJ9.eyJpc3MiOiJodHRwczovL2RlbW8uc2NpdG9rZW5zLm9yZyIsImV4cCI6MTU0NjM5MjAwOSwiaWF0IjoxNTQ2MzkxNDA5LCJuYmYiOjE1NDYzOTE0MDksImp0aSI6ImFkYTk2MjdiLWExMGYtNGMyYS05Nzc2LTE4ZThkN2JmN2M4NSJ9.cNMG5zI2-JHh7l_PUPUAxom5Vi6Q3akKmv6q57CoVKHtxZAZRc47Uoix_AH3Xzr42qohr2FPamRTxUMsfZjrAFDJ_4JhJ-kKjJ3cRXXF-gj7lbniCDGOBuPXeMsVmeED15nauZ3XKXUHTGLEsg5O6RjS7sGKM_e9YiYvcTvWXcdkrkxZ2dPPU-R3IxdK6PtE9OB2XOk85H670OAJT3qimKm8Dk_Ri6DEEty1Su_1Tov3ac5B19iZkbhhVPMVP0cRolR9UNLhMxQAsbgEmArQOcs046AOzqQz6osOkdYOrVVO7lO2owUyMol94mB_39y1M8jcf5WNq3ukMMIzMCAPwA";
 
-    if (scitoken_deserialize(test_value.c_str(), &scitoken, nullptr, &err_msg)) {
+    if (scitoken_deserialize(test_value.c_str(), &scitoken, nullptr, 0, &err_msg)) {
         std::cout << "Failed to deserialize a token: " << err_msg << std::endl;
         return 1;
     }
