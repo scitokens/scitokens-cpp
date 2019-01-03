@@ -135,7 +135,7 @@ Validator validator_create() {
     return new Validator();
 }
 
-int validator_add(Validator validator, const char *claim, ValidatorFunction validator_func, char **err_msg) {
+int validator_add(Validator validator, const char *claim, StringValidatorFunction validator_func, char **err_msg) {
     if (validator == nullptr) {
         if (err_msg) {*err_msg = strdup("Validator may not be a null pointer");}
         return -1;
@@ -172,12 +172,52 @@ int validator_add_critical_claims(Validator validator, const char **claims, char
 }
 
 
-int validator_validate(Validator validator, SciToken scitoken, char **err_msg);
+int validator_validate(Validator validator, SciToken scitoken, char **err_msg) {
+    if (validator == nullptr) {
+        if (err_msg) {*err_msg = strdup("Validator may not be a null pointer");}
+        return -1;
+    }
+    auto real_validator = reinterpret_cast<scitokens::Validator*>(validator);
+    if (scitoken == nullptr) {
+        if (err_msg) {*err_msg = strdup("SciToken may not be a null pointer");}
+        return -1;
+    }
+    auto real_scitoken = reinterpret_cast<scitokens::SciToken*>(scitoken);
 
-
-Enforcer enforcer(const char *issuer, const char **audience) {
-    return nullptr;
+    try {
+        real_validator->verify(*real_scitoken);
+    } catch (std::exception exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    return 0;
 }
+
+
+Enforcer enforcer_create(const char *issuer, const char **audience_list, char **err_msg) {
+    if (issuer == nullptr) {
+        if (err_msg) {*err_msg = strdup("Issuer may not be a null pointer");}
+        return nullptr;
+    }
+    std::vector<std::string> aud_list;
+    if (audience_list != nullptr) {
+        for (int idx=0; audience_list[idx]; idx++) {
+            aud_list.push_back(audience_list[idx]);
+        }
+    }
+
+    return new scitokens::Enforcer(issuer, aud_list);
+}
+
+
+void enforcer_destroy(Enforcer enf) {
+    if (enf == nullptr) {
+        return;
+    }
+    auto real_enf = reinterpret_cast<scitokens::Enforcer*>(enf);
+    delete real_enf;
+}
+
 
 int enforcer_generate_acls(const Enforcer enf, const SciToken sci, char **Acl, char **err_msg) {
     if (err_msg) {
@@ -186,7 +226,28 @@ int enforcer_generate_acls(const Enforcer enf, const SciToken sci, char **Acl, c
     return -1;
 }
 
-int enforcer_test(const Enforcer enf, const SciToken sci, const Acl *acl) {
-    return -1;
-}
 
+int enforcer_test(const Enforcer enf, const SciToken scitoken, const Acl *acl, char **err_msg) {
+    if (enf == nullptr) {
+        if (err_msg) {*err_msg = strdup("Enforcer may not be a null pointer");}
+        return -1;
+    }
+    auto real_enf = reinterpret_cast<scitokens::Enforcer*>(enf);
+    if (scitoken == nullptr) {
+        if (err_msg) {*err_msg = strdup("SciToken may not be a null pointer");}
+        return -1;
+    }
+    auto real_scitoken = reinterpret_cast<scitokens::SciToken*>(scitoken);
+    if (acl == nullptr) {
+        if (err_msg) {*err_msg = strdup("ACL may not be a null pointer");}
+        return -1;
+    }
+
+    try {
+        return real_enf->test(*real_scitoken, acl->authz, acl->resource) == true ? 0 : -1;
+    } catch (std::exception exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    return 0;
+}

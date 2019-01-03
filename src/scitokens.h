@@ -13,10 +13,10 @@ typedef void * SciToken;
 typedef void * Validator;
 typedef void * Enforcer;
 
-typedef int (*ValidatorFunction)(const char *value, char **err_msg);
+typedef int (*StringValidatorFunction)(const char *value, char **err_msg);
 typedef struct Acl_s {
-char *authz;
-char *resource;
+    const char *authz;
+    const char *resource;
 }
 Acl;
 
@@ -40,17 +40,19 @@ int scitoken_deserialize(const char *value, SciToken *token, char **allowed_issu
 
 Validator validator_create();
 
-int validator_add(Validator validator, const char *claim, ValidatorFunction validator_func, char **err_msg);
+int validator_add(Validator validator, const char *claim, StringValidatorFunction validator_func, char **err_msg);
 
 int validator_add_critical_claims(Validator validator, const char **claims, char **err_msg);
 
 int validator_validate(Validator validator, SciToken scitoken, char **err_msg);
 
-Enforcer enforcer(const char *issuer, const char **audience);
+Enforcer enforcer_create(const char *issuer, const char **audience, char **err_msg);
+
+void enforcer_destroy(Enforcer);
 
 int enforcer_generate_acls(const Enforcer enf, const SciToken sci, char **Acl, char **err_msg);
 
-int enforcer_test(const Enforcer enf, const SciToken sci, const Acl *acl);
+int enforcer_test(const Enforcer enf, const SciToken sci, const Acl *acl, char **err_msg);
 
 #ifdef __cplusplus
 }

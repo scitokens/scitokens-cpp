@@ -29,10 +29,13 @@ target_link_libraries(SciTokens ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLIT
 set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
 
 add_executable(scitokens-test src/test.cpp)
-target_link_libraries(scitokens-test SciTokens ${LIBCRYPTO_LIB})
+target_link_libraries(scitokens-test SciTokens)
 
 add_executable(scitokens-verify src/verify.cpp)
-target_link_libraries(scitokens-verify SciTokens ${LIBCRYPTO_LIB})
+target_link_libraries(scitokens-verify SciTokens)
+
+add_executable(scitokens-test-access src/test_access.cpp)
+target_link_libraries(scitokens-test-access SciTokens)
 
 if (NOT DEFINED LIB_INSTALL_DIR)
   SET(LIB_INSTALL_DIR "lib")

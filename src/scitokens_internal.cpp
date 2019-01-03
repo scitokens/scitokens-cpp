@@ -437,3 +437,41 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
     algorithm = alg;
 }
 
+
+bool
+scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
+    auto me = reinterpret_cast<scitokens::Enforcer*>(myself);
+    if (claim.get_type() != jwt::claim::type::string) {
+        return false;
+    }
+    std::string scope = claim.as_string();
+    std::string requested_path = normalize_absolute_path(me->m_test_path);
+    auto scope_iter = scope.begin();
+    //std::cout << "Comparing scope " << scope << " against test accesses " << me->m_test_authz << ":" << requested_path << std::endl;
+    while (scope_iter != scope.end()) {
+        while (*scope_iter == ' ') {scope_iter++;}
+        auto next_scope_iter = std::find(scope_iter, scope.end(), ' ');
+        std::string full_authz;
+        full_authz.reserve(std::distance(scope_iter, next_scope_iter));
+        full_authz.assign(scope_iter, next_scope_iter);
+        auto sep_iter = full_authz.find(':');
+        std::string authz = full_authz.substr(0, sep_iter);
+        std::string path;
+        if (sep_iter == std::string::npos) {
+            path = "/";
+        } else {
+            path = full_authz.substr((++sep_iter));
+        }
+        path = normalize_absolute_path(path);
+
+        if (me->m_test_authz.empty()) {
+            return false;  // TODO: implement ACL generation.
+        } else if ((me->m_test_authz == authz) &&
+                   (requested_path.substr(0, path.size()) == path)) {
+            return true;
+        }
+
+        scope_iter = next_scope_iter;
+    }
+    return false;
+}
