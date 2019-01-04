@@ -19,14 +19,25 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
 
 include (FindPkgConfig)
+
+if( APPLE )
+# Support homebrew installed openssl
+find_library (LIBCRYPTO_LIBRARIES REQUIRED crypto PATHS /usr/local/opt/openssl/lib)
+set (LIBCRYPTO_INCLUDE_DIRS /usr/local/opt/openssl/include)
+
+elseif( UNIX )
+
 pkg_check_modules(LIBCRYPTO REQUIRED libcrypto)
+set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
+
+endif()
+
 pkg_check_modules(SQLITE REQUIRED sqlite3)
 
 include_directories( "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS})
 
 add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp)
 target_link_libraries(SciTokens ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES})
-set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
 
 add_executable(scitokens-test src/test.cpp)
 target_link_libraries(scitokens-test SciTokens)
