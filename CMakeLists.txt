@@ -28,7 +28,6 @@ set (LIBCRYPTO_INCLUDE_DIRS /usr/local/opt/openssl/include)
 elseif( UNIX )
 
 pkg_check_modules(LIBCRYPTO REQUIRED libcrypto)
-set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
 
 endif()
 
@@ -38,6 +37,10 @@ include_directories( "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES
 
 add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp)
 target_link_libraries(SciTokens ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES})
+
+if ( UNIX )
+set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
+endif()
 
 add_executable(scitokens-test src/test.cpp)
 target_link_libraries(scitokens-test SciTokens)
