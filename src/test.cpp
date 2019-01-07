@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <stdio.h>
 
 #include <jwt-cpp/jwt.h>
 
@@ -16,13 +17,17 @@ int main(int argc, const char** argv) {
     for (auto& e : decoded.get_payload_claims())
         std::cout << e.first << " = " << e.second.to_json() << std::endl;
 
-    std::ifstream ifs("test.pem");
-    std::string contents( (std::istreambuf_iterator<char>(ifs)),
+    std::ifstream priv_ifs("test.pem");
+    std::string private_contents( (std::istreambuf_iterator<char>(priv_ifs)),
+                          (std::istreambuf_iterator<char>())
+                        );
+    std::ifstream pub_ifs("test.pem.pub");
+    std::string public_contents( (std::istreambuf_iterator<char>(pub_ifs)),
                           (std::istreambuf_iterator<char>())
                         );
 
     char *err_msg;
-    SciTokenKey key = scitoken_key_create("key-es356", "RS256", contents.c_str(), contents.c_str(), &err_msg);
+    SciTokenKey key = scitoken_key_create("key-es356", "RS256", public_contents.c_str(), private_contents.c_str(), &err_msg); 
     if (!key) {
         std::cout << "Failed to generate a key: " << err_msg << std::endl;
         return 1;
@@ -31,9 +36,18 @@ int main(int argc, const char** argv) {
     if (scitoken_set_claim_string(scitoken, "iss", "https://demo.scitokens.org", &err_msg)) {
         std::cout << "Failed to set a claim: " << err_msg << std::endl;
     }
+
+    // Test setting and getting a claim
     char *value;
+    if (scitoken_get_claim_string(scitoken, "iss", &value, &err_msg)) {
+        std::cout << "Failed to get a claim: " << err_msg << std::endl;
+    }
+    if (strcmp(value, "https://demo.scitokens.org") != 0) {
+        std::cout << "Failed to get same claim a claim: " << err_msg << std::endl;
+    }
+
     if (scitoken_serialize(scitoken, &value, &err_msg)) {
-        std::cout << "Failed to generate a key: " << err_msg << std::endl;
+        std::cout << "Failed to generate a token: " << err_msg << std::endl;
         return 1;
     }
     std::cout << "SciToken: " << value << std::endl;
