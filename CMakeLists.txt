@@ -6,7 +6,11 @@ set( CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
 
 find_package( jwt-cpp REQUIRED )
 find_package( CURL REQUIRED )
+<<<<<<< HEAD
 find_package(UUID REQUIRED)
+=======
+find_package( UUID REQUIRED )
+>>>>>>> 18ebd2e2add333f00199aff1153680c8d1b12c87
 
 if( CMAKE_COMPILER_IS_GNUCXX )
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror" )
@@ -29,16 +33,26 @@ set (LIBCRYPTO_INCLUDE_DIRS /usr/local/opt/openssl/include)
 elseif( UNIX )
 
 pkg_check_modules(LIBCRYPTO REQUIRED libcrypto)
-set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
 
 endif()
 
 pkg_check_modules(SQLITE REQUIRED sqlite3)
 
+<<<<<<< HEAD
 include_directories( "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS})
 
 add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp)
 target_link_libraries(SciTokens ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES})
+=======
+include_directories( "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS} )
+
+add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp)
+target_link_libraries(SciTokens ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES})
+
+if ( UNIX )
+set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
+endif()
+>>>>>>> 18ebd2e2add333f00199aff1153680c8d1b12c87
 
 add_executable(scitokens-test src/test.cpp)
 target_link_libraries(scitokens-test SciTokens)
