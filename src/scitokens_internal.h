@@ -3,6 +3,7 @@
 #include <sstream>
 
 #include <jwt-cpp/jwt.h>
+#include <uuid/uuid.h>
 
 namespace scitokens {
 
@@ -134,6 +135,12 @@ public:
         m_builder.set_issued_at(time);
         m_builder.set_not_before(time);
         m_builder.set_expires_at(time + std::chrono::seconds(m_lifetime));
+
+        uuid_t uuid;
+        uuid_generate(uuid);
+        char uuid_str[37];
+        uuid_unparse_lower(uuid, uuid_str);
+        m_builder.set_payload_claim("jti", std::string(uuid_str));
 
         // TODO: handle JTI
         return m_key.serialize(m_builder);
