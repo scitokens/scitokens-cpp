@@ -312,6 +312,9 @@ void
 SciToken::deserialize(const std::string &data, const std::vector<std::string> allowed_issuers) {
     m_decoded.reset(new jwt::decoded_jwt(data));
 
+    // Set all the claims
+    m_claims = m_decoded->get_payload_claims();
+
     scitokens::Validator val;
     val.add_allowed_issuers(allowed_issuers);
     val.set_validate_all_claims_scitokens_1(false);
