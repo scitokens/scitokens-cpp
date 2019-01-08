@@ -51,6 +51,11 @@ int main(int argc, const char** argv) {
         return 1;
     }
     std::cout << "SciToken: " << value << std::endl;
+    auto decoded2 = jwt::decode(value);
+
+    for (auto& e : decoded2.get_payload_claims())
+        std::cout << e.first << " = " << e.second.to_json() << std::endl;
+
     scitoken_destroy(scitoken);
     scitoken_key_destroy(key);
 

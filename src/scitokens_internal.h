@@ -4,6 +4,7 @@
 #include <unordered_map>
 
 #include <jwt-cpp/jwt.h>
+#include <uuid/uuid.h>
 
 namespace scitokens {
 
@@ -147,12 +148,17 @@ public:
         builder.set_not_before(time);
         builder.set_expires_at(time + std::chrono::seconds(m_lifetime));
 
+        uuid_t uuid;
+        uuid_generate(uuid);
+        char uuid_str[37];
+        uuid_unparse_lower(uuid, uuid_str);
+        m_claims["jti"] = std::string(uuid_str);
+
         // Set all the payload claims
         for (auto it : m_claims) {
             builder.set_payload_claim(it.first, it.second);
         }
 
-        // TODO: handle JTI
         return m_key.serialize(builder);
     }
 
