@@ -159,12 +159,6 @@ public:
             builder.set_payload_claim(it.first, it.second);
         }
 
-        uuid_t uuid;
-        uuid_generate(uuid);
-        char uuid_str[37];
-        uuid_unparse_lower(uuid, uuid_str);
-        builder.set_payload_claim("jti", std::string(uuid_str));
-
         // TODO: handle JTI
         return m_key.serialize(builder);
     }
