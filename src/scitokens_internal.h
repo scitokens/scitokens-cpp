@@ -126,6 +126,9 @@ public:
         return m_claims[key];
     }
 
+    // Return a claim as a string
+    // If the claim is not a string, it can throw
+    // a std::bad_cast() exception.
     const std::string
     get_claim_string(const std::string &key) {
         return m_claims[key].as_string();
