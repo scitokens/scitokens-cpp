@@ -159,7 +159,6 @@ public:
             builder.set_payload_claim(it.first, it.second);
         }
 
-        // TODO: handle JTI
         return m_key.serialize(builder);
     }
 
