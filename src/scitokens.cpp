@@ -67,10 +67,18 @@ int scitoken_set_claim_string(SciToken token, const char *key, const char *value
 }
 
 int scitoken_get_claim_string(const SciToken token, const char *key, char **value, char **err_msg) {
-    if (err_msg) {
-        *err_msg = strdup("This function is not implemented");
+    scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
+    std::string claim_str;
+    try {
+        claim_str = real_token->get_claim_string(key);
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
     }
-    return -1;
+    *value = strdup(claim_str.c_str());
+    return 0;
 }
 
 

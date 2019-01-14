@@ -316,6 +316,9 @@ SciToken::deserialize(const std::string &data, const std::vector<std::string> al
     val.add_allowed_issuers(allowed_issuers);
     val.set_validate_all_claims_scitokens_1(false);
     val.verify(*m_decoded);
+
+    // Set all the claims
+    m_claims = m_decoded->get_payload_claims();
 }
 
 

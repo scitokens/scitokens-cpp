@@ -1,6 +1,7 @@
 
 #include <memory>
 #include <sstream>
+#include <unordered_map>
 
 #include <jwt-cpp/jwt.h>
 #include <uuid/uuid.h>
@@ -111,14 +112,26 @@ friend class scitokens::Validator;
 
 public:
     SciToken(SciTokenKey &signing_algorithm)
-        : m_builder(jwt::create()),
-          m_key(signing_algorithm)
+        : m_key(signing_algorithm)
     {}
 
     void
     set_claim(const std::string &key, const jwt::claim &value) {
-        m_builder.set_payload_claim(key, value);
+        m_claims[key] = value;
         if (key == "iss") {m_issuer_set = true;}
+    }
+
+    const jwt::claim
+    get_claim(const std::string &key) {
+        return m_claims[key];
+    }
+
+    // Return a claim as a string
+    // If the claim is not a string, it can throw
+    // a std::bad_cast() exception.
+    const std::string
+    get_claim_string(const std::string &key) {
+        return m_claims[key].as_string();
     }
 
     void
@@ -128,22 +141,28 @@ public:
 
     std::string
     serialize() {
+        jwt::builder builder(jwt::create());
+
         if (!m_issuer_set) {
             throw MissingIssuerException();
         }
         auto time = std::chrono::system_clock::now();
-        m_builder.set_issued_at(time);
-        m_builder.set_not_before(time);
-        m_builder.set_expires_at(time + std::chrono::seconds(m_lifetime));
+        builder.set_issued_at(time);
+        builder.set_not_before(time);
+        builder.set_expires_at(time + std::chrono::seconds(m_lifetime));
 
         uuid_t uuid;
         uuid_generate(uuid);
         char uuid_str[37];
         uuid_unparse_lower(uuid, uuid_str);
-        m_builder.set_payload_claim("jti", std::string(uuid_str));
+        m_claims["jti"] = std::string(uuid_str);
 
-        // TODO: handle JTI
-        return m_key.serialize(m_builder);
+        // Set all the payload claims
+        for (auto it : m_claims) {
+            builder.set_payload_claim(it.first, it.second);
+        }
+
+        return m_key.serialize(builder);
     }
 
     void
@@ -152,7 +171,7 @@ public:
 private:
     bool m_issuer_set{false};
     int m_lifetime{600};
-    jwt::builder m_builder;
+    std::unordered_map<std::string, jwt::claim> m_claims;
     std::unique_ptr<jwt::decoded_jwt> m_decoded;
     SciTokenKey &m_key;
 };
