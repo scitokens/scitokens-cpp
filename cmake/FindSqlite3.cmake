@@ -1,0 +1,53 @@
+# - Try to find SQLITE3
+#
+#  SQLITE3_FOUND - system has SQLITE3
+#  SQLITE3_INCLUDE_DIRS - the SQLITE3 include directory
+#  SQLITE3_LIBRARIES - Link these to use SQLITE3
+#
+
+include(CheckSymbolExists)
+
+FIND_LIBRARY(SQLITE3_LIBRARY NAMES sqlite)
+
+find_path(SQLITE3_INCLUDE_DIR
+    NAMES
+      sqlite3.h
+    PATHS
+      ${SQLITE3_DIR}
+      $ENV{SQLITE3_DIR}
+      ~/Library/Frameworks
+      /Library/Frameworks
+      /usr/local/include
+      /usr/include
+)
+
+find_library(SQLITE3_LIBRARY
+    NAMES
+      sqlite3
+    PATHS
+      ${SQLITE_DIR}
+      $ENV{SQLITE_DIR}
+      ~/Library/Frameworks
+      /Library/Frameworks
+)
+
+INCLUDE(FindPackageHandleStandardArgs)
+FIND_PACKAGE_HANDLE_STANDARD_ARGS(SQLITE3 DEFAULT_MSG SQLITE3_LIBRARY SQLITE3_INCLUDE_DIR)
+
+IF(SQLITE3_FOUND)
+
+    SET(SQLITE3_LIBRARIES ${SQLITE3_LIBRARY})
+    SET(SQLITE_LIBRARIES ${SQLITE3_LIBRARY})
+    SET(SQLITE3_INCLUDE_DIRS ${SQLITE3_INCLUDE_DIR})
+    SET(SQLITE_INCLUDE_DIRS ${SQLITE3_INCLUDE_DIR})
+
+ELSE()
+
+    SET(SQLITE_LIBRARIES)
+    SET(SQLITE3_LIBRARIES)
+    SET(SQLITE_INCLUDE_DIRS)
+    SET(SQLITE3_INCLUDE_DIRS)
+
+endif()
+
+mark_as_advanced(SQLITE3_INCLUDE_DIRS SQLITE3_LIBRARIES SQLITE_LIBRARIES SQLITE_INCLUDE_DIRS)

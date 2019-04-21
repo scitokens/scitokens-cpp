@@ -19,27 +19,28 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
 
-include (FindPkgConfig)
 
 if( APPLE )
-# Support homebrew installed openssl
-find_library (LIBCRYPTO_LIBRARIES REQUIRED crypto PATHS /usr/local/opt/openssl/lib)
-set (LIBCRYPTO_INCLUDE_DIRS /usr/local/opt/openssl/include)
+
+find_package( OpenSSL REQUIRED )
+find_package( Sqlite3 REQUIRED )
+set(LIBCRYPTO_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+set(LIBCRYPTO_LIBRARIES ${OPENSSL_CRYPTO_LIBRARY})
 
 elseif( UNIX )
 
+include (FindPkgConfig)
 pkg_check_modules(LIBCRYPTO REQUIRED libcrypto)
+pkg_check_modules(SQLITE REQUIRED sqlite3)
 
 endif()
-
-pkg_check_modules(SQLITE REQUIRED sqlite3)
 
 include_directories( "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS} )
 
 add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp)
 target_link_libraries(SciTokens ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES})
 
-if ( UNIX )
+if ( NOT APPLE AND UNIX )
 set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
 endif()
 
