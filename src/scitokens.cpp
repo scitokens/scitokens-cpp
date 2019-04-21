@@ -259,8 +259,14 @@ int enforcer_generate_acls(const Enforcer enf, const SciToken scitoken, Acl **ac
     for (const auto &acl : acls_list) {
         acl_result[idx].authz = strdup(acl.first.c_str());
         acl_result[idx].resource = strdup(acl.second.c_str());
-        if (acl_result[idx].authz == nullptr || acl_result[idx].resource == nullptr) {
+        if (acl_result[idx].authz == nullptr) {
             enforcer_acl_free(acl_result);
+            if (err_msg) {*err_msg = strdup("ACL was generated without an authorization set.");}
+            return -1;
+        }
+        if (acl_result[idx].resource == nullptr) {
+            enforcer_acl_free(acl_result);
+            if (err_msg) {*err_msg = strdup("ACL was generated without a resource set.");}
             return -1;
         }
         idx++;
