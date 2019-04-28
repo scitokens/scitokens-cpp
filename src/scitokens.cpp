@@ -66,6 +66,7 @@ int scitoken_set_claim_string(SciToken token, const char *key, const char *value
     return 0;
 }
 
+
 int scitoken_get_claim_string(const SciToken token, const char *key, char **value, char **err_msg) {
     scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
     std::string claim_str;
@@ -78,6 +79,27 @@ int scitoken_get_claim_string(const SciToken token, const char *key, char **valu
         return -1;
     }
     *value = strdup(claim_str.c_str());
+    return 0;
+}
+
+
+int scitoken_get_expiration(const SciToken token, long long *expiry, char **err_msg) {
+    scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
+    if (!real_token->has_claim("exp")) {
+        *expiry = -1;
+        return 0;
+    }
+
+    long long result;
+    try {
+        result = real_token->get_claim("exp").as_int();
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    *expiry = result;
     return 0;
 }
 

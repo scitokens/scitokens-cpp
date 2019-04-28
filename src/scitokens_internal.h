@@ -126,6 +126,11 @@ public:
         return m_claims[key];
     }
 
+    bool
+    has_claim(const std::string &key) const {
+        return m_claims.find(key) != m_claims.end();
+    }
+
     // Return a claim as a string
     // If the claim is not a string, it can throw
     // a std::bad_cast() exception.

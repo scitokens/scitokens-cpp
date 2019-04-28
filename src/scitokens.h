@@ -32,6 +32,8 @@ int scitoken_set_claim_string(SciToken token, const char *key, const char *value
 
 int scitoken_get_claim_string(const SciToken token, const char *key, char **value, char **err_msg);
 
+int scitoken_get_expiration(const SciToken token, long long *value, char **err_msg);
+
 void scitoken_set_lifetime(SciToken token, int lifetime);
 
 int scitoken_serialize(const SciToken token, char **value, char **err_msg);
