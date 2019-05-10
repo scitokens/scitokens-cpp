@@ -369,6 +369,11 @@ public:
         m_validator.add_claim_validator("aud", &Enforcer::aud_validator, this);
         m_validator.add_claim_validator("scope", &Enforcer::scope_validator, this);
         std::vector<std::string> critical_claims = {"scope"};
+
+        // If any audiences are in the given to us, then force the validator to check it.
+        if (!m_audiences.empty()) {
+            critical_claims.push_back("aud");
+        }
         m_validator.add_critical_claims(critical_claims);
     }
 
