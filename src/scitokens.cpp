@@ -216,7 +216,7 @@ int validator_validate(Validator validator, SciToken scitoken, char **err_msg) {
 
     try {
         real_validator->verify(*real_scitoken);
-    } catch (std::exception exc) {
+    } catch (std::exception &exc) {
         if (err_msg) {*err_msg = strdup(exc.what());}
         return -1;
     }
