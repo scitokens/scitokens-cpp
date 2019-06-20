@@ -1,12 +1,12 @@
 Name: scitokens-cpp
-Version: 0.1.0
+Version: 0.3.1
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: Apache 2.0
 URL: https://github.com/scitokens/scitokens-cpp
 
 # Generated from:
-# git_archive_all.py --prefix=scitokens-cpp-0.1.0/ -9 ~/rpmbuild/SOURCES/scitokens-cpp-0.1.0.tar.gz
+# git_archive_all.py --prefix=scitokens-cpp-0.3.1/ -9 ~/rpmbuild/SOURCES/scitokens-cpp-0.3.1.tar.gz
 # Where git_archive_all.py is from https://github.com/Kentzo/git-archive-all.git
 Source0: %{name}-%{version}.tar.gz
 
@@ -60,5 +60,8 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
+* Thu Jun 20 2019 Brian Bockelman <brian.bockelman@cern.ch> - 0.3.1-1
+- Update RPM to v0.3.1 of the packaging.
+
 * Thu Jan 03 2019 Brian Bockelman <bbockelm@cse.unl.edu> - 0.1.0-1
 - Initial version of the SciTokens C++ RPM.
