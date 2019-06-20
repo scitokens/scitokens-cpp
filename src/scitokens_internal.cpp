@@ -304,11 +304,6 @@ normalize_absolute_path(const std::string &path) {
 }
 
 
-int empty_validator(const char *, char **) {
-    return 0;
-}
-
-
 }
 
 
