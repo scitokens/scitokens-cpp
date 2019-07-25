@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.3.1
+Version: 0.3.2
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: Apache 2.0
@@ -60,6 +60,10 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
+* Thu Jul 25 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.2-1
+- Update RPM to v0.3.2 of the packaging.
+- Fix downloading public key bug #12
+
 * Thu Jun 20 2019 Brian Bockelman <brian.bockelman@cern.ch> - 0.3.1-1
 - Update RPM to v0.3.1 of the packaging.
 
