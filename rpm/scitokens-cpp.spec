@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.3.2
+Version: 0.3.3
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: Apache 2.0
@@ -72,9 +72,10 @@ popd
 %defattr(-,root,root,-)
 
 %changelog
-* Thu Jul 25 2019 Mátyás Selmeci <matyas@cs.wisc.edu> - 0.3.2-1.osg
+* Thu Jul 25 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.3-1
 - Merge OSG changes
 - Use a newer, still supported version of devtoolset
+- Fix bug in verifying EC signed tokens #13
 
 * Thu Jul 25 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.2-1
 - Update RPM to v0.3.2 of the packaging.
