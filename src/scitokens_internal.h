@@ -89,7 +89,7 @@ public:
         if (m_name == "RS256") {
             jwt::algorithm::rs256(m_public, m_private).verify(data, signature);
         } else if (m_name == "ES256") {
-            jwt::algorithm::rs256(m_public, m_private).verify(data, signature);
+            jwt::algorithm::es256(m_public, m_private).verify(data, signature);
         } else {
             throw jwt::signature_verification_exception("Provided algorithm is not supported.");
         }
