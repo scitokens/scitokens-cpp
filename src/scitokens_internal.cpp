@@ -82,7 +82,7 @@ private:
             return 0;
         }
         myself->m_data.reserve(new_length);
-        memcpy(&(myself->m_data[0]), buffer, new_data);
+        memcpy(&(myself->m_data[myself->m_len]), buffer, new_data);
         myself->m_len = new_length;
         return new_data;
     }
