@@ -1,14 +1,21 @@
 Name: scitokens-cpp
 Version: 0.3.3
-Release: 1%{?dist}
+Release: 2%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: Apache 2.0
 URL: https://github.com/scitokens/scitokens-cpp
 
 # Generated from:
-# git_archive_all.py --prefix=scitokens-cpp-0.3.2/ --force-submodules -9 scitokens-cpp-0.3.2.tar.gz
-# Where git_archive_all.py is from https://github.com/Kentzo/git-archive-all.git
-Source0: %{name}-%{version}.tar.gz
+# git archive --prefix "scitokens-cpp-0.3.3/" -o "scitokens-cpp-0.3.3.tar" v0.3.3
+# git submodule update --init
+# git submodule foreach --recursive "git archive --prefix=scitokens-cpp-0.3.3/\$path/ --output=\$sha1.tar HEAD && tar --concatenate --file=$(pwd)/scitokens-cpp-0.3.3.tar \$sha1.tar && rm \$sha1.tar"
+# gzip "scitokens-cpp-0.3.3.tar"
+Source0: https://github.com/scitokens/%{name}/archive/%{name}-%{version}.tar.gz
+
+# Scitokens-cpp bundles jwt-cpp, a header only dependency
+# Since it doesn't create a library that can be used by others, it seems
+# inappropriate to include a "Provides", as jwt-cpp is not provided
+# by this package.
 
 BuildRequires: gcc-c++
 BuildRequires: cmake
@@ -43,7 +50,7 @@ do_build () {
     mkdir build
     cd build
     %cmake ..
-    make
+    %make_build
 }
 export -f do_build
 %if 0%{?el6}
@@ -54,7 +61,7 @@ do_build
 
 %install
 pushd build
-make install DESTDIR=$RPM_BUILD_ROOT
+%make_build install DESTDIR=$RPM_BUILD_ROOT
 popd
 
 %post
@@ -72,6 +79,10 @@ popd
 %defattr(-,root,root,-)
 
 %changelog
+* Tue Jul 30 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.3-2
+- Change the Source URL
+- Use make_build in the packaging
+
 * Thu Jul 25 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.3-1
 - Merge OSG changes
 - Use a newer, still supported version of devtoolset
