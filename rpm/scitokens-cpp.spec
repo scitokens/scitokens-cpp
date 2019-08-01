@@ -83,6 +83,9 @@ do_build
 %{_includedir}/scitokens/scitokens.h
 
 %changelog
+* Thu Aug 01 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.3-3
+- Update hte packaging to bring it line with EPEL (fedora) guidelines
+
 * Tue Jul 30 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.3-2
 - Change the Source URL
 - Use make_build in the packaging
