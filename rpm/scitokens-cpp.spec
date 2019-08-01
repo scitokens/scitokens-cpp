@@ -75,8 +75,7 @@ do_build
 
 %files
 %{_libdir}/libSciTokens.so
-%{_libdir}/libSciTokens.so.0
-%{_libdir}/libSciTokens.so.0.0.2
+%{_libdir}/libSciTokens.so.0.*
 %license LICENSE
 %doc README.md
 
