@@ -1,16 +1,16 @@
 Name: scitokens-cpp
 Version: 0.3.3
-Release: 2%{?dist}
+Release: 3%{?dist}
 Summary: C++ Implementation of the SciTokens Library
-License: Apache 2.0
+License: ASL 2.0
 URL: https://github.com/scitokens/scitokens-cpp
 
-# Generated from:
+# Directions to generate a proper release:
 # git archive --prefix "scitokens-cpp-0.3.3/" -o "scitokens-cpp-0.3.3.tar" v0.3.3
 # git submodule update --init
 # git submodule foreach --recursive "git archive --prefix=scitokens-cpp-0.3.3/\$path/ --output=\$sha1.tar HEAD && tar --concatenate --file=$(pwd)/scitokens-cpp-0.3.3.tar \$sha1.tar && rm \$sha1.tar"
 # gzip "scitokens-cpp-0.3.3.tar"
-Source0: https://github.com/scitokens/%{name}/archive/%{name}-%{version}.tar.gz
+Source0: https://github.com/scitokens/scitokens-cpp/releases/download/v%{version}/%{name}-%{version}.tar.gz
 
 # Scitokens-cpp bundles jwt-cpp, a header only dependency
 # Since it doesn't create a library that can be used by others, it seems
@@ -36,7 +36,7 @@ BuildRequires: scl-utils
 %package devel
 Summary: Header files for the scitokens-cpp public interfaces.
 
-Requires: %{name} = %{version}
+Requires: %{name}%{?_isa} = %{version}
 
 %description devel
 %{summary}
@@ -60,9 +60,11 @@ do_build
 %endif
 
 %install
-pushd build
-%make_build install DESTDIR=$RPM_BUILD_ROOT
-popd
+%make_install -C build
+
+# Run the ldconfig
+# This package is targeted to EPEL 7, which doesn't have the macro %ldconfig_scriplits
+# %ldconfig_scriptlets
 
 %post
 /sbin/ldconfig
@@ -70,13 +72,16 @@ popd
 %postun
 /sbin/ldconfig
 
+
 %files
-%{_libdir}/libSciTokens.so*
+%{_libdir}/libSciTokens.so
+%{_libdir}/libSciTokens.so.0
+%{_libdir}/libSciTokens.so.0.0.2
+%license LICENSE
+%doc README.md
 
 %files devel
 %{_includedir}/scitokens/scitokens.h
-
-%defattr(-,root,root,-)
 
 %changelog
 * Tue Jul 30 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.3-2

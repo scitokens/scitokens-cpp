@@ -42,3 +42,13 @@ and copy the generated token.  Then, from the build directory:
 Replace the given token above with the fresh one you just generated; using the above token should give an expired
 token error.
 
+
+Instructions for Generating a Release
+-------------------------------------
+
+SciTokens-cpp includes a submodule, jwt-cpp.  Therefore, to create a release, you have to include the submodule into the release.
+
+    git archive --prefix "scitokens-cpp-0.3.3/" -o "scitokens-cpp-0.3.3.tar" v0.3.3
+    git submodule update --init
+    git submodule foreach --recursive "git archive --prefix=scitokens-cpp-0.3.3/\$path/ --output=\$sha1.tar HEAD && tar --concatenate --file=$(pwd)/scitokens-cpp-0.3.3.tar \$sha1.tar && rm \$sha1.tar"
+    gzip "scitokens-cpp-0.3.3.tar"
