@@ -34,7 +34,7 @@ BuildRequires: scl-utils
 %{summary}
 
 %package devel
-Summary: Header files for the scitokens-cpp public interfaces.
+Summary: Header files for the scitokens-cpp public interfaces
 
 Requires: %{name}%{?_isa} = %{version}
 
@@ -66,13 +66,14 @@ do_build
 %ldconfig_scriptlets
 
 %files
-%{_libdir}/libSciTokens.so
 %{_libdir}/libSciTokens.so.0*
 %license LICENSE
 %doc README.md
 
 %files devel
+%{_libdir}/libSciTokens.so
 %{_includedir}/scitokens/scitokens.h
+%dir %{_includedir}/scitokens
 
 %changelog
 * Thu Aug 01 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.3-3
