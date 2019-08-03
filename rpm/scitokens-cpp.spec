@@ -63,15 +63,7 @@ do_build
 %make_install -C build
 
 # Run the ldconfig
-# This package is targeted to EPEL 7, which doesn't have the macro %ldconfig_scriplits
-# %ldconfig_scriptlets
-
-%post
-/sbin/ldconfig
-
-%postun
-/sbin/ldconfig
-
+%ldconfig_scriptlets
 
 %files
 %{_libdir}/libSciTokens.so
