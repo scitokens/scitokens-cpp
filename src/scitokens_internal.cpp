@@ -189,10 +189,28 @@ struct local_base64url : public jwt::alphabet::base64url {
 };
 
 
+// Assuming a padding, decode
+std::string b64url_decode_nopadding(const std::string &input)
+{
+    std::string result = input;
+    switch (result.size() % 4) {
+    case 1:
+        result += "="; // fallthrough
+    case 2:
+        result += "="; // fallthrough
+    case 3:
+        result += "="; // fallthrough
+    default:
+        break;
+    }
+    return jwt::base::decode<local_base64url>(result);
+}
+
+
 std::string
 es256_from_coords(const std::string &x_str, const std::string &y_str) {
-    auto x_decode = jwt::base::decode<local_base64url>(x_str);
-    auto y_decode = jwt::base::decode<local_base64url>(y_str);
+    auto x_decode = b64url_decode_nopadding(x_str);
+    auto y_decode = b64url_decode_nopadding(y_str);
 
     std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> ec(EC_KEY_new_by_curve_name(NID_X9_62_prime256v1), EC_KEY_free);
     if (!ec.get()) {
@@ -232,8 +250,8 @@ es256_from_coords(const std::string &x_str, const std::string &y_str) {
 
 std::string
 rs256_from_coords(const std::string &e_str, const std::string &n_str) {
-    auto e_decode = jwt::base::decode<local_base64url>(e_str);
-    auto n_decode = jwt::base::decode<local_base64url>(n_str);
+    auto e_decode = b64url_decode_nopadding(e_str);
+    auto n_decode = b64url_decode_nopadding(n_str);
     std::unique_ptr<BIGNUM, decltype(&BN_free)> e_bignum(BN_bin2bn(reinterpret_cast<const unsigned char *>(e_decode.c_str()), e_decode.size(), nullptr), BN_free);
     std::unique_ptr<BIGNUM, decltype(&BN_free)> n_bignum(BN_bin2bn(reinterpret_cast<const unsigned char *>(n_decode.c_str()), n_decode.size(), nullptr), BN_free);
 
