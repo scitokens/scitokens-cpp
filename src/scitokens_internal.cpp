@@ -417,10 +417,33 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
     auto key_obj = find_key_id(keys, kid);
     
     auto iter = key_obj.find("alg");
+    std::string alg;
     if (iter == key_obj.end() || (!iter->second.is<std::string>())) {
-        throw JsonException("Key is missing algorithm name");
-    }   
-    auto alg = iter->second.get<std::string>();
+        auto iter2 = key_obj.find("kty");
+        if (iter2 == key_obj.end() || !iter2->second.is<std::string>()) {
+            throw JsonException("Key is missing key type");
+        } else {
+            auto kty = iter2->second.get<std::string>();
+            if (kty == "RSA") {
+                alg = "RS256";
+            } else if (kty == "EC") {
+                auto iter3 = key_obj.find("crv");
+                if (iter3 == key_obj.end() || !iter3->second.is<std::string>()) {
+                    throw JsonException("EC key is missing curve name");
+                }
+                auto crv = iter2->second.get<std::string>();
+                if (crv == "P-256") {
+                    alg = "EC256";
+                } else {
+                    throw JsonException("Unsupported EC curve in public key");
+                }
+            } else {
+                throw JsonException("Unknown public key type");
+            }
+        }
+    } else {
+        alg = iter->second.get<std::string>();
+    }
     if (alg != "RS256" and alg != "ES256") {
         throw UnsupportedKeyException("Issuer is using an unsupported algorithm");
     }   
