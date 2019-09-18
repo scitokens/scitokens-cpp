@@ -1,6 +1,6 @@
 Name: scitokens-cpp
-Version: 0.3.3
-Release: 3%{?dist}
+Version: 0.3.4
+Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
 URL: https://github.com/scitokens/scitokens-cpp
@@ -76,8 +76,11 @@ do_build
 %dir %{_includedir}/scitokens
 
 %changelog
+* Thu Sep 18 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.4-1
+- Fix bugs for support with IAM
+
 * Thu Aug 01 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.3-3
-- Update hte packaging to bring it line with EPEL (fedora) guidelines
+- Update the packaging to bring it line with EPEL (fedora) guidelines
 
 * Tue Jul 30 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.3-2
 - Change the Source URL
