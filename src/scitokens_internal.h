@@ -160,7 +160,7 @@ public:
         uuid_generate(uuid);
         char uuid_str[37];
         uuid_unparse_lower(uuid, uuid_str);
-        m_claims["jti"] = std::string(uuid_str);
+        m_claims["jti"] = jwt::claim(std::string(uuid_str));
 
         // Set all the payload claims
         for (auto it : m_claims) {

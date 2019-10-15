@@ -56,7 +56,7 @@ int scitoken_set_claim_string(SciToken token, const char *key, const char *value
         return -1;
     }
     try {
-        real_token->set_claim(key, std::string(value));
+        real_token->set_claim(key, jwt::claim(std::string(value)));
     } catch (std::exception &exc) {
         if (err_msg) {
             *err_msg = strdup(exc.what());
