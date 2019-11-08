@@ -431,9 +431,9 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
                 if (iter3 == key_obj.end() || !iter3->second.is<std::string>()) {
                     throw JsonException("EC key is missing curve name");
                 }
-                auto crv = iter2->second.get<std::string>();
+                auto crv = iter3->second.get<std::string>();
                 if (crv == "P-256") {
-                    alg = "EC256";
+                    alg = "ES256";
                 } else {
                     throw JsonException("Unsupported EC curve in public key");
                 }
