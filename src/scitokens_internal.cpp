@@ -433,7 +433,7 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
                 }
                 auto crv = iter3->second.get<std::string>();
                 if (crv == "P-256") {
-                    alg = "EC256";
+                    alg = "ES256";
                 } else {
                     throw JsonException("Unsupported EC curve in public key");
                 }
