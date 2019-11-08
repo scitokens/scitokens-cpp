@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.3.4
+Version: 0.3.5
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -76,6 +76,9 @@ do_build
 %dir %{_includedir}/scitokens
 
 %changelog
+* Fri Nov 08 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.5-1
+- Fix EC public key handling
+
 * Thu Sep 18 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.4-1
 - Fix bugs for support with IAM
 
