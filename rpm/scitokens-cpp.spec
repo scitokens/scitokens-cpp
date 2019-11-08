@@ -79,7 +79,7 @@ do_build
 * Fri Nov 08 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.5-1
 - Fix EC public key handling
 
-* Thu Sep 18 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.4-1
+* Wed Sep 18 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.4-1
 - Fix bugs for support with IAM
 
 * Thu Aug 01 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.3-3
