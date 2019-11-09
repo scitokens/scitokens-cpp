@@ -111,6 +111,14 @@ class SciToken {
 friend class scitokens::Validator;
 
 public:
+
+    enum class Profile {
+        COMPAT = 0,
+        SCITOKENS_1_0,
+        SCITOKENS_2_0,
+        WLCG_1_0
+    };
+
     SciToken(SciTokenKey &signing_algorithm)
         : m_key(signing_algorithm)
     {}
@@ -119,6 +127,11 @@ public:
     set_claim(const std::string &key, const jwt::claim &value) {
         m_claims[key] = value;
         if (key == "iss") {m_issuer_set = true;}
+    }
+
+    void
+    set_serialize_mode(Profile profile) {
+        m_serialize_profile = profile;
     }
 
     const jwt::claim
@@ -162,6 +175,20 @@ public:
         uuid_unparse_lower(uuid, uuid_str);
         m_claims["jti"] = std::string(uuid_str);
 
+        if (m_serialize_profile == Profile::SCITOKENS_2_0) {
+            m_claims["ver"] = std::string("scitokens:2.0");
+            auto iter = m_claims.find("aud");
+            if (iter == m_claims.end()) {
+                m_claims["aud"] = std::string("ANY");
+            }
+        } else if (m_serialize_profile == Profile::WLCG_1_0) {
+            m_claims["wlcg_ver"] = std::string("1.0");
+            auto iter = m_claims.find("aud");
+            if (iter == m_claims.end()) {
+                m_claims["aud"] = std::string("https://wlcg.cern.ch/jwt/v1/any");
+            }
+        }
+
         // Set all the payload claims
         for (auto it : m_claims) {
             builder.set_payload_claim(it.first, it.second);
@@ -176,6 +203,8 @@ public:
 private:
     bool m_issuer_set{false};
     int m_lifetime{600};
+    Profile m_profile{Profile::SCITOKENS_1_0};
+    Profile m_serialize_profile{Profile::COMPAT};
     std::unordered_map<std::string, jwt::claim> m_claims;
     std::unique_ptr<jwt::decoded_jwt> m_decoded;
     SciTokenKey &m_key;
@@ -252,19 +281,62 @@ public:
                 throw jwt::token_verification_exception("'ver' claim value must be a string (if present)");
             }
             std::string ver_string = claim.as_string();
-            if (ver_string == "scitoken:2.0") {
+            if (ver_string == "scitokens:2.0") {
                 must_verify_everything = false;
+                if ((m_validate_profile != SciToken::Profile::COMPAT) &&
+                    (m_validate_profile != SciToken::Profile::SCITOKENS_2_0))
+                {
+                    throw jwt::token_verification_exception("Invalidate token type; not expecting a SciToken 2.0.");
+                }
+                m_profile = SciToken::Profile::SCITOKENS_2_0;
                 if (!jwt.has_payload_claim("aud")) {
                     throw jwt::token_verification_exception("'aud' claim required for SciTokens 2.0 profile");
                 }
             }
-            else if (ver_string == "scitokens:1.0") must_verify_everything = m_validate_all_claims;
-            else {
+            else if (ver_string == "scitokens:1.0") {
+                must_verify_everything = m_validate_all_claims;
+                if ((m_validate_profile != SciToken::Profile::COMPAT) &&
+                    (m_validate_profile != SciToken::Profile::SCITOKENS_1_0))
+                {
+                    throw jwt::token_verification_exception("Invalidate token type; not expecting a SciToken 1.0.");
+                }
+                m_profile = SciToken::Profile::SCITOKENS_1_0;
+            } else {
                 std::stringstream ss;
                 ss << "Unknown profile version in token: " << ver_string;
                 throw jwt::token_verification_exception(ss.str());
             }
+            // Handle WLCG common JWT profile.
+        } else if (jwt.has_payload_claim("wlcg.ver")) {
+            if ((m_validate_profile != SciToken::Profile::COMPAT) &&
+                (m_validate_profile != SciToken::Profile::WLCG_1_0))
+            {
+                throw jwt::token_verification_exception("Invalidate token type; not expecting a WLCG 1.0.");
+            }
+
+            m_profile = SciToken::Profile::WLCG_1_0;
+            must_verify_everything = false;
+            const jwt::claim &claim = jwt.get_payload_claim("wlcg.ver");
+            if (claim.get_type() != jwt::claim::type::string) {
+                throw jwt::token_verification_exception("'ver' claim value must be a string (if present)");
+            }
+            std::string ver_string = claim.as_string();
+            if (ver_string != "1.0") {
+                std::stringstream ss;
+                ss << "Unknown WLCG profile version in token: " << ver_string;
+                throw jwt::token_verification_exception(ss.str());
+            }
+            if (!jwt.has_payload_claim("aud")) {
+                throw jwt::token_verification_exception("Malformed token: 'aud' claim required for WLCG profile");
+            }
         } else {
+            if ((m_validate_profile != SciToken::Profile::COMPAT) &&
+                (m_validate_profile != SciToken::Profile::SCITOKENS_1_0))
+            {
+                throw jwt::token_verification_exception("Invalidate token type; not expecting a SciToken 1.0.");
+            }
+
+            m_profile = SciToken::Profile::SCITOKENS_1_0;
             must_verify_everything = m_validate_all_claims;
         }
 
@@ -339,6 +411,29 @@ public:
         m_validate_all_claims = new_val;
     }
 
+    /**
+     * Get the profile of the last validated token.
+     *
+     * If there has been no validation - or the validation failed,
+     * then the return value is unspecified.
+     *
+     * Will not return Profile::COMPAT.
+     */
+    SciToken::Profile get_profile() const {
+        if (m_profile == SciToken::Profile::COMPAT) {
+            throw jwt::token_verification_exception("Token profile has not been set.");
+        }
+        return m_profile;
+    }
+
+    /**
+     * Set the profile that will be used for validation; COMPAT indicates any supported profile
+     * is allowable.
+     */
+    void set_validate_profile(SciToken::Profile profile) {
+        m_validate_profile = profile;
+    }
+
 private:
     void get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm);
     void get_public_keys_from_web(const std::string &issuer, picojson::value &keys, int64_t &next_update, int64_t &expires);
@@ -346,6 +441,8 @@ private:
     bool store_public_keys(const std::string &issuer, const picojson::value &keys, int64_t next_update, int64_t expires);
 
     bool m_validate_all_claims{true};
+    SciToken::Profile m_profile{SciToken::Profile::COMPAT};
+    SciToken::Profile m_validate_profile{SciToken::Profile::COMPAT};
     ClaimStringValidatorMap m_validators;
     ClaimValidatorMap m_claim_validators;
 
@@ -375,6 +472,10 @@ public:
             critical_claims.push_back("aud");
         }
         m_validator.add_critical_claims(critical_claims);
+    }
+
+    void set_validate_profile(SciToken::Profile profile) {
+        m_validate_profile = profile;
     }
 
     bool test(const SciToken &scitoken, const std::string &authz, const std::string &path) {
@@ -407,21 +508,26 @@ private:
 
     static bool aud_validator(const jwt::claim &claim, void *myself) {
         auto me = reinterpret_cast<scitokens::Enforcer*>(myself);
+        std::vector<std::string> jwt_audiences;
         if (claim.get_type() == jwt::claim::type::string) {
             const std::string &audience = claim.as_string();
-            if ((audience == "ANY") && !me->m_audiences.empty()) {return true;}
-            for (const auto &aud : me->m_audiences) {
-                if (aud == audience) {return true;}
-            }
+            jwt_audiences.push_back(audience);
         } else if (claim.get_type() == jwt::claim::type::array) {
             const picojson::array &audiences = claim.as_array();
             for (const auto &aud_value : audiences) {
-                if (!aud_value.is<std::string>()) {continue;}
-                std::string audience = aud_value.get<std::string>();
-                if ((audience == "ANY") && !me->m_audiences.empty()) {return true;}
-                for (const auto &aud : me->m_audiences) {
-                    if (aud == audience) {return true;}
-                }
+                const std::string &audience = aud_value.get<std::string>();
+                jwt_audiences.push_back(audience);
+            }
+        }
+        for (const auto &aud_value : jwt_audiences) {
+            if (((me->m_validator.get_profile() == SciToken::Profile::SCITOKENS_2_0) && (aud_value == "ANY")) ||
+                ((me->m_validator.get_profile() == SciToken::Profile::WLCG_1_0) && (aud_value == "https://wlcg.cern.ch/jwt/v1/any"))
+               )
+            {
+                return true;
+            }
+            for (const auto &aud : me->m_audiences) {
+                if (aud == aud_value) {return true;}
             }
         }
         return false;
@@ -431,7 +537,10 @@ private:
         m_test_path = "";
         m_test_authz = "";
         m_gen_acls.clear();
+        m_validator.set_validate_profile(m_validate_profile);
     }
+
+    SciToken::Profile m_validate_profile{SciToken::Profile::COMPAT};
 
     std::string m_test_path;
     std::string m_test_authz;

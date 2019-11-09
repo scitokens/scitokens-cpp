@@ -67,6 +67,14 @@ int scitoken_set_claim_string(SciToken token, const char *key, const char *value
 }
 
 
+void scitoken_set_serialize_mode(SciToken token, SciTokenProfile profile) {
+    scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
+    if (real_token == nullptr) {return;}
+
+    real_token->set_serialize_mode(static_cast<scitokens::SciToken::Profile>(profile));
+}
+
+
 int scitoken_get_claim_string(const SciToken token, const char *key, char **value, char **err_msg) {
     scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
     std::string claim_str;
@@ -165,6 +173,13 @@ Validator validator_create() {
     return new Validator();
 }
 
+
+void validator_set_token_profile(Validator validator, SciTokenProfile profile) {
+    if (validator == nullptr) {return;}
+    auto real_validator = reinterpret_cast<scitokens::Validator*>(validator);
+    real_validator->set_validate_profile(static_cast<scitokens::SciToken::Profile>(profile));
+}
+
 int validator_add(Validator validator, const char *claim, StringValidatorFunction validator_func, char **err_msg) {
     if (validator == nullptr) {
         if (err_msg) {*err_msg = strdup("Validator may not be a null pointer");}
@@ -254,6 +269,14 @@ void enforcer_acl_free(Acl *acls) {
         free(const_cast<char *>(acls[idx].resource));
     }
     free(acls);
+}
+
+
+void enforcer_set_validate_profile(Enforcer enf, SciTokenProfile profile) {
+    if (enf == nullptr) {return;}
+
+    auto real_enf = reinterpret_cast<scitokens::Enforcer*>(enf);
+    real_enf->set_validate_profile(static_cast<scitokens::SciToken::Profile>(profile));
 }
 
 

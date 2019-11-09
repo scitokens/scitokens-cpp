@@ -20,6 +20,21 @@ typedef struct Acl_s {
 }
 Acl;
 
+/**
+ * Determine the mode we will use to validate tokens.
+ * - COMPAT mode (default) indicates any supported token format
+ *   is acceptable.  Where possible, the scope names are translated into
+ *   equivalent SciTokens 1.0 claim names (i.e., storage.read -> read; storage.write -> write).
+ * - SCITOKENS_1_0, SCITOKENS_2_0, WLCG_1_0: only accept these specific profiles.
+ *   No automatic translation is performed.
+ */
+typedef enum _profile {
+    COMPAT = 0,
+    SCITOKENS_1_0,
+    SCITOKENS_2_0,
+    WLCG_1_0
+} SciTokenProfile;
+
 SciTokenKey scitoken_key_create(const char *key_id, const char *algorithm, const char *public_contents, const char *private_contents, char **err_msg);
 
 void scitoken_key_destroy(SciTokenKey private_key);
@@ -38,9 +53,21 @@ void scitoken_set_lifetime(SciToken token, int lifetime);
 
 int scitoken_serialize(const SciToken token, char **value, char **err_msg);
 
+/**
+ * Set the profile used for serialization; if COMPAT mode is used, then
+ * the library default is utilized (currently, scitokens 1.0).
+ */
+void scitoken_set_serialize_mode(SciToken token, SciTokenProfile profile);
+
 int scitoken_deserialize(const char *value, SciToken *token, char const* const* allowed_issuers, char **err_msg);
 
 Validator validator_create();
+
+/**
+ * Set the profile used for validating the tokens; COMPAT (default) will accept any known token
+ * type while others will only support that specific profile.
+ */
+void validator_set_token_profile(Validator, SciTokenProfile profile);
 
 int validator_add(Validator validator, const char *claim, StringValidatorFunction validator_func, char **err_msg);
 
@@ -51,6 +78,12 @@ int validator_validate(Validator validator, SciToken scitoken, char **err_msg);
 Enforcer enforcer_create(const char *issuer, const char **audience, char **err_msg);
 
 void enforcer_destroy(Enforcer);
+
+/**
+ * Set the profile used for enforcing ACLs; when set to COMPAT (default), then the authorizations
+ * will be converted to SciTokens 1.0-style authorizations (so, WLCG's storage.read becomes read).
+ */
+void enforcer_set_validate_profile(Enforcer, SciTokenProfile profile);
 
 int enforcer_generate_acls(const Enforcer enf, const SciToken scitokens, Acl **acls, char **err_msg);
 

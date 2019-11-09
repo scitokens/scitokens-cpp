@@ -336,6 +336,9 @@ SciToken::deserialize(const std::string &data, const std::vector<std::string> al
 
     // Set all the claims
     m_claims = m_decoded->get_payload_claims();
+
+    // Copy over the profile
+    m_profile = val.get_profile();
 }
 
 
@@ -491,6 +494,7 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
     std::string requested_path = normalize_absolute_path(me->m_test_path);
     auto scope_iter = scope.begin();
     //std::cout << "Comparing scope " << scope << " against test accesses " << me->m_test_authz << ":" << requested_path << std::endl;
+    bool compat_modify = false, compat_create = false, compat_cancel = false;
     while (scope_iter != scope.end()) {
         while (*scope_iter == ' ') {scope_iter++;}
         auto next_scope_iter = std::find(scope_iter, scope.end(), ' ');
@@ -507,6 +511,25 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
         }
         path = normalize_absolute_path(path);
 
+        // If we are in compatibility mode and this is a WLCG token, then translate the authorization
+        // names to utilize the SciToken-style names.
+        if (me->m_validate_profile == SciToken::Profile::COMPAT &&
+            me->m_validator.get_profile() == SciToken::Profile::WLCG_1_0) {
+            if (authz == "storage.read") {
+                authz = "read";
+            } else if (authz == "storage.write") {
+                authz = "write";
+            } else if (authz == "compute.read") {
+                authz = "condor:/READ";
+            } else if (authz == "compute.modify") {
+                compat_modify = true;
+            } else if (authz == "compute.create") {
+                compat_create = true;
+            } else if (authz == "compute.cancel") {
+                compat_cancel = true;
+            }
+        }
+
         if (me->m_test_authz.empty()) {
             me->m_gen_acls.emplace_back(authz, path);
         } else if ((me->m_test_authz == authz) &&
@@ -516,5 +539,17 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
 
         scope_iter = next_scope_iter;
     }
+
+    // Compatibility mode: the combination on compute modify, create, and cancel mode are equivalent
+    // to the condor:/WRITE authorization.
+    if (compat_modify && compat_create && compat_cancel) {
+        if (me->m_test_authz.empty()) {
+            me->m_gen_acls.emplace_back("condor", "/WRITE");
+        } else if ((me->m_test_authz == "condor") &&
+                   (requested_path.substr(0, 6) == "/WRITE")) {
+            return true;
+        }
+    }
+
     return me->m_test_authz.empty();
 }
