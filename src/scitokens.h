@@ -61,6 +61,8 @@ void scitoken_set_serialize_mode(SciToken token, SciTokenProfile profile);
 
 int scitoken_deserialize(const char *value, SciToken *token, char const* const* allowed_issuers, char **err_msg);
 
+int scitoken_store_public_ec_key(const char *issuer, const char *keyid, const char *value, char **err_msg);
+
 Validator validator_create();
 
 /**

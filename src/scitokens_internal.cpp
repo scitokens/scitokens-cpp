@@ -207,6 +207,15 @@ std::string b64url_decode_nopadding(const std::string &input)
 }
 
 
+// Base64-encode without padding.
+std::string b64url_encode_nopadding(const std::string &input)
+{
+    std::string result = jwt::base::encode<local_base64url>(input);
+    auto pos = result.find("=");
+    return result.substr(0, pos);
+}
+
+
 std::string
 es256_from_coords(const std::string &x_str, const std::string &y_str) {
     auto x_decode = b64url_decode_nopadding(x_str);
@@ -481,6 +490,63 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
     
     public_pem = pem;
     algorithm = alg;
+}
+
+
+bool
+scitokens::Validator::store_public_ec_key(const std::string &issuer, const std::string &keyid,
+    const std::string &public_key)
+{
+    std::unique_ptr<BIO, decltype(&BIO_free_all)> pubkey_bio(BIO_new(BIO_s_mem()), BIO_free_all);
+    if ((size_t)BIO_write(pubkey_bio.get(), public_key.data(), public_key.size()) != public_key.size()) {
+        return false;
+    }
+    std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> pkey
+        (PEM_read_bio_EC_PUBKEY(pubkey_bio.get(), nullptr, nullptr, nullptr), EC_KEY_free);
+    if (!pkey) {return false;}
+
+    EC_GROUP *params = (EC_GROUP *)EC_KEY_get0_group(pkey.get());
+    if (!params) {
+        throw UnsupportedKeyException("Unable to get OpenSSL EC group");
+    }
+
+    const EC_POINT *point = EC_KEY_get0_public_key(pkey.get());
+    if (!point) {
+        throw UnsupportedKeyException("Unable to get OpenSSL EC point");
+    }
+
+    std::unique_ptr<BIGNUM, decltype(&BN_free)> x_bignum(BN_new(), BN_free);
+    std::unique_ptr<BIGNUM, decltype(&BN_free)> y_bignum(BN_new(), BN_free);
+    if (!EC_POINT_get_affine_coordinates_GFp(params, point, x_bignum.get(), y_bignum.get(), nullptr)) {
+        throw UnsupportedKeyException("Unable to get OpenSSL affine coordinates");
+    }
+
+    auto x_num = BN_num_bytes(x_bignum.get());
+    auto y_num = BN_num_bytes(y_bignum.get());
+    std::vector<unsigned char> x_bin; x_bin.reserve(x_num);
+    std::vector<unsigned char> y_bin; y_bin.reserve(y_num);
+    BN_bn2bin(x_bignum.get(), &x_bin[0]);
+    BN_bn2bin(y_bignum.get(), &y_bin[0]);
+    std::string x_str(reinterpret_cast<char*>(&x_bin[0]), x_num);
+    std::string y_str(reinterpret_cast<char*>(&y_bin[0]), y_num);
+
+    picojson::object key_obj;
+    key_obj["alg"] = picojson::value("ES256");
+    key_obj["kid"] = picojson::value(keyid);
+    key_obj["use"] = picojson::value("sig");
+    key_obj["kty"] = picojson::value("EC");
+    key_obj["x"] = picojson::value(b64url_encode_nopadding(x_str));
+    key_obj["y"] = picojson::value(b64url_encode_nopadding(y_str));
+    std::vector<picojson::value> key_list;
+    key_list.emplace_back(key_obj);
+
+    picojson::object top_obj;
+    top_obj["keys"] = picojson::value(key_list);
+
+    picojson::value top_value(top_obj);
+
+    auto now = std::time(NULL);
+    return store_public_keys(issuer, top_value, now + 600, now + 4*3600);
 }
 
 

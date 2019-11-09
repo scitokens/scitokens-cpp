@@ -169,6 +169,21 @@ int scitoken_deserialize(const char *value, SciToken *token, char const* const* 
     return 0;
 }
 
+int scitoken_store_public_ec_key(const char *issuer, const char *keyid, const char *key, char **err_msg)
+{
+    bool success;
+    try {
+        success = scitokens::Validator::store_public_ec_key(issuer, keyid, key);
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+
+    return success ? 0 : -1;
+}
+
 Validator validator_create() {
     return new Validator();
 }
