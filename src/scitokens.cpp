@@ -189,6 +189,13 @@ Validator validator_create() {
 }
 
 
+void validator_destroy(Validator validator) {
+    scitokens::Validator *real_validator =
+        reinterpret_cast<scitokens::Validator*>(validator);
+    delete real_validator;
+}
+
+
 void validator_set_token_profile(Validator validator, SciTokenProfile profile) {
     if (validator == nullptr) {return;}
     auto real_validator = reinterpret_cast<scitokens::Validator*>(validator);

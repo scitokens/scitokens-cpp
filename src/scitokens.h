@@ -77,6 +77,11 @@ int validator_add_critical_claims(Validator validator, const char **claims, char
 
 int validator_validate(Validator validator, SciToken scitoken, char **err_msg);
 
+/**
+ * Destroy a validator object.
+ */
+void validator_destroy(Validator);
+
 Enforcer enforcer_create(const char *issuer, const char **audience, char **err_msg);
 
 void enforcer_destroy(Enforcer);
