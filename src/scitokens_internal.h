@@ -27,7 +27,7 @@ public:
 class MissingIssuerException : public std::runtime_error {
 public:
     MissingIssuerException()
-        : std::runtime_error("Issuer not specific in claims")
+        : std::runtime_error("Issuer not specified in claims")
     {}  
 };
 
