@@ -26,6 +26,7 @@ find_package( OpenSSL REQUIRED )
 find_package( Sqlite3 REQUIRED )
 set(LIBCRYPTO_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
 set(LIBCRYPTO_LIBRARIES ${OPENSSL_CRYPTO_LIBRARY})
+set(CMAKE_MACOSX_RPATH ON)
 
 elseif( UNIX )
 
@@ -59,6 +60,9 @@ target_link_libraries(scitokens-test-access SciTokens)
 
 add_executable(scitokens-list-access src/list_access.cpp)
 target_link_libraries(scitokens-list-access SciTokens)
+
+add_executable(scitokens-create src/create.cpp)
+target_link_libraries(scitokens-create SciTokens)
 
 if (NOT DEFINED LIB_INSTALL_DIR)
   SET(LIB_INSTALL_DIR "lib")
