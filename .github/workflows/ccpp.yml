@@ -1,0 +1,28 @@
+name: C/C++ CI
+
+on:
+  pull_request:
+    branches: 
+      - master
+  push:
+    branches: 
+      - master
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v1
+    - name: install deps
+      run: |
+        apt-get libssl-dev sqlite3 cmake
+    - name: cmake
+      run: cmake
+    - name: make
+      run: make
+    - name: make check
+      run: make check
+    - name: make distcheck
+      run: make distcheck
