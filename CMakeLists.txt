@@ -2,6 +2,8 @@
 cmake_minimum_required( VERSION 2.6 )
 project( scitokens-cpp )
 
+option( BUILD_UNITTESTS "Build the scitokens-cpp unit tests" OFF )
+
 set( CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
 
 find_package( jwt-cpp REQUIRED )
@@ -66,6 +68,19 @@ endif()
 
 if (NOT DEFINED INCLUDE_INSTALL_DIR)
   SET(INCLUDE_INSTALL_DIR "include")
+endif()
+
+if( BUILD_UNITTESTS )
+
+include(ExternalProject)
+ExternalProject_Add(gtest
+    PREFIX external/gtest
+    SOURCE_DIR ${PROJECT_SOURCE_DIR}/vendor/gtest
+    BUILD_BYPRODUCTS ${CMAKE_BINARY_DIR}/external/gtest/src/gtest-build/lib/libgtest.a
+    INSTALL_COMMAND :
+)
+
+enable_testing()
 endif()
 
 install(
