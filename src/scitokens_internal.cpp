@@ -207,6 +207,15 @@ std::string b64url_decode_nopadding(const std::string &input)
 }
 
 
+// Base64-encode without padding.
+std::string b64url_encode_nopadding(const std::string &input)
+{
+    std::string result = jwt::base::encode<local_base64url>(input);
+    auto pos = result.find("=");
+    return result.substr(0, pos);
+}
+
+
 std::string
 es256_from_coords(const std::string &x_str, const std::string &y_str) {
     auto x_decode = b64url_decode_nopadding(x_str);
@@ -336,6 +345,9 @@ SciToken::deserialize(const std::string &data, const std::vector<std::string> al
 
     // Set all the claims
     m_claims = m_decoded->get_payload_claims();
+
+    // Copy over the profile
+    m_profile = val.get_profile();
 }
 
 
@@ -482,6 +494,63 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
 
 
 bool
+scitokens::Validator::store_public_ec_key(const std::string &issuer, const std::string &keyid,
+    const std::string &public_key)
+{
+    std::unique_ptr<BIO, decltype(&BIO_free_all)> pubkey_bio(BIO_new(BIO_s_mem()), BIO_free_all);
+    if ((size_t)BIO_write(pubkey_bio.get(), public_key.data(), public_key.size()) != public_key.size()) {
+        return false;
+    }
+    std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> pkey
+        (PEM_read_bio_EC_PUBKEY(pubkey_bio.get(), nullptr, nullptr, nullptr), EC_KEY_free);
+    if (!pkey) {return false;}
+
+    EC_GROUP *params = (EC_GROUP *)EC_KEY_get0_group(pkey.get());
+    if (!params) {
+        throw UnsupportedKeyException("Unable to get OpenSSL EC group");
+    }
+
+    const EC_POINT *point = EC_KEY_get0_public_key(pkey.get());
+    if (!point) {
+        throw UnsupportedKeyException("Unable to get OpenSSL EC point");
+    }
+
+    std::unique_ptr<BIGNUM, decltype(&BN_free)> x_bignum(BN_new(), BN_free);
+    std::unique_ptr<BIGNUM, decltype(&BN_free)> y_bignum(BN_new(), BN_free);
+    if (!EC_POINT_get_affine_coordinates_GFp(params, point, x_bignum.get(), y_bignum.get(), nullptr)) {
+        throw UnsupportedKeyException("Unable to get OpenSSL affine coordinates");
+    }
+
+    auto x_num = BN_num_bytes(x_bignum.get());
+    auto y_num = BN_num_bytes(y_bignum.get());
+    std::vector<unsigned char> x_bin; x_bin.reserve(x_num);
+    std::vector<unsigned char> y_bin; y_bin.reserve(y_num);
+    BN_bn2bin(x_bignum.get(), &x_bin[0]);
+    BN_bn2bin(y_bignum.get(), &y_bin[0]);
+    std::string x_str(reinterpret_cast<char*>(&x_bin[0]), x_num);
+    std::string y_str(reinterpret_cast<char*>(&y_bin[0]), y_num);
+
+    picojson::object key_obj;
+    key_obj["alg"] = picojson::value("ES256");
+    key_obj["kid"] = picojson::value(keyid);
+    key_obj["use"] = picojson::value("sig");
+    key_obj["kty"] = picojson::value("EC");
+    key_obj["x"] = picojson::value(b64url_encode_nopadding(x_str));
+    key_obj["y"] = picojson::value(b64url_encode_nopadding(y_str));
+    std::vector<picojson::value> key_list;
+    key_list.emplace_back(key_obj);
+
+    picojson::object top_obj;
+    top_obj["keys"] = picojson::value(key_list);
+
+    picojson::value top_value(top_obj);
+
+    auto now = std::time(NULL);
+    return store_public_keys(issuer, top_value, now + 600, now + 4*3600);
+}
+
+
+bool
 scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
     auto me = reinterpret_cast<scitokens::Enforcer*>(myself);
     if (claim.get_type() != jwt::claim::type::string) {
@@ -491,6 +560,7 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
     std::string requested_path = normalize_absolute_path(me->m_test_path);
     auto scope_iter = scope.begin();
     //std::cout << "Comparing scope " << scope << " against test accesses " << me->m_test_authz << ":" << requested_path << std::endl;
+    bool compat_modify = false, compat_create = false, compat_cancel = false;
     while (scope_iter != scope.end()) {
         while (*scope_iter == ' ') {scope_iter++;}
         auto next_scope_iter = std::find(scope_iter, scope.end(), ' ');
@@ -507,6 +577,25 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
         }
         path = normalize_absolute_path(path);
 
+        // If we are in compatibility mode and this is a WLCG token, then translate the authorization
+        // names to utilize the SciToken-style names.
+        if (me->m_validate_profile == SciToken::Profile::COMPAT &&
+            me->m_validator.get_profile() == SciToken::Profile::WLCG_1_0) {
+            if (authz == "storage.read") {
+                authz = "read";
+            } else if (authz == "storage.write") {
+                authz = "write";
+            } else if (authz == "compute.read") {
+                authz = "condor:/READ";
+            } else if (authz == "compute.modify") {
+                compat_modify = true;
+            } else if (authz == "compute.create") {
+                compat_create = true;
+            } else if (authz == "compute.cancel") {
+                compat_cancel = true;
+            }
+        }
+
         if (me->m_test_authz.empty()) {
             me->m_gen_acls.emplace_back(authz, path);
         } else if ((me->m_test_authz == authz) &&
@@ -516,5 +605,17 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
 
         scope_iter = next_scope_iter;
     }
+
+    // Compatibility mode: the combination on compute modify, create, and cancel mode are equivalent
+    // to the condor:/WRITE authorization.
+    if (compat_modify && compat_create && compat_cancel) {
+        if (me->m_test_authz.empty()) {
+            me->m_gen_acls.emplace_back("condor", "/WRITE");
+        } else if ((me->m_test_authz == "condor") &&
+                   (requested_path.substr(0, 6) == "/WRITE")) {
+            return true;
+        }
+    }
+
     return me->m_test_authz.empty();
 }
