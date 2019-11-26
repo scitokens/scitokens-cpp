@@ -1,0 +1,22 @@
+name: RPM Build
+
+on:
+  pull_request:
+    branches: 
+      - master
+  push:
+    branches: 
+      - master
+
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Build RPM
+      uses: mmornati/docker-mock-rpmbuilder@master
+      env = {
+        SPEC_FILE = "rpm/scitokens-cpp.spec"
+        SOURCES = $GITHUB_WORKSPACE
+        MOCK_CONFIG = "epel-7-x86_64"
+      }
