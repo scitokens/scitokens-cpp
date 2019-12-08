@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.3.5
+Version: 0.4.0
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -18,6 +18,7 @@ Source0: https://github.com/scitokens/scitokens-cpp/releases/download/v%{version
 # by this package.
 
 BuildRequires: gcc-c++
+BuildRequires: make
 BuildRequires: cmake
 BuildRequires: sqlite-devel
 BuildRequires: openssl-devel
@@ -76,6 +77,9 @@ do_build
 %dir %{_includedir}/scitokens
 
 %changelog
+* Fri Nov 08 2019 Derek Weitzel <dweitzel@unl.edu> - 0.4.0-1
+- Add support for WLCG profile
+
 * Fri Nov 08 2019 Derek Weitzel <dweitzel@unl.edu> - 0.3.5-1
 - Fix EC public key handling
 
