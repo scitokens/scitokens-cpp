@@ -187,7 +187,7 @@ public:
                 m_claims["aud"] = std::string("ANY");
             }
         } else if (m_serialize_profile == Profile::WLCG_1_0) {
-            m_claims["wlcg_ver"] = std::string("1.0");
+            m_claims["wlcg.ver"] = std::string("1.0");
             auto iter = m_claims.find("aud");
             if (iter == m_claims.end()) {
                 m_claims["aud"] = std::string("https://wlcg.cern.ch/jwt/v1/any");
