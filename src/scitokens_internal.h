@@ -134,6 +134,11 @@ public:
         m_serialize_profile = profile;
     }
 
+    void
+    set_deserialize_mode(Profile profile) {
+        m_deserialize_profile = profile;
+    }
+
     const jwt::claim
     get_claim(const std::string &key) {
         return m_claims[key];
@@ -205,6 +210,7 @@ private:
     int m_lifetime{600};
     Profile m_profile{Profile::SCITOKENS_1_0};
     Profile m_serialize_profile{Profile::COMPAT};
+    Profile m_deserialize_profile{Profile::COMPAT};
     std::unordered_map<std::string, jwt::claim> m_claims;
     std::unique_ptr<jwt::decoded_jwt> m_decoded;
     SciTokenKey &m_key;

@@ -67,11 +67,24 @@ int scitoken_set_claim_string(SciToken token, const char *key, const char *value
 }
 
 
+void scitoken_set_serialize_profile(SciToken token, SciTokenProfile profile) {
+    scitoken_set_serialize_mode(token, profile);
+}
+
+
 void scitoken_set_serialize_mode(SciToken token, SciTokenProfile profile) {
     scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
     if (real_token == nullptr) {return;}
 
     real_token->set_serialize_mode(static_cast<scitokens::SciToken::Profile>(profile));
+}
+
+
+void scitoken_set_deserialize_profile(SciToken token, SciTokenProfile profile) {
+    scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
+    if (real_token == nullptr) {return;}
+
+    real_token->set_deserialize_mode(static_cast<scitokens::SciToken::Profile>(profile));
 }
 
 
@@ -150,6 +163,18 @@ int scitoken_deserialize(const char *value, SciToken *token, char const* const* 
     scitokens::SciTokenKey key;
     scitokens::SciToken *real_token = new scitokens::SciToken(key);
 
+    int retval = scitoken_deserialize_v2(value, reinterpret_cast<SciToken>(real_token), allowed_issuers, err_msg);
+    if (retval) {
+        delete real_token;
+    } else {
+        *token = real_token;
+    }
+    return retval;
+}
+
+int scitoken_deserialize_v2(const char *value, SciToken token, char const* const* allowed_issuers, char **err_msg) {
+    scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
+
     std::vector<std::string> allowed_issuers_vec;
     if (allowed_issuers != nullptr) {
         for (int idx=0; allowed_issuers[idx]; idx++) {
@@ -165,7 +190,6 @@ int scitoken_deserialize(const char *value, SciToken *token, char const* const* 
         }
         return -1;
     }
-    *token = real_token;
     return 0;
 }
 

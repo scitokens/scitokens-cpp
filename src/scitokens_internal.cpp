@@ -341,6 +341,7 @@ SciToken::deserialize(const std::string &data, const std::vector<std::string> al
     scitokens::Validator val;
     val.add_allowed_issuers(allowed_issuers);
     val.set_validate_all_claims_scitokens_1(false);
+    val.set_validate_profile(m_deserialize_profile);
     val.verify(*m_decoded);
 
     // Set all the claims
