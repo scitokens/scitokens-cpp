@@ -149,12 +149,37 @@ public:
         return m_claims.find(key) != m_claims.end();
     }
 
+    void
+    set_claim_list(const std::string &claim, std::vector<std::string> &claim_list) {
+        picojson::array array;
+        array.reserve(claim_list.size());
+        for (const auto &entry : claim_list) {
+            array.emplace_back(entry);
+        }
+        m_claims[claim] = jwt::claim(picojson::value(array));
+    }
+
     // Return a claim as a string
     // If the claim is not a string, it can throw
     // a std::bad_cast() exception.
     const std::string
     get_claim_string(const std::string &key) {
         return m_claims[key].as_string();
+    }
+
+    const std::vector<std::string>
+    get_claim_list(const std::string &key) {
+        picojson::array array;
+        try {
+            array = m_claims[key].as_array();
+        } catch (std::bad_cast &) {
+            throw JsonException("Claim's value is not a JSON list");
+        }
+       std::vector<std::string> result;
+       for (const auto &value : array) {
+           result.emplace_back(value.get<std::string>());
+       }
+       return result;
     }
 
     void

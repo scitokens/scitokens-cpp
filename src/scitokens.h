@@ -47,6 +47,27 @@ int scitoken_set_claim_string(SciToken token, const char *key, const char *value
 
 int scitoken_get_claim_string(const SciToken token, const char *key, char **value, char **err_msg);
 
+/**
+ * Given a SciToken object, parse a specific claim's value as a list of strings.  If the JSON value
+ * is not actually a list of strings - or the claim is not set - returns an error and sets the
+ * err_msg appropriately.
+ *
+ * The returned value is a list of strings that ends with a nullptr.
+ */
+int scitoken_get_claim_string_list(const SciToken token, const char *key, char ***value, char **err_msg);
+
+/**
+ * Given a list of strings that was returned by scitoken_get_claim_string_list, free all the associated
+ * memory.
+ */
+void scitoken_free_string_list(char **value);
+
+/**
+ * Set the value of a claim to a list of strings.
+ */
+int scitoken_set_claim_string_list(const SciToken token, const char *key,
+    const char **values, char **err_msg);
+
 int scitoken_get_expiration(const SciToken token, long long *value, char **err_msg);
 
 void scitoken_set_lifetime(SciToken token, int lifetime);
