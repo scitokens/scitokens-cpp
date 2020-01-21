@@ -77,6 +77,15 @@ class SerializeTest : public ::testing::Test {
                 "1", ec_public, &err_msg);
             ASSERT_TRUE(rv == 0);
 
+            const char *groups[3] = {nullptr, nullptr, nullptr};
+            const char group0[] = "group0";
+            const char group1[] = "group1";
+            groups[0] = group0;
+            groups[1] = group1;
+            rv = scitoken_set_claim_string_list(m_token.get(), "groups", groups,
+                &err_msg);
+            ASSERT_TRUE(rv == 0);
+
             m_read_token.reset(scitoken_create(nullptr));
             ASSERT_TRUE(m_read_token.get() != nullptr);
         }
@@ -113,6 +122,23 @@ TEST_F(SerializeTest, VerifyTest) {
     value_ptr.reset();
     rv = scitoken_get_claim_string(m_read_token.get(), "doesnotexist", &value, &err_msg);
     EXPECT_FALSE(rv == 0);
+}
+
+TEST_F(SerializeTest, TestStringList) {
+    char *err_msg = nullptr;
+
+    char **value;
+    auto rv = scitoken_get_claim_string_list(m_token.get(), "groups", &value, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(value != nullptr);
+
+    ASSERT_TRUE(value[0] != nullptr);
+    EXPECT_STREQ(value[0], "group0");
+
+    ASSERT_TRUE(value[1] != nullptr);
+    EXPECT_STREQ(value[1], "group1");
+
+    EXPECT_TRUE(value[2] == nullptr);
 }
 
 
