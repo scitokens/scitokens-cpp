@@ -57,9 +57,15 @@ int scitoken_serialize(const SciToken token, char **value, char **err_msg);
  * Set the profile used for serialization; if COMPAT mode is used, then
  * the library default is utilized (currently, scitokens 1.0).
  */
+void scitoken_set_serialize_profile(SciToken token, SciTokenProfile profile);
+
 void scitoken_set_serialize_mode(SciToken token, SciTokenProfile profile);
 
+void scitoken_set_deserialize_profile(SciToken token, SciTokenProfile profile);
+
 int scitoken_deserialize(const char *value, SciToken *token, char const* const* allowed_issuers, char **err_msg);
+
+int scitoken_deserialize_v2(const char *value, SciToken token, char const* const* allowed_issuers, char **err_msg);
 
 int scitoken_store_public_ec_key(const char *issuer, const char *keyid, const char *value, char **err_msg);
 

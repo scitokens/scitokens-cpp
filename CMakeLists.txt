@@ -79,11 +79,9 @@ if( BUILD_UNITTESTS )
 include(ExternalProject)
 ExternalProject_Add(gtest
     PREFIX external/gtest
-    SOURCE_DIR ${PROJECT_SOURCE_DIR}/vendor/gtest
-    BUILD_BYPRODUCTS ${CMAKE_BINARY_DIR}/external/gtest/src/gtest-build/lib/libgtest.a
+    URL file://${PROJECT_SOURCE_DIR}/vendor/gtest
     INSTALL_COMMAND :
 )
-
 enable_testing()
 add_subdirectory(test)
 endif()
