@@ -104,6 +104,68 @@ int scitoken_get_claim_string(const SciToken token, const char *key, char **valu
 }
 
 
+int scitoken_set_claim_string_list(const SciToken token, const char *key,
+    const char **value, char **err_msg)
+{
+    auto real_token = reinterpret_cast<scitokens::SciToken*>(token);
+    if (real_token == nullptr) {
+        if (err_msg) *err_msg = strdup("NULL scitoken passed to scitoken_get_claim_string_list");
+        return -1;
+    }
+    std::vector<std::string> claim_list;
+    int idx = 0;
+    while (value[idx++]) {}
+    claim_list.reserve(idx);
+
+    idx = 0;
+    while (value[idx++]) {
+        claim_list.emplace_back(value[idx-1]);
+    }
+    real_token->set_claim_list(key, claim_list);
+
+    return 0;
+}
+
+
+int scitoken_get_claim_string_list(const SciToken token, const char *key, char ***value, char **err_msg) {
+    auto real_token = reinterpret_cast<scitokens::SciToken*>(token);
+    if (real_token == nullptr) {
+        if (err_msg) *err_msg = strdup("NULL scitoken passed to scitoken_get_claim_string_list");
+        return -1;
+    }
+    std::vector<std::string> claim_list;
+    try {
+        claim_list = real_token->get_claim_list(key);
+    } catch (std::exception &exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    auto claim_list_c = static_cast<char **>(malloc(sizeof(char **) * (claim_list.size() + 1)));
+    claim_list_c[claim_list.size()] = nullptr;
+    int idx = 0;
+    for (const auto &entry : claim_list) {
+        claim_list_c[idx] = strdup(entry.c_str());
+        if (!claim_list_c[idx]) {
+            scitoken_free_string_list(claim_list_c);
+            if (err_msg) {*err_msg = strdup("Failed to create a copy of string entry in list");}
+            return -1;
+        }
+        idx++;
+    }
+    *value = claim_list_c;
+    return 0;
+}
+
+
+void scitoken_free_string_list(char **value) {
+    int idx = 0;
+    do {
+        free(value[idx++]);
+    } while (value[idx]);
+    free(value);
+}
+
+
 int scitoken_get_expiration(const SciToken token, long long *expiry, char **err_msg) {
     scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
     if (!real_token->has_claim("exp")) {
