@@ -580,21 +580,19 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
 
         // If we are in compatibility mode and this is a WLCG token, then translate the authorization
         // names to utilize the SciToken-style names.
-        if (me->m_validate_profile == SciToken::Profile::COMPAT &&
-            me->m_validator.get_profile() == SciToken::Profile::WLCG_1_0) {
-            if (authz == "storage.read") {
-                authz = "read";
-            } else if (authz == "storage.write") {
-                authz = "write";
-            } else if (authz == "compute.read") {
-                authz = "condor:/READ";
-            } else if (authz == "compute.modify") {
-                compat_modify = true;
-            } else if (authz == "compute.create") {
-                compat_create = true;
-            } else if (authz == "compute.cancel") {
-                compat_cancel = true;
-            }
+        // No longer need to be compatibility mode or a WLCG token
+        if (authz == "storage.read") {
+            authz = "read";
+        } else if (authz == "storage.write") {
+            authz = "write";
+        } else if (authz == "compute.read") {
+            authz = "condor:/READ";
+        } else if (authz == "compute.modify") {
+            compat_modify = true;
+        } else if (authz == "compute.create") {
+            compat_create = true;
+        } else if (authz == "compute.cancel") {
+            compat_cancel = true;
         }
 
         if (me->m_test_authz.empty()) {

@@ -1,6 +1,7 @@
 #include "../src/scitokens.h"
 
 #include <gtest/gtest.h>
+#include <string>
 
 namespace {
 
@@ -176,6 +177,65 @@ TEST_F(SerializeTest, VerifyWLCGTest) {
     scitoken_set_deserialize_profile(m_read_token.get(), SciTokenProfile::SCITOKENS_1_0);
     rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
     ASSERT_FALSE(rv == 0);
+}
+
+TEST_F(SerializeTest, VerifyCompute) {
+    char *err_msg = nullptr;
+    
+    char *token_value = nullptr;
+
+    m_token = TokenPtr(scitoken_create(m_key.get()), scitoken_destroy);
+    ASSERT_TRUE(m_token.get() != nullptr);
+
+    auto rv = scitoken_set_claim_string(m_token.get(), "iss",
+        "https://demo.scitokens.org/gtest", &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::SCITOKENS_1_0);
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    // Set the scope
+    rv = scitoken_set_claim_string(m_token.get(), "scope", "compute.cancel compute.modify compute.create", &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    // Set the audience
+    rv = scitoken_set_claim_string(m_token.get(), "aud", "demo.test", &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    // Get the issuer from the token
+    char* issuer_ptr = NULL;
+    rv = scitoken_get_claim_string(m_token.get(), "iss", &issuer_ptr, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    std::string issuer(issuer_ptr);
+    delete issuer_ptr;
+
+    // Serialize and desearilze the token
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+
+    // Create the enforcer
+    Enforcer enf;
+    const char* aud_list[2];
+    aud_list[0] = "demo.test";
+    aud_list[1] = NULL;
+    enf = enforcer_create(issuer.c_str(), aud_list, &err_msg);
+    ASSERT_FALSE(enf == 0);
+
+    // Test the enforcer
+    Acl acl;
+    acl.authz = "condor";
+    acl.resource = "/WRITE";
+    rv = enforcer_test(enf, m_read_token.get(), &acl, &err_msg);
+    printf("After err: %s\n", err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    // Destroy the enforcer
+    enforcer_destroy(enf);
+
 }
 
 
