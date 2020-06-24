@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.5.0
+Version: 0.5.1
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -77,6 +77,9 @@ do_build
 %dir %{_includedir}/scitokens
 
 %changelog
+* Wed Jun 24 2020 Derek Weitzel <dweitzel@unl.edu> - 0.5.1-1
+- Add storage.modify as write permission
+
 * Fri Feb 28 2020 Derek Weitzel <dweitzel@unl.edu> - 0.5.0-1
 - Add API for retrieving string list attributes
 
