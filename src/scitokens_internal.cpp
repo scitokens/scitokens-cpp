@@ -580,14 +580,17 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
 
         // If we are in compatibility mode and this is a WLCG token, then translate the authorization
         // names to utilize the SciToken-style names.
+        std::string alt_authz;
         if (me->m_validate_profile == SciToken::Profile::COMPAT &&
             me->m_validator.get_profile() == SciToken::Profile::WLCG_1_0) {
             if (authz == "storage.read") {
                 authz = "read";
-            } else if (authz == "storage.write") {
+            } else if (authz == "storage.create") {
                 authz = "write";
+                alt_authz = "create";
             } else if (authz == "storage.modify") {
                 authz = "write";
+                alt_authz = "modify";
             } else if (authz == "compute.read") {
                 authz = "condor:/READ";
             } else if (authz == "compute.modify") {
@@ -601,7 +604,8 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
 
         if (me->m_test_authz.empty()) {
             me->m_gen_acls.emplace_back(authz, path);
-        } else if ((me->m_test_authz == authz) &&
+            if (!alt_authz.empty()) me->m_gen_acls.emplace_back(alt_authz, path);
+        } else if (((me->m_test_authz == authz) || (!alt_authz.empty() &&  (me->m_test_authz == alt_authz))) &&
                    (requested_path.substr(0, path.size()) == path)) {
             return true;
         }
