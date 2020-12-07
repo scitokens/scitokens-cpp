@@ -203,7 +203,7 @@ public:
         uuid_generate(uuid);
         char uuid_str[37];
         uuid_unparse_lower(uuid, uuid_str);
-        m_claims["jti"] = std::string(uuid_str);
+        m_claims["jti"] = jwt::claim(std::string(uuid_str));
 
         if (m_serialize_profile == Profile::SCITOKENS_2_0) {
             m_claims["ver"] = std::string("scitokens:2.0");
