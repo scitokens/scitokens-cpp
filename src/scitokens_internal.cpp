@@ -5,7 +5,7 @@
 #include <curl/curl.h>
 #include <jwt-cpp/base.h>
 #include <jwt-cpp/jwt.h>
-#include <jwt-cpp/picojson.h>
+#include <picojson/picojson.h>
 #include <openssl/bn.h>
 #include <openssl/ec.h>
 
