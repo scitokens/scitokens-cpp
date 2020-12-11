@@ -2,6 +2,8 @@
 cmake_minimum_required( VERSION 2.6 )
 project( scitokens-cpp )
 
+include(GNUInstallDirs)
+
 option( BUILD_UNITTESTS "Build the scitokens-cpp unit tests" OFF )
 
 set( CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
@@ -66,14 +68,6 @@ target_link_libraries(scitokens-list-access SciTokens)
 add_executable(scitokens-create src/create.cpp)
 target_link_libraries(scitokens-create SciTokens)
 
-if (NOT DEFINED LIB_INSTALL_DIR)
-  SET(LIB_INSTALL_DIR "lib")
-endif()
-
-if (NOT DEFINED INCLUDE_INSTALL_DIR)
-  SET(INCLUDE_INSTALL_DIR "include")
-endif()
-
 if( BUILD_UNITTESTS )
 
 include(ExternalProject)
@@ -88,11 +82,11 @@ endif()
 
 install(
   TARGETS SciTokens
-  LIBRARY DESTINATION ${LIB_INSTALL_DIR} )
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} )
 
 install(
   FILES src/scitokens.h
-  DESTINATION ${INCLUDE_INSTALL_DIR}/scitokens )
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/scitokens )
 
 set_target_properties(
   SciTokens
