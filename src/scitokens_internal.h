@@ -390,7 +390,7 @@ public:
                  }
              }
              // std::cout << "Running claim " << claim_pair.first << " through validation." << std::endl;
-             if (iter != m_validators.end()) for (const auto verification_func : iter->second) {
+             if (iter != m_validators.end()) for (const auto &verification_func : iter->second) {
                  const jwt::claim &claim = jwt.get_payload_claim(claim_pair.first);
                  if (claim.get_type() != jwt::claim::type::string) {
                      std::stringstream ss;
@@ -409,7 +409,7 @@ public:
                      }
                  }
              }
-             if (iter_claim != m_claim_validators.end()) for (const auto verification_pair : iter_claim->second) {
+             if (iter_claim != m_claim_validators.end()) for (const auto &verification_pair : iter_claim->second) {
                  const jwt::claim &claim = jwt.get_payload_claim(claim_pair.first);
                  if (verification_pair.first(claim, verification_pair.second) == false) {
                      std::stringstream ss;
