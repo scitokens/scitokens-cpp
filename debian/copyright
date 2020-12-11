@@ -1,0 +1,25 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: scitokens-cpp
+Upstream-Contact: Derek Weitzel <djw8605@gmail.com>
+Source: https://github.com/scitokens/scitokens-cpp
+
+Files: *
+Copyright: 2019-2020, HTCondor Team, Computer Sciences Department,
+                      University of Wisconsin-Madison, WI.
+License: Apache-2.0
+
+Files: debian/*
+Copyright: 2020, Cardiff University <macleoddm@cardiff.ac.uk>
+License: Apache-2.0
+
+License: Apache-2.0
+ This file is licensed under the terms of the Apache License Version 2.0
+ http://www.apache.org/licenses. This notice must appear in modified or not
+ redistributions of this file.
+ .
+ Redistributions of this Software, with or without modification, must
+ reproduce the Apache License in: (1) the Software, or (2) the Documentation
+ or some other similar material which is provided with the Software (if any).
+ .
+ On Debian systems, the full text of the Apache License version 2 can be found
+ in the file `/usr/share/common-licenses/Apache-2.0'.

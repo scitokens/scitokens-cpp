@@ -1,1 +1,9 @@
 build
+
+# debian build artifacts
+debian/*.debhelper.log
+debian/*.substvars
+debian/.debhelper/
+debian/files
+debian/libscitokens*/
+debian/tmp/

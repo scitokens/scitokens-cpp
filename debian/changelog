@@ -1,0 +1,5 @@
+scitokens-cpp (0.5.1-1) unstable; urgency=low
+
+  * first debian packaging
+
+ -- Duncan Macleod <duncan.macleod@ligo.org>  Fri, 11 Dec 2020 10:18:00 +0000
