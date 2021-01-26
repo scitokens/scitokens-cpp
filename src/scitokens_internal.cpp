@@ -100,7 +100,7 @@ parse_url(const std::string &url, std::string &schema, std::string &netloc,
     schema.reserve(distance(url.begin(), prot_iter));
     std::transform(url.begin(), prot_iter,
                   std::back_inserter(schema),
-                  std::ptr_fun<int,int>(tolower));
+                  std::function<int(int)>(tolower));
     if (prot_iter == url.end() )
     {
         throw InvalidIssuerException("Issuer URL missing hostname.");
@@ -110,7 +110,7 @@ parse_url(const std::string &url, std::string &schema, std::string &netloc,
     netloc.reserve(std::distance(prot_iter, path_iter));
     std::transform(prot_iter, path_iter,
                    std::back_inserter(netloc),
-                   std::ptr_fun<int,int>(tolower));
+                   std::function<int(int)>(tolower));
     std::string::const_iterator query_iter = std::find(path_iter, url.end(), '?');
     path.assign(path_iter, query_iter);
 }
