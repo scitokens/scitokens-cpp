@@ -1,6 +1,7 @@
 
 #include <memory>
 #include <sstream>
+#include <functional>
 
 #include <curl/curl.h>
 #include <jwt-cpp/base.h>
