@@ -11,7 +11,7 @@
 #ifndef PICOJSON_USE_INT64
 #define PICOJSON_USE_INT64
 #endif
-#include <jwt-cpp/picojson.h>
+#include <picojson/picojson.h>
 #include <sqlite3.h>
 
 #include "scitokens_internal.h"
