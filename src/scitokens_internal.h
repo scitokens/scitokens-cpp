@@ -206,7 +206,7 @@ public:
         m_claims["jti"] = jwt::claim(std::string(uuid_str));
 
         if (m_serialize_profile == Profile::SCITOKENS_2_0) {
-            m_claims["ver"] = jwt::claim(std::string("scitokens:2.0"));
+            m_claims["ver"] = jwt::claim(std::string("scitoken:2.0"));
             auto iter = m_claims.find("aud");
             if (iter == m_claims.end()) {
                 m_claims["aud"] = jwt::claim(std::string("ANY"));
@@ -312,7 +312,7 @@ public:
                 throw jwt::token_verification_exception("'ver' claim value must be a string (if present)");
             }
             std::string ver_string = claim.as_string();
-            if (ver_string == "scitokens:2.0") {
+            if ((ver_string == "scitokens:2.0") || (ver_string == "scitoken:2.0")) {
                 must_verify_everything = false;
                 if ((m_validate_profile != SciToken::Profile::COMPAT) &&
                     (m_validate_profile != SciToken::Profile::SCITOKENS_2_0))
