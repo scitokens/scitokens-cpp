@@ -203,19 +203,19 @@ public:
         uuid_generate(uuid);
         char uuid_str[37];
         uuid_unparse_lower(uuid, uuid_str);
-        m_claims["jti"] = std::string(uuid_str);
+        m_claims["jti"] = jwt::claim(std::string(uuid_str));
 
         if (m_serialize_profile == Profile::SCITOKENS_2_0) {
-            m_claims["ver"] = std::string("scitokens:2.0");
+            m_claims["ver"] = jwt::claim(std::string("scitoken:2.0"));
             auto iter = m_claims.find("aud");
             if (iter == m_claims.end()) {
-                m_claims["aud"] = std::string("ANY");
+                m_claims["aud"] = jwt::claim(std::string("ANY"));
             }
         } else if (m_serialize_profile == Profile::WLCG_1_0) {
-            m_claims["wlcg.ver"] = std::string("1.0");
+            m_claims["wlcg.ver"] = jwt::claim(std::string("1.0"));
             auto iter = m_claims.find("aud");
             if (iter == m_claims.end()) {
-                m_claims["aud"] = std::string("https://wlcg.cern.ch/jwt/v1/any");
+                m_claims["aud"] = jwt::claim(std::string("https://wlcg.cern.ch/jwt/v1/any"));
             }
         }
 
@@ -312,7 +312,7 @@ public:
                 throw jwt::token_verification_exception("'ver' claim value must be a string (if present)");
             }
             std::string ver_string = claim.as_string();
-            if (ver_string == "scitokens:2.0") {
+            if ((ver_string == "scitokens:2.0") || (ver_string == "scitoken:2.0")) {
                 must_verify_everything = false;
                 if ((m_validate_profile != SciToken::Profile::COMPAT) &&
                     (m_validate_profile != SciToken::Profile::SCITOKENS_2_0))

@@ -1,7 +1,7 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
+#include <memory>
 
 #include <pwd.h>
 #include <stdlib.h>
@@ -11,7 +11,7 @@
 #ifndef PICOJSON_USE_INT64
 #define PICOJSON_USE_INT64
 #endif
-#include <jwt-cpp/picojson.h>
+#include <picojson/picojson.h>
 #include <sqlite3.h>
 
 #include "scitokens_internal.h"
@@ -54,12 +54,11 @@ get_cache_file() {
     auto bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
     bufsize = (bufsize == -1) ? 16384 : bufsize;
 
-    std::vector<char> buf;
-    buf.reserve(bufsize);
+    std::unique_ptr<char[]> buf(new char[bufsize]);
 
     std::string home_dir;
     struct passwd pwd, *result = NULL;
-    getpwuid_r(geteuid(), &pwd, &buf[0], bufsize, &result);
+    getpwuid_r(geteuid(), &pwd, buf.get(), bufsize, &result);
     if (result && result->pw_dir) {
         home_dir = result->pw_dir;
         home_dir += "/.cache";
