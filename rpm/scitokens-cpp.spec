@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.5.1
+Version: 0.6.0
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -77,6 +77,11 @@ do_build
 %dir %{_includedir}/scitokens
 
 %changelog
+* Tue Mar 09 2021 Derek Weitzel <dweitzel@unl.edu> - 0.6.0-1
+- Fix compilation errors on c++11
+- Update to jwt-cpp-0.4.0 vendor
+- Change scitoken profile name to match spec, scitoken:2.0
+
 * Wed Jun 24 2020 Derek Weitzel <dweitzel@unl.edu> - 0.5.1-1
 - Add storage.modify as write permission
 
