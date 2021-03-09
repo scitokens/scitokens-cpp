@@ -1,4 +1,4 @@
-scitokens-cpp (0.6.0) unstable; urgency=low
+scitokens-cpp (0.6.0-1) unstable; urgency=medium
 
   * Fix compilation errors on c++11
   * Update to jwt-cpp-0.4.0 vendor
