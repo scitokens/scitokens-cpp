@@ -1,3 +1,9 @@
+scitokens-cpp (0.6.0-2) unstable; urgency=medium
+
+  * Fix empty libscitokens0 package
+
+ -- Tim Theisen <tim@cs.wisc.edu>  Fri, 26 Mar 2021 08:11:00 -0500
+
 scitokens-cpp (0.6.0-1) unstable; urgency=medium
 
   * Fix compilation errors on c++11
