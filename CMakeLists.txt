@@ -3,6 +3,7 @@ cmake_minimum_required( VERSION 2.6 )
 project( scitokens-cpp )
 
 option( BUILD_UNITTESTS "Build the scitokens-cpp unit tests" OFF )
+option( EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF )
 
 set( CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
 
@@ -69,13 +70,14 @@ add_executable(scitokens-create src/create.cpp)
 target_link_libraries(scitokens-create SciTokens)
 
 if( BUILD_UNITTESTS )
-
+if( NOT EXTERNAL_GTEST )
 include(ExternalProject)
 ExternalProject_Add(gtest
     PREFIX external/gtest
-    URL file://${PROJECT_SOURCE_DIR}/vendor/gtest
+    URL ${CMAKE_CURRENT_SOURCE_DIR}/vendor/gtest
     INSTALL_COMMAND :
 )
+endif()
 enable_testing()
 add_subdirectory(test)
 endif()
