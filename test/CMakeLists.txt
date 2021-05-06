@@ -9,5 +9,5 @@ add_test(
   NAME
     unit
   COMMAND
-    ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}/test/scitokens-gtest
+    ${CMAKE_CURRENT_BINARY_DIR}/scitokens-gtest
   )
