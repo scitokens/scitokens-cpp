@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.6.0
+Version: 0.6.1
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -46,22 +46,11 @@ Requires: %{name}%{?_isa} = %{version}
 %setup -q
 
 %build
-do_build () {
-    set -ex
-    mkdir build
-    cd build
-    %cmake ..
-    %make_build
-}
-export -f do_build
-%if 0%{?el6}
-scl enable devtoolset-8 do_build
-%else
-do_build
-%endif
+%cmake3
+%cmake3_build
 
 %install
-%make_install -C build
+%cmake3_install
 
 # Run the ldconfig
 %ldconfig_scriptlets
@@ -77,6 +66,12 @@ do_build
 %dir %{_includedir}/scitokens
 
 %changelog
+* Thu May 20 2021 Derek Weitzel <dweitzel@unl.edu> - 0.6.1-1
+- Fix vector resize for el8+ builds
+
+* Tue May 18 2021 Derek Weitzel <dweitzel@unl.edu> - 0.6.0-2
+- Add back paren patch
+
 * Tue Mar 09 2021 Derek Weitzel <dweitzel@unl.edu> - 0.6.0-1
 - Fix compilation errors on c++11
 - Update to jwt-cpp-0.4.0 vendor
