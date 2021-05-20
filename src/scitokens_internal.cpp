@@ -46,7 +46,10 @@ public:
         }
 
         if (m_maxbytes > 0) {
-            m_data.reserve(std::min(m_maxbytes, 8*1024));
+            size_t new_size = std::min(m_maxbytes, 8*1024);
+            if (m_data.size() < new_size) {
+                m_data.resize(new_size);
+            }
         }
 
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -82,7 +85,9 @@ private:
         if (myself->m_maxbytes > 0 && (new_length > static_cast<size_t>(myself->m_maxbytes))) {
             return 0;
         }
-        myself->m_data.reserve(new_length);
+        if (myself->m_data.size() < new_length) {
+            myself->m_data.resize(new_length);
+        }
         memcpy(&(myself->m_data[myself->m_len]), buffer, new_data);
         myself->m_len = new_length;
         return new_data;
