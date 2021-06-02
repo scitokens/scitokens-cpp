@@ -598,7 +598,8 @@ scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
                 authz = "write";
                 alt_authz = "modify";
             } else if (authz == "compute.read") {
-                authz = "condor:/READ";
+                authz = "condor";
+                path = "READ";
             } else if (authz == "compute.modify") {
                 compat_modify = true;
             } else if (authz == "compute.create") {
