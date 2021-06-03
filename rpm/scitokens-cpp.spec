@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.6.1
+Version: 0.6.2
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -24,12 +24,6 @@ BuildRequires: sqlite-devel
 BuildRequires: openssl-devel
 BuildRequires: libcurl-devel
 BuildRequires: libuuid-devel
-
-# Needed for C++11
-%if 0%{?el6}
-BuildRequires: devtoolset-8-toolchain
-BuildRequires: scl-utils
-%endif
 
 %description
 %{summary}
@@ -66,6 +60,9 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+* Thu Jun 03 2021 Derek Weitzel <dweitzel@unl.edu> - 0.6.2-1
+- Correct WLCG compat for condor read permissions
+
 * Thu May 20 2021 Derek Weitzel <dweitzel@unl.edu> - 0.6.1-1
 - Fix vector resize for el8+ builds
 
