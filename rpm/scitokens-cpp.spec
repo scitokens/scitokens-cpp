@@ -19,7 +19,7 @@ Source0: https://github.com/scitokens/scitokens-cpp/releases/download/v%{version
 
 BuildRequires: gcc-c++
 BuildRequires: make
-%if 0%{?rhel} < 8
+%if 0%{?rhel} < 8 && 0%{?osg}
 BuildRequires: cmake3
 %else
 BuildRequires: cmake
