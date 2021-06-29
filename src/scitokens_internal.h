@@ -270,9 +270,6 @@ public:
         if (!jwt.has_payload_claim("iss")) {
             throw jwt::token_verification_exception("'iss' claim is mandatory");
         }
-        if (!jwt.has_header_claim("kid")) {
-            throw jwt::token_verification_exception("'kid' claim is mandatory");
-        }
         if (!m_allowed_issuers.empty()) {
             std::string issuer = jwt.get_issuer();
             bool permitted = false;
@@ -297,9 +294,17 @@ public:
 
         std::string public_pem;
         std::string algorithm;
-        get_public_key_pem(jwt.get_issuer(), jwt.get_key_id(), public_pem, algorithm);
+        // Key id is optional in the RFC, set to blank if it doesn't exist
+        std::string key_id;
+        try {
+            key_id = jwt.get_key_id();
+        } catch (std::runtime_error) {
+            // Don't do anything, key_id is empty, as it should be.
+        }
+
+        get_public_key_pem(jwt.get_issuer(), key_id, public_pem, algorithm);
         // std::cout << "Public PEM: " << public_pem << std::endl << "Algorithm: " << algorithm << std::endl;
-        SciTokenKey key(jwt.get_key_id(), algorithm, public_pem, "");
+        SciTokenKey key(key_id, algorithm, public_pem, "");
         auto verifier = jwt::verify()
             .allow_algorithm(key);
 
