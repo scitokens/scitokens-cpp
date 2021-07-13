@@ -298,7 +298,7 @@ public:
         std::string key_id;
         try {
             key_id = jwt.get_key_id();
-        } catch (std::runtime_error) {
+        } catch (const std::runtime_error&) {
             // Don't do anything, key_id is empty, as it should be.
         }
 
