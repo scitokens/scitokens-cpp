@@ -172,18 +172,26 @@ picojson::value::object find_key_id(const picojson::value json, const std::strin
         throw JsonException("Metadata resource is missing 'keys' array value");
     }
     auto keys_array = iter->second.get<picojson::array>();
-    for (auto &key : keys_array) {
-        if (!key.is<picojson::object>()) {continue;}
+    if (kid.empty()) {
+        if (keys_array.size() != 1) {
+            throw JsonException("Key ID empty but multiple keys published.");
+        }
+        auto &key = keys_array.at(0);
+        return key.get<picojson::object>();
+    } else {
+        for (auto &key : keys_array) {
+            if (!key.is<picojson::object>()) {continue;}
 
-        auto key_obj = key.get<picojson::object>();
-        iter = key_obj.find("kid");
-        if (iter == key_obj.end() || (!iter->second.is<std::string>())) {continue;}
+            auto key_obj = key.get<picojson::object>();
+            iter = key_obj.find("kid");
+            if (iter == key_obj.end() || (!iter->second.is<std::string>())) {continue;}
 
-        std::string cur_kid = iter->second.get<std::string>();
+            std::string cur_kid = iter->second.get<std::string>();
 
-        if (cur_kid == kid) {return key_obj;}
+            if (cur_kid == kid) {return key_obj;}
+        }
+        throw JsonException("Key ID is not published by the issuer.");
     }
-    throw JsonException("Key ID is not published by the issuer.");
 }
 
 
