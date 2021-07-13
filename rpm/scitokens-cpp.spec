@@ -19,7 +19,11 @@ Source0: https://github.com/scitokens/scitokens-cpp/releases/download/v%{version
 
 BuildRequires: gcc-c++
 BuildRequires: make
+%if 0%{?el7}
+BuildRequires: cmake3
+%else
 BuildRequires: cmake
+%endif
 BuildRequires: sqlite-devel
 BuildRequires: openssl-devel
 BuildRequires: libcurl-devel
