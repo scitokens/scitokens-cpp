@@ -1,6 +1,6 @@
 Name: scitokens-cpp
 Version: 0.6.2
-Release: 1%{?dist}
+Release: 2%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
 URL: https://github.com/scitokens/scitokens-cpp
@@ -19,7 +19,7 @@ Source0: https://github.com/scitokens/scitokens-cpp/releases/download/v%{version
 
 BuildRequires: gcc-c++
 BuildRequires: make
-BuildRequires: cmake
+BuildRequires: cmake3
 BuildRequires: sqlite-devel
 BuildRequires: openssl-devel
 BuildRequires: libcurl-devel
@@ -60,6 +60,9 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+* Thu Aug 26 2021 Dave Dykstra <dwd@fnal.gov> - 0.6.2-2
+- Make the build require cmake3 instead of cmake
+
 * Thu Jun 03 2021 Derek Weitzel <dweitzel@unl.edu> - 0.6.2-1
 - Correct WLCG compat for condor read permissions
 
