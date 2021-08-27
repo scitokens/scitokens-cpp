@@ -1,0 +1,5 @@
+This package is built by cvmfs-contrib on the OpenSUSE Build System
+  https://build.opensuse.org/project/show/home:cvmfs:contrib
+OBS requires a little help from the package in order to build on 
+Debian.  Each time there's a new release, run obsupdate.sh in this
+directory and commit the newly updated scitokens-cpp.dsc.

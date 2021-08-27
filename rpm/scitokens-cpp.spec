@@ -1,6 +1,6 @@
 Name: scitokens-cpp
-Version: 0.6.2
-Release: 2%{?dist}
+Version: 0.6.3
+Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
 URL: https://github.com/scitokens/scitokens-cpp
@@ -60,6 +60,9 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+* Fri Aug 27 2021 Dave Dykstra <dwd@fnal.gov> - 0.6.3-1
+- Add support for building Debian packages on the OpenSUSE Build System
+
 * Thu Aug 26 2021 Dave Dykstra <dwd@fnal.gov> - 0.6.2-2
 - Make the build require cmake3 instead of cmake
 
