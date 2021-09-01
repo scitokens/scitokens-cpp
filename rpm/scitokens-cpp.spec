@@ -24,6 +24,10 @@ BuildRequires: sqlite-devel
 BuildRequires: openssl-devel
 BuildRequires: libcurl-devel
 BuildRequires: libuuid-devel
+%if 0%{?el7}
+# needed for ldconfig_scriptlets
+BuildRequires: epel-rpm-macros
+%endif
 
 %description
 %{summary}
