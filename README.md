@@ -48,10 +48,11 @@ Instructions for Generating a Release
 
 SciTokens-cpp includes a submodule, jwt-cpp.  Therefore, to create a release, you have to include the submodule into the release.
 
-    git archive --prefix "scitokens-cpp-0.3.3/" -o "scitokens-cpp-0.3.3.tar" v0.3.3
+    VER=0.3.3 # for example
+    git archive --prefix "scitokens-cpp-$VER/" -o "scitokens-cpp-$VER.tar" v$VER
     git submodule update --init
-    git submodule foreach --recursive "git archive --prefix=scitokens-cpp-0.3.3/\$path/ --output=\$sha1.tar HEAD && tar --concatenate --file=$(pwd)/scitokens-cpp-0.3.3.tar \$sha1.tar && rm \$sha1.tar"
-    gzip "scitokens-cpp-0.3.3.tar"
+    git submodule foreach --recursive "git archive --prefix=scitokens-cpp-$VER/\$path/ --output=\$sha1.tar HEAD && tar --concatenate --file=$(pwd)/scitokens-cpp-$VER.tar \$sha1.tar && rm \$sha1.tar"
+    gzip "scitokens-cpp-$VER.tar"
 
 This package is built on the
 [cvmfs-config OpenSUSE Build Service](https://build.opensuse.org/project/show/home:cvmfs:contrib).
