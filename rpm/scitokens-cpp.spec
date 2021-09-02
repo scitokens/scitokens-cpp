@@ -6,10 +6,11 @@ License: ASL 2.0
 URL: https://github.com/scitokens/scitokens-cpp
 
 # Directions to generate a proper release:
-# git archive --prefix "scitokens-cpp-0.3.3/" -o "scitokens-cpp-0.3.3.tar" v0.3.3
+# VER=0.3.3 # for example
+# git archive --prefix "scitokens-cpp-$VER/" -o "scitokens-cpp-$VER.tar" v$VER
 # git submodule update --init
-# git submodule foreach --recursive "git archive --prefix=scitokens-cpp-0.3.3/\$path/ --output=\$sha1.tar HEAD && tar --concatenate --file=$(pwd)/scitokens-cpp-0.3.3.tar \$sha1.tar && rm \$sha1.tar"
-# gzip "scitokens-cpp-0.3.3.tar"
+# git submodule foreach --recursive "git archive --prefix=scitokens-cpp-$VER/\$path/ --output=\$sha1.tar HEAD && tar --concatenate --file=$(pwd)/scitokens-cpp-$VER.tar \$sha1.tar && rm \$sha1.tar"
+# gzip "scitokens-cpp-$VER.tar"
 Source0: https://github.com/scitokens/scitokens-cpp/releases/download/v%{version}/%{name}-%{version}.tar.gz
 
 # Scitokens-cpp bundles jwt-cpp, a header only dependency
