@@ -65,8 +65,11 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
-* Fri Aug 27 2021 Dave Dykstra <dwd@fnal.gov> - 0.6.3-1
+* Fri Sep 03 2021 Dave Dykstra <dwd@fnal.gov> - 0.6.3-1
 - Add support for building Debian packages on the OpenSUSE Build System
+- Add patch to jwt-cpp to update its picojson dependency in order to
+  enable it to compile on Debian 11 and Ubuntu 21.04
+- Fix el7 build by requiring epel-rpm-macros
 
 * Thu Aug 26 2021 Dave Dykstra <dwd@fnal.gov> - 0.6.2-2
 - Make the build require cmake3 instead of cmake
