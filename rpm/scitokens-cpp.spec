@@ -56,6 +56,7 @@ Requires: %{name}%{?_isa} = %{version}
 
 %files
 %{_libdir}/libSciTokens.so.0*
+%{_bindir}/scitokens-*
 %license LICENSE
 %doc README.md
 
@@ -65,6 +66,8 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+#- Add scitokens-* binaries to the package
+
 * Fri Sep 03 2021 Dave Dykstra <dwd@fnal.gov> - 0.6.3-1
 - Add support for building Debian packages on the OpenSUSE Build System
 - Add patch to jwt-cpp to update its picojson dependency in order to

@@ -82,9 +82,11 @@ enable_testing()
 add_subdirectory(test)
 endif()
 
+get_directory_property(TARGETS BUILDSYSTEM_TARGETS)
 install(
-  TARGETS SciTokens
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} )
+  TARGETS ${TARGETS} 
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} )
 
 install(
   FILES src/scitokens.h
