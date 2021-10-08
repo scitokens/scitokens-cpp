@@ -13,6 +13,12 @@
 #  For details see the accompanying COPYING-CMAKE-SCRIPTS file.
 #
 
+include(CheckSymbolExists)
+
+# On mac, it can't find uuid library
+# So, just check for the functions with the default include
+CHECK_SYMBOL_EXISTS("uuid_generate" "uuid/uuid.h" UUID_SYMBOL)
+
 if (UUID_SYMBOL)
   set(UUID_FOUND TRUE)
 elseif (UUID_LIBRARIES AND UUID_INCLUDE_DIRS)
