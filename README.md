@@ -54,6 +54,11 @@ SciTokens-cpp includes a submodule, jwt-cpp.  Therefore, to create a release, yo
     git submodule foreach --recursive "git archive --prefix=scitokens-cpp-$VER/\$path/ --output=\$sha1.tar HEAD && tar --concatenate --file=$(pwd)/scitokens-cpp-$VER.tar \$sha1.tar && rm \$sha1.tar"
     gzip "scitokens-cpp-$VER.tar"
 
+Before tagging a new release, make sure that the RPM spec file has an updated
+version number and an associated changelog entry.
+Also, make sure that the ``debian/changelog`` has an entry that matches the
+RPM changelog entry.
+
 This package is built on the
 [cvmfs-config OpenSUSE Build Service](https://build.opensuse.org/project/show/home:cvmfs:contrib).
 In order to support that run `debian/obsupdate.sh` whenever the version

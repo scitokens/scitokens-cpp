@@ -1,3 +1,30 @@
+scitokens-cpp (0.6.3-1) stable; urgency=medium
+
+  * Add support for building Debian packages on the OpenSUSE Build System
+  * Add patch to jwt-cpp to update its picojson dependency in order to
+    enable it to compile on Debian 11 and Ubuntu 21.04
+  * Fix el7 build by requiring epel-rpm-macros
+
+ -- Dave Dykstra <dwd@fnal.gov>  Fri, 03 Sep 2021 12:00:00 -0500
+
+scitokens-cpp (0.6.2-2) stable; urgency=medium
+
+  * Make the build require cmake3 instead of cmake
+
+ -- Dave Dykstra <dwd@fnal.gov>  Thu, 26 Aug 2021 12:00:00 -0500
+
+scitokens-cpp (0.6.2-1) stable; urgency=medium
+
+  * Correct WLCG compat for condor read permissions
+
+ -- Dave Dykstra <dwd@fnal.gov>  Thu, 26 Aug 2021 12:00:00 -0500
+
+scitokens-cpp (0.6.1-1) stable; urgency=medium
+
+  * Fix vector resize for el8+ builds
+
+ -- Derek Weitzel <dweitzel@unl.edu>  Thu, 20 May 2021 12:00:00 -0500
+
 scitokens-cpp (0.6.0-2) unstable; urgency=medium
 
   * Fix empty libscitokens0 package
