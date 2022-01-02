@@ -16,7 +16,7 @@ const char usage[] = \
 "    -c | --cred     <cred_file>  File containing the signing credential.\n"
 "    -i | --issuer      <issuer>  Issuer of the token to verify.\n"
 "    -K | --keyid          <kid>  Name of the token key.\n"
-"    -p | --profile    <profile>  Profile to enforce (wlcg, scitokens1, scitokens2).\n"
+"    -p | --profile    <profile>  Profile to enforce (wlcg, scitokens1, scitokens2, atjwt).\n"
 "\n";
 
 const struct option long_options[] =

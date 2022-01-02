@@ -23,7 +23,7 @@ const char usage[] = \
 "    -k | --key             <key_file>  File containing the signing private key.\n"
 "    -K | --keyid                <kid>  Name of the token key.\n"
 "    -i | --issuer            <issuer>  Issuer for the token.\n"
-"    -p | --profile          <profile>  Token profile (wlcg, scitokens1, scitokens2).\n"
+"    -p | --profile          <profile>  Token profile (wlcg, scitokens1, scitokens2, atjwt).\n"
 "\n";
 
 const struct option long_options[] =
@@ -180,6 +180,8 @@ int main(int argc, char *argv[]) {
             profile = SciTokenProfile::SCITOKENS_1_0;
         } else if (g_profile == "scitokens2") {
             profile = SciTokenProfile::SCITOKENS_2_0;
+        } else if (g_profile == "atjwt") {
+            profile = SciTokenProfile::AT_JWT;
         } else {
             fprintf(stderr, "Unknown token profile: %s\n", g_profile.c_str());
             return 1;
