@@ -25,14 +25,16 @@ Acl;
  * - COMPAT mode (default) indicates any supported token format
  *   is acceptable.  Where possible, the scope names are translated into
  *   equivalent SciTokens 1.0 claim names (i.e., storage.read -> read; storage.write -> write).
- * - SCITOKENS_1_0, SCITOKENS_2_0, WLCG_1_0: only accept these specific profiles.
+ *   If a typ header claim is present, use that to deduce type (RFC8725 Section 3.11).
+ * - SCITOKENS_1_0, SCITOKENS_2_0, WLCG_1_0, AT_JWT: only accept these specific profiles.
  *   No automatic translation is performed.
  */
 typedef enum _profile {
     COMPAT = 0,
     SCITOKENS_1_0,
     SCITOKENS_2_0,
-    WLCG_1_0
+    WLCG_1_0,
+    AT_JWT
 } SciTokenProfile;
 
 SciTokenKey scitoken_key_create(const char *key_id, const char *algorithm, const char *public_contents, const char *private_contents, char **err_msg);

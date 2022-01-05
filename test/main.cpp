@@ -207,6 +207,53 @@ TEST_F(SerializeTest, FailVerifyToken) {
     EXPECT_FALSE(rv == 0);
 }
 
+TEST_F(SerializeTest, VerifyATJWTTest) {
+
+    char *err_msg = nullptr;
+
+    // Serialize as at+jwt token.
+    char *token_value = nullptr;
+    scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::AT_JWT);
+    auto rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Accepts any profile.
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    // Accepts only an at+jwt token, should work with at+jwt token
+    scitoken_set_deserialize_profile(m_read_token.get(), SciTokenProfile::AT_JWT);
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    // Accepts only SciToken 2.0; should fail
+    scitoken_set_deserialize_profile(m_read_token.get(), SciTokenProfile::SCITOKENS_2_0);
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
+    ASSERT_FALSE(rv == 0);
+}
+
+TEST_F(SerializeTest, FailVerifyATJWTTest) {
+
+    char *err_msg = nullptr;
+
+    // Serialize as "compat" token.
+    char *token_value = nullptr;
+    scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::COMPAT);
+    auto rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Accepts any profile.
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    // Accepts only an at+jwt token, should fail with COMPAT token
+    scitoken_set_deserialize_profile(m_read_token.get(), SciTokenProfile::AT_JWT);
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
+    ASSERT_FALSE(rv == 0);
+}
+
 }
 
 int main(int argc, char **argv) {

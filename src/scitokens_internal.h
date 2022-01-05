@@ -116,7 +116,8 @@ public:
         COMPAT = 0,
         SCITOKENS_1_0,
         SCITOKENS_2_0,
-        WLCG_1_0
+        WLCG_1_0,
+        AT_JWT
     };
 
     SciToken(SciTokenKey &signing_algorithm)
@@ -198,6 +199,9 @@ public:
         builder.set_issued_at(time);
         builder.set_not_before(time);
         builder.set_expires_at(time + std::chrono::seconds(m_lifetime));
+        if (m_serialize_profile == Profile::AT_JWT) {
+            builder.set_type("at+jwt");
+        }
 
         uuid_t uuid;
         uuid_generate(uuid);
@@ -258,11 +262,31 @@ public:
     }
 
     void verify(const jwt::decoded_jwt &jwt) {
+        // If token has a typ header claim (RFC8725 Section 3.11), trust that in COMPAT mode.
+        if (jwt.has_type()) {
+            std::string t_type = jwt.get_type();
+            if (m_validate_profile == SciToken::Profile::COMPAT) {
+                if (t_type == "at+jwt" || t_type == "application/at+jwt") {
+                    m_profile = SciToken::Profile::AT_JWT;
+                }
+            } else if (m_validate_profile == SciToken::Profile::AT_JWT) {
+                if (t_type != "at+jwt" && t_type != "application/at+jwt") {
+                    throw jwt::token_verification_exception("'typ' header claim must be at+jwt");
+                }
+                m_profile = SciToken::Profile::AT_JWT;
+            }
+        } else {
+            if (m_validate_profile == SciToken::Profile::AT_JWT) {
+                throw jwt::token_verification_exception("'typ' header claim must be set for at+jwt tokens");
+            }
+        }
         if (!jwt.has_payload_claim("iat")) {
             throw jwt::token_verification_exception("'iat' claim is mandatory");
         }
-        if (!jwt.has_payload_claim("nbf")) {
-            throw jwt::token_verification_exception("'nbf' claim is mandatory");
+        if (m_profile != SciToken::Profile::AT_JWT) {
+            if (!jwt.has_payload_claim("nbf")) {
+                throw jwt::token_verification_exception("'nbf' claim is mandatory");
+            }
         }
         if (!jwt.has_payload_claim("exp")) {
             throw jwt::token_verification_exception("'exp' claim is mandatory");
@@ -365,6 +389,9 @@ public:
             if (!jwt.has_payload_claim("aud")) {
                 throw jwt::token_verification_exception("Malformed token: 'aud' claim required for WLCG profile");
             }
+        } else if (m_profile == SciToken::Profile::AT_JWT) {
+            // detected early above from typ header claim.
+            must_verify_everything = false;
         } else {
             if ((m_validate_profile != SciToken::Profile::COMPAT) &&
                 (m_validate_profile != SciToken::Profile::SCITOKENS_1_0))
