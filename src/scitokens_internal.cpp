@@ -42,7 +42,7 @@ public:
 
         auto curl = curl_easy_init();
         if (!curl) {
-            CurlException("Failed to create a new curl handle.");
+            throw CurlException("Failed to create a new curl handle.");
         }
 
         if (m_maxbytes > 0) {
