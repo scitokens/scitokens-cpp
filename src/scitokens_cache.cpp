@@ -69,18 +69,15 @@ get_cache_file() {
         return "";
     }
 
-    struct stat cache_dir_stat;
-    if (-1 == stat(cache_dir.c_str(), &cache_dir_stat)) {
-        if (errno == ENOENT) {
-            if (-1 == mkdir(cache_dir.c_str(), 0700)) return "";
-        }
+    int r = mkdir(cache_dir.c_str(), 0700);
+    if ((r < 0) && errno != EEXIST) {
+        return "";
     }
 
     std::string keycache_dir = cache_dir + "/scitokens";
-    if (-1 == stat(keycache_dir.c_str(), &cache_dir_stat)) {
-        if (errno == ENOENT) {
-            if (-1 == mkdir(keycache_dir.c_str(), 0700)) return "";
-        }
+    r = mkdir(keycache_dir.c_str(), 0700);
+    if ((r < 0) && errno != EEXIST) {
+        return "";
     }
 
     std::string keycache_file = keycache_dir + "/scitokens_cpp.sqllite";
