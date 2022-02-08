@@ -140,7 +140,7 @@ int scitoken_get_claim_string_list(const SciToken token, const char *key, char *
         if (err_msg) {*err_msg = strdup(exc.what());}
         return -1;
     }
-    auto claim_list_c = static_cast<char **>(malloc(sizeof(char **) * (claim_list.size() + 1)));
+    auto claim_list_c = static_cast<char **>(malloc(sizeof(char *) * (claim_list.size() + 1)));
     claim_list_c[claim_list.size()] = nullptr;
     int idx = 0;
     for (const auto &entry : claim_list) {
