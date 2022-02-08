@@ -52,9 +52,18 @@ public:
             }
         }
 
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &write_data);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, this);
+        CURLcode rv = curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        if (rv != CURLE_OK) {
+            throw CurlException("Failed to set CURLOPT_URL.");
+        }
+        rv = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &write_data);
+        if (rv != CURLE_OK) {
+            throw CurlException("Failed to set CURLOPT_WRITEFUNCTION.");
+        }
+        rv = curl_easy_setopt(curl, CURLOPT_WRITEDATA, this);
+        if (rv != CURLE_OK) {
+            throw CurlException("Failed to set CURLOPT_WRITEDATA.");
+        }
 
         auto res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
