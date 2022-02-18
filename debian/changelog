@@ -1,3 +1,11 @@
+scitokens-cpp (0.7.0-1) stable; urgency=medium
+
+  * Changes from static analysis
+  * If only one key is available, do not error on no kid
+  * Support at+jwt profile
+
+ -- Derek Weitzel <dweitzel@unl.edu>  Fri, 18 Feb 2022 13:16:18 -0600
+
 scitokens-cpp (0.6.3-1) stable; urgency=medium
 
   * Add support for building Debian packages on the OpenSUSE Build System
