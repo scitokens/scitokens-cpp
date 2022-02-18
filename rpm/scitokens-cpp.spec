@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.6.3
+Version: 0.7.0
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -67,6 +67,11 @@ Requires: %{name}%{?_isa} = %{version}
 
 %changelog
 #- Add scitokens-* binaries to the package
+
+* Fri Feb 18 2022 Derek Weitzel <dweitzel@unl.edu> - 0.7.0-1
+- Changes from static analysis
+- If only one key is available, do not error on no kid
+- Support at+jwt profile
 
 * Fri Sep 03 2021 Dave Dykstra <dwd@fnal.gov> - 0.6.3-1
 - Add support for building Debian packages on the OpenSUSE Build System
