@@ -427,7 +427,7 @@ Validator::get_public_keys_from_web(const std::string &issuer, picojson::value &
     keys = json_obj;
 
     next_update = now + 600;
-    expires = now + 4*3600;
+    expires = now + 4*24*3600;
 }
 
 void
