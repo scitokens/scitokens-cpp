@@ -69,19 +69,6 @@ target_link_libraries(scitokens-list-access SciTokens)
 add_executable(scitokens-create src/create.cpp)
 target_link_libraries(scitokens-create SciTokens)
 
-if( BUILD_UNITTESTS )
-if( NOT EXTERNAL_GTEST )
-include(ExternalProject)
-ExternalProject_Add(gtest
-    PREFIX external/gtest
-    URL ${CMAKE_CURRENT_SOURCE_DIR}/vendor/gtest
-    INSTALL_COMMAND :
-)
-endif()
-enable_testing()
-add_subdirectory(test)
-endif()
-
 get_directory_property(TARGETS BUILDSYSTEM_TARGETS)
 install(
   TARGETS ${TARGETS} 
@@ -99,3 +86,15 @@ set_target_properties(
   SOVERSION "0"
   )
 
+if( BUILD_UNITTESTS )
+if( NOT EXTERNAL_GTEST )
+include(ExternalProject)
+ExternalProject_Add(gtest
+    PREFIX external/gtest
+    URL ${CMAKE_CURRENT_SOURCE_DIR}/vendor/gtest
+    INSTALL_COMMAND :
+)
+endif()
+enable_testing()
+add_subdirectory(test)
+endif()
