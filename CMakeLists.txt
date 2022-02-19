@@ -80,14 +80,13 @@ ExternalProject_Add(gtest
 endif()
 enable_testing()
 add_subdirectory(test)
+endif()
 
-else()
 get_directory_property(TARGETS BUILDSYSTEM_TARGETS)
 install(
   TARGETS ${TARGETS} 
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} )
-endif()
 
 install(
   FILES src/scitokens.h
