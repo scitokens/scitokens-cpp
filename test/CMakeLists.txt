@@ -3,7 +3,7 @@ add_executable(scitokens-gtest main.cpp)
 add_dependencies(scitokens-gtest gtest)
 include_directories("${PROJECT_SOURCE_DIR}/vendor/gtest/googletest/include")
 
-if(EXTERNAL_GTEST)
+if(SCITOKENS_EXTERNAL_GTEST)
     set(LIBGTEST "gtest")
 else()
     set(LIBGTEST "${CMAKE_BINARY_DIR}/external/gtest/src/gtest-build/lib/libgtest.a")
