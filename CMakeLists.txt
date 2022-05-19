@@ -8,6 +8,7 @@ project( scitokens-cpp
 
 option( SCITOKENS_BUILD_UNITTESTS "Build the scitokens-cpp unit tests" OFF )
 option( SCITOKENS_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF )
+option( SCTOKENS_WARNINGS_ARE_ERRORS "Turn compiler warnings into build errors" OFF)
 
 set( CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}" )
 
@@ -38,7 +39,7 @@ endif()
 
 add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp)
 target_compile_features(SciTokens PUBLIC cxx_std_11) # Use at least C++11 for building and when linking to scitokens
-target_compile_options(SciTokens PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall -Werror>)
+target_compile_options(SciTokens PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 target_include_directories(SciTokens PUBLIC ${JWT_CPP_INCLUDES} "${PROJECT_SOURCE_DIR}/src" PRIVATE ${CURL_INCLUDES} ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS})
 
 target_link_libraries(SciTokens PUBLIC ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES})
@@ -56,23 +57,23 @@ add_executable(scitokens-test src/test.cpp)
 #target_include_directories(scitokens-test PRIVATE "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES} ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS})
 target_include_directories(scitokens-test PRIVATE "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES})
 target_link_libraries(scitokens-test SciTokens)
-target_compile_options(scitokens-test PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall -Werror>)
+target_compile_options(scitokens-test PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
 add_executable(scitokens-verify src/verify.cpp)
 target_link_libraries(scitokens-verify SciTokens)
-target_compile_options(scitokens-verify PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall -Werror>)
+target_compile_options(scitokens-verify PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
 add_executable(scitokens-test-access src/test_access.cpp)
 target_link_libraries(scitokens-test-access SciTokens)
-target_compile_options(scitokens-test-access PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall -Werror>)
+target_compile_options(scitokens-test-access PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
 add_executable(scitokens-list-access src/list_access.cpp)
 target_link_libraries(scitokens-list-access SciTokens)
-target_compile_options(scitokens-list-access PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall -Werror>)
+target_compile_options(scitokens-list-access PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
 add_executable(scitokens-create src/create.cpp)
 target_link_libraries(scitokens-create SciTokens)
-target_compile_options(scitokens-create PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall -Werror>)
+target_compile_options(scitokens-create PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
 get_directory_property(TARGETS BUILDSYSTEM_TARGETS)
 install(
