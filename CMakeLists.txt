@@ -1,29 +1,24 @@
 
-cmake_minimum_required( VERSION 2.6 )
-project( scitokens-cpp )
+cmake_minimum_required( VERSION 3.10)
 
-option( BUILD_UNITTESTS "Build the scitokens-cpp unit tests" OFF )
-option( EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF )
+project( scitokens-cpp 
+	DESCRIPTION "A C++ Library to interface to scitokens"
+	VERSION 0.7.0
+	LANGUAGES CXX)
 
-set( CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
+option( SCITOKENS_BUILD_UNITTESTS "Build the scitokens-cpp unit tests" OFF )
+option( SCITOKENS_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF )
+option( SCTOKENS_WARNINGS_ARE_ERRORS "Turn compiler warnings into build errors" OFF)
+
+set( CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}" )
+
+set( CMAKE_BUILD_TYPE RelWithDebInfo) # -g -O2
 
 include(GNUInstallDirs)
 
 find_package( jwt-cpp REQUIRED )
 find_package( CURL REQUIRED )
 find_package( UUID REQUIRED )
-
-if( CMAKE_COMPILER_IS_GNUCXX )
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror" )
-endif()
-
-if( CMAKE_COMPILER_IS_GNUCC )
-  set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror" )
-endif()
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
-
 
 if( APPLE )
 
@@ -40,34 +35,45 @@ pkg_check_modules(LIBCRYPTO REQUIRED libcrypto)
 pkg_check_modules(OPENSSL REQUIRED openssl)
 pkg_check_modules(SQLITE REQUIRED sqlite3)
 
-# pkg_check_modules fails to return an absolute path on RHEL7.  Set the
-# link directories accordingly.
-link_directories(${OPENSSL_LIBRARY_DIRS} ${LIBCRYPTO_LIBRARY_DIRS})
 endif()
 
-include_directories( "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES} ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS} )
-
 add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp)
-target_link_libraries(SciTokens ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES})
+target_compile_features(SciTokens PUBLIC cxx_std_11) # Use at least C++11 for building and when linking to scitokens
+target_compile_options(SciTokens PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
+target_include_directories(SciTokens PUBLIC ${JWT_CPP_INCLUDES} "${PROJECT_SOURCE_DIR}/src" PRIVATE ${CURL_INCLUDES} ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS})
+
+target_link_libraries(SciTokens PUBLIC ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES})
+if (UNIX)
+# pkg_check_modules fails to return an absolute path on RHEL7.  Set the
+# link directories accordingly.
+target_link_directories(SciTokens PUBLIC ${OPENSSL_LIBRARY_DIRS} ${LIBCRYPTO_LIBRARY_DIRS})
+endif()
 
 if ( NOT APPLE AND UNIX )
 set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
 endif()
 
 add_executable(scitokens-test src/test.cpp)
+#target_include_directories(scitokens-test PRIVATE "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES} ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS})
+target_include_directories(scitokens-test PRIVATE "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES})
 target_link_libraries(scitokens-test SciTokens)
+target_compile_options(scitokens-test PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
 add_executable(scitokens-verify src/verify.cpp)
 target_link_libraries(scitokens-verify SciTokens)
+target_compile_options(scitokens-verify PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
 add_executable(scitokens-test-access src/test_access.cpp)
 target_link_libraries(scitokens-test-access SciTokens)
+target_compile_options(scitokens-test-access PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
 add_executable(scitokens-list-access src/list_access.cpp)
 target_link_libraries(scitokens-list-access SciTokens)
+target_compile_options(scitokens-list-access PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
 add_executable(scitokens-create src/create.cpp)
 target_link_libraries(scitokens-create SciTokens)
+target_compile_options(scitokens-create PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
 get_directory_property(TARGETS BUILDSYSTEM_TARGETS)
 install(
@@ -86,8 +92,8 @@ set_target_properties(
   SOVERSION "0"
   )
 
-if( BUILD_UNITTESTS )
-if( NOT EXTERNAL_GTEST )
+if( SCITOKENS_BUILD_UNITTESTS )
+	if( NOT SCITOKENS_EXTERNAL_GTEST )
 include(ExternalProject)
 ExternalProject_Add(gtest
     PREFIX external/gtest
