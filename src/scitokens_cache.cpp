@@ -250,5 +250,6 @@ scitokens::Validator::store_public_keys(const std::string &issuer, const picojso
 
     sqlite3_exec(db, "COMMIT", 0, 0 , 0);
 
+    sqlite3_close(db);
     return true;
 }
