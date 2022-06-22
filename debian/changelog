@@ -1,3 +1,11 @@
+scitokens-cpp (0.7.1-1) stable; urgency=medium
+
+
+  * Add scitokens-* binaries to the package
+  * Bug: close sqlite db handle on return
+
+-- Derek Weitzel <dweitzel@unl.edu>  Wed, 22 Jun 2022 11:26:18 -0600
+
 scitokens-cpp (0.7.0-1) stable; urgency=medium
 
   * Changes from static analysis
