@@ -1,6 +1,8 @@
 
 add_executable(scitokens-gtest main.cpp)
-add_dependencies(scitokens-gtest gtest)
+if( NOT SCITOKENS_EXTERNAL_GTEST )
+    add_dependencies(scitokens-gtest gtest)
+endif()
 include_directories("${PROJECT_SOURCE_DIR}/vendor/gtest/googletest/include")
 
 if(SCITOKENS_EXTERNAL_GTEST)
