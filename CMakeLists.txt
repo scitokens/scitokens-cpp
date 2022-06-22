@@ -8,7 +8,7 @@ project( scitokens-cpp
 
 option( SCITOKENS_BUILD_UNITTESTS "Build the scitokens-cpp unit tests" OFF )
 option( SCITOKENS_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF )
-option( SCTOKENS_WARNINGS_ARE_ERRORS "Turn compiler warnings into build errors" OFF)
+option( SCITOKENS_WARNINGS_ARE_ERRORS "Turn compiler warnings into build errors" OFF)
 
 set( CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}" )
 
