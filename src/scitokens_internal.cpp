@@ -288,7 +288,7 @@ rs256_from_coords(const std::string &e_str, const std::string &n_str) {
     std::unique_ptr<BIGNUM, decltype(&BN_free)> n_bignum(BN_bin2bn(reinterpret_cast<const unsigned char *>(n_decode.c_str()), n_decode.size(), nullptr), BN_free);
 
     std::unique_ptr<RSA, decltype(&RSA_free)> rsa(RSA_new(), RSA_free);
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
     rsa->e = e_bignum.get();
     rsa->n = n_bignum.get();
     rsa->d = nullptr;
