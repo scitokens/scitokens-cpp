@@ -55,7 +55,7 @@ endif()
 
 add_executable(scitokens-test src/test.cpp)
 #target_include_directories(scitokens-test PRIVATE "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES} ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS})
-target_include_directories(scitokens-test PRIVATE "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES})
+target_include_directories(scitokens-test PRIVATE "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${LIBCRYPTO_INCLUDE_DIRS})
 target_link_libraries(scitokens-test SciTokens)
 target_compile_options(scitokens-test PRIVATE $<$<CXX_COMPILER_ID:GNU>:-Wall $<$<BOOL:${SCITOKENS_WARNINGS_ARE_ERRORS}>:-Werror>>)
 
