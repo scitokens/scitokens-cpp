@@ -338,7 +338,7 @@ int validator_validate(Validator validator, SciToken scitoken, char **err_msg) {
     auto real_scitoken = reinterpret_cast<scitokens::SciToken*>(scitoken);
 
     try {
-        real_validator->verify(*real_scitoken);
+        real_validator->verify(*real_scitoken, time(NULL) + 20);
     } catch (std::exception &exc) {
         if (err_msg) {*err_msg = strdup(exc.what());}
         return -1;
@@ -388,6 +388,35 @@ void enforcer_set_validate_profile(Enforcer enf, SciTokenProfile profile) {
 }
 
 
+namespace {
+
+Acl *convert_acls(scitokens::Enforcer::AclsList &acls_list, char **err_msg)
+{
+    Acl *acl_result = static_cast<Acl*>(malloc((acls_list.size() + 1)*sizeof(Acl)));
+    size_t idx = 0;
+    for (const auto &acl : acls_list) {
+        acl_result[idx].authz = strdup(acl.first.c_str());
+        acl_result[idx].resource = strdup(acl.second.c_str());
+        if (acl_result[idx].authz == nullptr) {
+            enforcer_acl_free(acl_result);
+            if (err_msg) {*err_msg = strdup("ACL was generated without an authorization set.");}
+            return nullptr;
+        }
+        if (acl_result[idx].resource == nullptr) {
+            enforcer_acl_free(acl_result);
+            if (err_msg) {*err_msg = strdup("ACL was generated without a resource set.");}
+            return nullptr;
+        }
+        idx++;
+    }
+    acl_result[idx].authz = nullptr;
+    acl_result[idx].resource = nullptr;
+    return acl_result;
+}
+
+}
+
+
 int enforcer_generate_acls(const Enforcer enf, const SciToken scitoken, Acl **acls, char **err_msg) {
     if (enf == nullptr) {
         if (err_msg) {*err_msg = strdup("Enforcer may not be a null pointer");}
@@ -407,26 +436,78 @@ int enforcer_generate_acls(const Enforcer enf, const SciToken scitoken, Acl **ac
         if (err_msg) {*err_msg = strdup(exc.what());}
         return -1;
     }
-    Acl *acl_result = static_cast<Acl*>(malloc((acls_list.size() + 1)*sizeof(Acl)));
-    size_t idx = 0;
-    for (const auto &acl : acls_list) {
-        acl_result[idx].authz = strdup(acl.first.c_str());
-        acl_result[idx].resource = strdup(acl.second.c_str());
-        if (acl_result[idx].authz == nullptr) {
-            enforcer_acl_free(acl_result);
-            if (err_msg) {*err_msg = strdup("ACL was generated without an authorization set.");}
-            return -1;
-        }
-        if (acl_result[idx].resource == nullptr) {
-            enforcer_acl_free(acl_result);
-            if (err_msg) {*err_msg = strdup("ACL was generated without a resource set.");}
-            return -1;
-        }
-        idx++;
+    auto result_acls = convert_acls(acls_list, err_msg);
+    if (!result_acls) {return -1;}
+    *acls = result_acls;
+    return 0;
+}
+
+
+int enforcer_generate_acls_start(const Enforcer enf, const SciToken scitoken,
+    SciTokenStatus *status_out, Acl **acls, char **err_msg)
+{
+    if (enf == nullptr) {
+        if (err_msg) {*err_msg = strdup("Enforcer may not be a null pointer");}
+        return -1;
     }
-    acl_result[idx].authz = nullptr;
-    acl_result[idx].resource = nullptr;
-    *acls = acl_result;
+    auto real_enf = reinterpret_cast<scitokens::Enforcer*>(enf);
+    if (scitoken == nullptr) {
+        if (err_msg) {*err_msg = strdup("SciToken may not be a null pointer");}
+        return -1;
+    }
+    auto real_scitoken = reinterpret_cast<scitokens::SciToken*>(scitoken);
+
+    scitokens::Enforcer::AclsList acls_list;
+    std::unique_ptr<scitokens::Validator::AsyncStatus> status;
+    try {
+         status = real_enf->generate_acls_start(*real_scitoken, acls_list);
+    } catch (std::exception &exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    if (status->m_done) {
+        auto result_acls = convert_acls(acls_list, err_msg);
+        if (!result_acls) {return -1;}
+        *acls = result_acls;
+        *status_out = nullptr;
+        return 0;
+    }
+    *status_out = status.release();
+    return 0;
+}
+
+
+int enforcer_generate_acls_continue(const Enforcer enf, SciTokenStatus *status,
+    Acl **acls, char **err_msg)
+{   
+    if (enf == nullptr) {
+        if (err_msg) {*err_msg = strdup("Enforcer may not be a null pointer");}
+        return -1;
+    }
+    auto real_enf = reinterpret_cast<scitokens::Enforcer*>(enf);
+    if (status == nullptr) { 
+        if (err_msg) {*err_msg = strdup("Status may not be a null pointer");}
+        return -1;
+    }
+    
+    scitokens::Enforcer::AclsList acls_list;
+    std::unique_ptr<scitokens::Validator::AsyncStatus> status_internal(
+        reinterpret_cast<scitokens::Validator::AsyncStatus*>(*status));
+    try {
+        status_internal = real_enf->generate_acls_continue(std::move(status_internal), acls_list);
+    } catch (std::exception &exc) {
+        *status = nullptr;
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    if (status_internal->m_done) {
+        auto result_acls = convert_acls(acls_list, err_msg);
+        if (!result_acls) {return -1;}
+        *acls = result_acls;
+        *status = nullptr;
+        return 0;
+    }
+    *status = status_internal.release();
     return 0;
 }
 
@@ -453,5 +534,99 @@ int enforcer_test(const Enforcer enf, const SciToken scitoken, const Acl *acl, c
         if (err_msg) {*err_msg = strdup(exc.what());}
         return -1;
     }
+    return 0;
+}
+
+
+void scitoken_status_free(SciTokenStatus status) {
+    std::unique_ptr<scitokens::Validator::AsyncStatus> status_real(
+        reinterpret_cast<scitokens::Validator::AsyncStatus*>(status));
+}
+
+
+int scitoken_status_get_timeout_val(const SciTokenStatus *status, time_t expiry_time, struct timeval *timeout, char **err_msg)
+{
+    if (status == nullptr) {
+        if (err_msg) {*err_msg = strdup("Status object may not be a null pointer");}
+        return -1;
+    }
+    if (timeout == nullptr) {
+        if (err_msg) {*err_msg = strdup("Timeout object may not be a null pointer");}
+        return -1;
+    }
+
+    auto real_status = reinterpret_cast<const scitokens::Validator::AsyncStatus*>(status);
+    struct timeval timeout_internal = real_status->get_timeout_val(expiry_time);
+    timeout->tv_sec = timeout_internal.tv_sec;
+    timeout->tv_usec = timeout_internal.tv_usec;
+
+    return 0;
+}
+
+
+int scitoken_status_get_read_fd_set(SciTokenStatus *status, fd_set **read_fd_set, char **err_msg)
+{
+    if (status == nullptr) {
+        if (err_msg) {*err_msg = strdup("Status object may not be a null pointer");}
+        return -1;
+    }
+    if (read_fd_set == nullptr) {
+        if (err_msg) {*err_msg = strdup("Read fd_set object may not be a null pointer");}
+        return -1;
+    }
+
+    auto real_status = reinterpret_cast<scitokens::Validator::AsyncStatus*>(status);
+    *read_fd_set = real_status->get_read_fd_set();
+    return 0;
+}
+
+
+int scitoken_status_get_write_fd_set(SciTokenStatus *status, fd_set **write_fd_set, char **err_msg)
+{
+    if (status == nullptr) {
+        if (err_msg) {*err_msg = strdup("Status object may not be a null pointer");}
+        return -1;
+    }
+    if (write_fd_set == nullptr) {
+        if (err_msg) {*err_msg = strdup("Write fd_set object may not be a null pointer");}
+        return -1;
+    }
+
+    auto real_status = reinterpret_cast<scitokens::Validator::AsyncStatus*>(status);
+    *write_fd_set = real_status->get_write_fd_set();
+    return 0;
+}
+
+
+int scitoken_status_get_exc_fd_set(SciTokenStatus *status, fd_set **exc_fd_set, char **err_msg)
+{
+    if (status == nullptr) {
+        if (err_msg) {*err_msg = strdup("Status object may not be a null pointer");}
+        return -1;
+    }
+    if (exc_fd_set == nullptr) {
+        if (err_msg) {*err_msg = strdup("Read fd_set object may not be a null pointer");}
+        return -1;
+    }
+
+    auto real_status = reinterpret_cast<scitokens::Validator::AsyncStatus*>(status);
+    *exc_fd_set = real_status->get_exc_fd_set();
+    return 0;
+}
+
+
+int scitoken_status_get_max_fd(const SciTokenStatus *status, int *max_fd, char **err_msg)
+{
+    if (status == nullptr) {
+        if (err_msg) {*err_msg = strdup("Status object may not be a null pointer");}
+        return -1;
+    }
+    if (max_fd == nullptr) {
+        if (err_msg) {*err_msg = strdup("Max FD may not be a null pointer");}
+        return -1;
+    }
+
+    auto real_status = reinterpret_cast<const scitokens::Validator::AsyncStatus*>(status);
+    *max_fd = real_status->get_max_fd();
     return 0;
 }

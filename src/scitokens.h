@@ -4,6 +4,9 @@
  * 
  */
 
+#include <time.h>
+#include <sys/select.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -12,6 +15,7 @@ typedef void * SciTokenKey;
 typedef void * SciToken;
 typedef void * Validator;
 typedef void * Enforcer;
+typedef void * SciTokenStatus;
 
 typedef int (*StringValidatorFunction)(const char *value, char **err_msg);
 typedef struct Acl_s {
@@ -123,9 +127,57 @@ void enforcer_set_validate_profile(Enforcer, SciTokenProfile profile);
 
 int enforcer_generate_acls(const Enforcer enf, const SciToken scitokens, Acl **acls, char **err_msg);
 
+/**
+ * The asynchronous versions of enforcer_generate_acls.
+ */
+int enforcer_generate_acls_start(const Enforcer enf, const SciToken scitokens,
+    SciTokenStatus *status, Acl **acls, char **err_msg);
+int enforcer_generate_acls_continue(const Enforcer enf, SciTokenStatus *status,
+    Acl **acls, char **err_msg);
+
 void enforcer_acl_free(Acl *acls);
 
 int enforcer_test(const Enforcer enf, const SciToken sci, const Acl *acl, char **err_msg);
+
+void scitoken_status_free(SciTokenStatus *status);
+
+/**
+ * Get the suggested timeout val.  After the timeout value has passed, the asynchronous operation should continue.
+ *
+ * - `expiry_time`: the expiration time (in Unix epoch seconds) for the operation in total.
+ *   The returned timeout value will never take the operation past the expiration time.
+ */
+int scitoken_status_get_timeout_val(const SciTokenStatus *status, time_t expiry_time, struct timeval *timeout, char **err_msg);
+
+/**
+ * Get the set of read file descriptors.  This will return a borrowed pointer (whose lifetime matches the
+ * status object) pointing at a fd_set array of size FD_SETSIZE.  Any file descriptors owned by the status
+ * operation will be set and the returned fd_set can be used for select() operations.
+ *
+ * IMPLEMENTATION NOTE: If the file descriptor monitored by libcurl are too high to be stored in this set,
+ * libcurl should give a corresponding low timeout val (100ms) and effectively switch to polling.  See:
+ * <https://curl.se/libcurl/c/curl_multi_fdset.html> for more information.
+ */
+int scitoken_status_get_read_fd_set(SciTokenStatus *status, fd_set **read_fd_set, char **err_msg);
+
+/**
+ * Get the set of write FDs; see documentation for scitoken_status_get_read_fd_set.
+ */
+int scitoken_status_get_write_fd_set(SciTokenStatus *status, fd_set **write_fd_set, char **err_msg);
+
+/**
+ * Get the set of exception FDs; see documentation for scitoken_status_get_exc_fd_set.
+ */
+int scitoken_status_get_exc_fd_set(SciTokenStatus *status, fd_set **exc_fd_set, char **err_msg);
+
+/**
+ * Get the maximum FD in the status set.
+ *
+ * IMPLEMENTATION NOTE: If the max FD is -1 then it implies libcurl is something that cannot be modelled
+ * by a socket.  In such a case, the libcurl docs suggest using a 100ms timeout for select operations.
+ * See <https://curl.se/libcurl/c/curl_multi_fdset.html>.
+ */
+int scitoken_status_get_max_fd(const SciTokenStatus *status, int *max_fd, char **err_msg);
 
 #ifdef __cplusplus
 }

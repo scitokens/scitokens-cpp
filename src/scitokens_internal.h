@@ -5,8 +5,60 @@
 
 #include <jwt-cpp/jwt.h>
 #include <uuid/uuid.h>
+#include <curl/curl.h>
+
+#if defined(__GNUC__)
+#define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+#else
+#define WARN_UNUSED_RESULT
+#endif
 
 namespace scitokens {
+
+namespace internal {
+
+class SimpleCurlGet {
+
+    int m_maxbytes{1048576};
+    std::vector<char> m_data;
+    size_t m_len{0};
+    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> m_curl;
+    std::unique_ptr<CURLM, decltype(&curl_multi_cleanup)> m_curl_multi;
+    fd_set m_read_fd_set[FD_SETSIZE];
+    fd_set m_write_fd_set[FD_SETSIZE];
+    fd_set m_exc_fd_set[FD_SETSIZE];
+    int m_max_fd{-1};
+    long m_timeout_ms{0};
+
+public:
+    SimpleCurlGet(int maxbytes=1024*1024)
+      : m_maxbytes(maxbytes),
+        m_curl(nullptr, &curl_easy_cleanup),
+        m_curl_multi(nullptr, &curl_multi_cleanup)
+    {}
+
+    struct GetStatus {
+        bool m_done{false};
+        int m_status_code{-1};
+    };
+
+    GetStatus perform_start(const std::string &url);
+    GetStatus perform_continue();
+    int perform(const std::string &url, time_t expiry_time);
+    void get_data(char *&buffer, size_t &len);
+
+    long get_timeout_ms() const {return m_timeout_ms;}
+    int get_max_fd() const {return m_max_fd;}
+    fd_set *get_read_fd_set() {return m_read_fd_set;}
+    fd_set *get_write_fd_set() {return m_write_fd_set;}
+    fd_set *get_exc_fd_set() {return m_exc_fd_set;}
+
+private:
+    static size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp);
+};
+
+}
+
 
 class UnsupportedKeyException : public std::runtime_error {
 public:
@@ -253,15 +305,78 @@ class Validator {
     typedef std::map<std::string, std::vector<std::pair<ClaimValidatorFunction, void*>>> ClaimValidatorMap;
 
 public:
-    void verify(const SciToken &scitoken) {
+
+    class AsyncStatus {
+    public:
+        AsyncStatus() = default;
+        AsyncStatus(const AsyncStatus &) = delete;
+        AsyncStatus & operator=(const AsyncStatus &) = delete;
+
+        bool m_done{false};
+        bool m_continue_fetch{false};
+        bool m_ignore_error{false};
+        bool m_do_store{true};
+        bool m_has_metadata{false};
+        bool m_oauth_fallback{false};
+
+        int64_t m_next_update{-1};
+        int64_t m_expires{-1};
+        picojson::value m_keys;
+        std::string m_issuer;
+        std::string m_kid;
+        std::string m_oauth_metadata_url;
+        std::unique_ptr<internal::SimpleCurlGet> m_cget;
+        std::string m_jwt_string;
+        std::string m_public_pem;
+        std::string m_algorithm;
+
+        struct timeval get_timeout_val(time_t expiry_time) const {
+            auto now = time(NULL);
+            long timeout_ms = 100*(expiry_time - now);
+            if (m_cget && (m_cget->get_timeout_ms() < timeout_ms)) timeout_ms = m_cget->get_timeout_ms();
+            struct timeval timeout;
+            timeout.tv_sec = timeout_ms / 1000;
+            timeout.tv_usec = (timeout_ms % 1000) * 1000;
+            return timeout;
+        }
+
+        int get_max_fd() const {return m_cget ? m_cget->get_max_fd() : -1;}
+        fd_set *get_read_fd_set() {return m_cget ? m_cget->get_read_fd_set() : nullptr;}
+        fd_set *get_write_fd_set() {return m_cget ? m_cget->get_write_fd_set() : nullptr;}
+        fd_set *get_exc_fd_set() {return m_cget ? m_cget->get_exc_fd_set() : nullptr;}
+    };
+
+    std::unique_ptr<AsyncStatus> verify_async(const SciToken &scitoken) {
         const jwt::decoded_jwt *jwt_decoded = scitoken.m_decoded.get();
         if (!jwt_decoded) {
             throw jwt::token_verification_exception("Token is not deserialized from string.");
         }
-        verify(*jwt_decoded);
+        return verify_async(*jwt_decoded);
+    }
+
+    void verify(const SciToken &scitoken, time_t expiry_time) {
+        auto result = verify_async(scitoken);
+        while (!result->m_done) {
+            auto timeout_val = result->get_timeout_val(expiry_time);
+            select(result->get_max_fd(), result->get_read_fd_set(), result->get_write_fd_set(),
+                result->get_exc_fd_set(), &timeout_val);
+            if (time(NULL) >= expiry_time) {
+                throw CurlException("Timeout when loading the OIDC metadata.");
+            }
+
+            result = verify_async_continue(std::move(result));
+        }
     }
 
     void verify(const jwt::decoded_jwt &jwt) {
+        auto result = verify_async(jwt);
+        while (!result->m_done) {
+            result = verify_async(jwt);
+        }
+    }
+
+    std::unique_ptr<AsyncStatus> verify_async(const jwt::decoded_jwt &jwt)
+    {
         // If token has a typ header claim (RFC8725 Section 3.11), trust that in COMPAT mode.
         if (jwt.has_type()) {
             std::string t_type = jwt.get_type();
@@ -325,14 +440,30 @@ public:
         } catch (const std::runtime_error&) {
             // Don't do anything, key_id is empty, as it should be.
         }
+        auto status = get_public_key_pem(jwt.get_issuer(), key_id, public_pem, algorithm);
+        status->m_jwt_string = jwt.get_token();
+        status->m_public_pem = public_pem;
+        status->m_algorithm = algorithm;
 
-        get_public_key_pem(jwt.get_issuer(), key_id, public_pem, algorithm);
+        return verify_async_continue(std::move(status));
+    }
+
+    std::unique_ptr<AsyncStatus> verify_async_continue(std::unique_ptr<AsyncStatus> status)
+    {
+        if (!status->m_done) {
+            std::string public_pem, algorithm;
+            status = get_public_key_pem_continue(std::move(status), public_pem, algorithm);
+            status->m_public_pem = public_pem;
+            status->m_algorithm = algorithm;
+            if (!status->m_done) {return status;}
+        }
+
         // std::cout << "Public PEM: " << public_pem << std::endl << "Algorithm: " << algorithm << std::endl;
-        SciTokenKey key(key_id, algorithm, public_pem, "");
+        SciTokenKey key(status->m_kid, status->m_algorithm, status->m_public_pem, "");
         auto verifier = jwt::verify()
             .allow_algorithm(key);
 
-        verifier.verify(jwt);
+        const jwt::decoded_jwt jwt(status->m_jwt_string);
 
         bool must_verify_everything = true;
         if (jwt.has_payload_claim("ver")) {
@@ -450,6 +581,9 @@ public:
                  }
              }
         }
+        std::unique_ptr<AsyncStatus> result(new AsyncStatus());
+        result->m_done = true;
+        return result;
     }
 
     void add_critical_claims(const std::vector<std::string> &claims) {
@@ -503,8 +637,10 @@ public:
     static bool store_public_ec_key(const std::string &issuer, const std::string &kid, const std::string &key);
 
 private:
-    void get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm);
-    void get_public_keys_from_web(const std::string &issuer, picojson::value &keys, int64_t &next_update, int64_t &expires);
+    std::unique_ptr<AsyncStatus> get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm);
+    std::unique_ptr<AsyncStatus> get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status, std::string &public_pem, std::string &algorithm);
+    std::unique_ptr<AsyncStatus> get_public_keys_from_web(const std::string &issuer);
+    std::unique_ptr<AsyncStatus> get_public_keys_from_web_continue(std::unique_ptr<AsyncStatus> status);
     bool get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update);
     static bool store_public_keys(const std::string &issuer, const picojson::value &keys, int64_t next_update, int64_t expires);
 
@@ -551,7 +687,7 @@ public:
         m_test_path = path;
         m_test_authz = authz;
         try {
-            m_validator.verify(scitoken);
+            m_validator.verify(scitoken, time(NULL) + 20);
             return true;
         } catch (std::runtime_error &) {
             return false;
@@ -560,8 +696,27 @@ public:
 
     AclsList generate_acls(const SciToken &scitoken) {
         reset_state();
-        m_validator.verify(scitoken);
+        m_validator.verify(scitoken, time(NULL) + 20);
         return m_gen_acls;
+    }
+
+
+    std::unique_ptr<Validator::AsyncStatus> generate_acls_start(const SciToken &scitoken, AclsList &acls) {
+        reset_state();
+        auto status = m_validator.verify_async(scitoken);
+        if (status->m_done) {
+            acls = m_gen_acls;
+        }
+        return status;
+    }
+
+
+    std::unique_ptr<Validator::AsyncStatus>  generate_acls_continue(std::unique_ptr<Validator::AsyncStatus> status, AclsList &acls) {
+        auto result = m_validator.verify_async_continue(std::move(status));
+        if (result->m_done) {
+            acls = m_gen_acls;
+        }
+        return result;
     }
 
 private:
