@@ -546,15 +546,14 @@ public:
         m_validate_profile = profile;
     }
 
-    bool test(const SciToken &scitoken, const std::string &authz, const std::string &path) {
+    void test(const SciToken &scitoken, const std::string &authz, const std::string &path) {
         reset_state();
         m_test_path = path;
         m_test_authz = authz;
         try {
             m_validator.verify(scitoken);
-            return true;
         } catch (std::runtime_error &) {
-            return false;
+            throw;
         }
     }
 

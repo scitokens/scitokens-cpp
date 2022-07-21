@@ -448,7 +448,8 @@ int enforcer_test(const Enforcer enf, const SciToken scitoken, const Acl *acl, c
     }
 
     try {
-        return real_enf->test(*real_scitoken, acl->authz, acl->resource) == true ? 0 : -1;
+        real_enf->test(*real_scitoken, acl->authz, acl->resource);
+        return 0;
     } catch (std::exception &exc) {
         if (err_msg) {*err_msg = strdup(exc.what());}
         return -1;
