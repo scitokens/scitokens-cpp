@@ -554,7 +554,7 @@ public:
             m_validator.verify(scitoken);
             return true;
         } catch (std::runtime_error &) {
-            return false;
+            throw;
         }
     }
 
