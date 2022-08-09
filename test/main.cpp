@@ -297,6 +297,58 @@ TEST_F(SerializeTest, EnforcerTest) {
 
 }
 
+TEST_F(SerializeTest, EnforcerScopeTest) {
+    char *err_msg = nullptr;
+
+    auto rv = scitoken_set_claim_string(m_token.get(), "aud",
+                "https://demo.scitokens.org/", &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    std::vector<const char *> audiences_array;
+    audiences_array.push_back("https://demo.scitokens.org/");
+    audiences_array.push_back(nullptr);
+
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest", &audiences_array[0], &err_msg);
+    ASSERT_TRUE(enforcer != nullptr);
+
+    scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::WLCG_1_0);
+    
+    rv = scitoken_set_claim_string(m_token.get(), "scope",
+                "storage.modify:/ storage.read:/ openid offline_access", &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    Acl *acls;
+    enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    ASSERT_TRUE(acls != nullptr);
+    int idx = 0;
+    bool found_read = false;
+    bool found_write = false;
+    while (acls[idx].resource && acls[idx++].authz) {
+        auto resource = acls[idx-1].resource;
+        auto authz = acls[idx-1].authz;
+        if (strcmp(authz, "read") == 0) {
+            found_read = true;
+            ASSERT_STREQ(resource, "/");
+        } else if (strcmp(authz, "write") == 0) {
+            found_write = true;
+            ASSERT_STREQ(resource, "/");
+        }
+    }
+    ASSERT_TRUE(found_read);
+    ASSERT_TRUE(found_write);
+
+
+
+
+}
+
 }
 
 int main(int argc, char **argv) {
