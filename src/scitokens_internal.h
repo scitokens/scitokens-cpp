@@ -690,7 +690,7 @@ public:
             m_validator.verify(scitoken, time(NULL) + 20);
             return true;
         } catch (std::runtime_error &) {
-            return false;
+            throw;
         }
     }
 
