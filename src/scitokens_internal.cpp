@@ -265,11 +265,11 @@ es256_from_coords(const std::string &x_str, const std::string &y_str) {
     if (!Q_point.get()) {
         throw UnsupportedKeyException("Unable to allocate new EC point");
     }
-	
+
     if (!EC_POINT_set_affine_coordinates(ec_group.get(), Q_point.get(), x_bignum.get(), y_bignum.get(), NULL)) {
         throw UnsupportedKeyException("Invalid elliptic curve point in key");
     }
-	
+
     size_t out_len = EC_POINT_point2buf(ec_group.get(), Q_point.get(),POINT_CONVERSION_UNCOMPRESSED,&buf,NULL);
     if (out_len == 0) {
         throw UnsupportedKeyException("Failed to convert EC point to octet base buffer");
@@ -282,19 +282,19 @@ es256_from_coords(const std::string &x_str, const std::string &y_str) {
         || (params = OSSL_PARAM_BLD_to_param(param_build.get())) == NULL) {
             throw UnsupportedKeyException("Failed to build EC public key parameters");
     }
-	
+
     EVP_PKEY *pkey = NULL;
     std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> ec_ctx(EVP_PKEY_CTX_new_from_name(NULL, "EC", NULL), EVP_PKEY_CTX_free);
     if (!ec_ctx.get()) {
         throw UnsupportedKeyException("Failed to set EC PKEY context");
     }
-	
-	if (EVP_PKEY_fromdata_init(ec_ctx.get()) <= 0
-	    || EVP_PKEY_fromdata(ec_ctx.get(),&pkey,EVP_PKEY_PUBLIC_KEY,params) <= 0
-	    || pkey == NULL) {
-	        throw UnsupportedKeyException("Failed to set the EC public key");
-	}
-	
+
+    if (EVP_PKEY_fromdata_init(ec_ctx.get()) <= 0
+        || EVP_PKEY_fromdata(ec_ctx.get(),&pkey,EVP_PKEY_PUBLIC_KEY,params) <= 0
+        || pkey == NULL) {
+            throw UnsupportedKeyException("Failed to set the EC public key");
+    }
+
     if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey) == 0) {
         throw UnsupportedKeyException("Failed to serialize EC public key");
     }
@@ -329,7 +329,7 @@ es256_from_coords(const std::string &x_str, const std::string &y_str) {
         throw UnsupportedKeyException("Failed to serialize EC public key");
     }
 #endif
-	
+
     char *mem_data;
     size_t mem_len = BIO_get_mem_data(pubkey_bio.get(), &mem_data);
     std::string result = std::string(mem_data, mem_len);
@@ -348,30 +348,30 @@ rs256_from_coords(const std::string &e_str, const std::string &n_str) {
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
     OSSL_PARAM *params;
     std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> rsa_ctx(EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL), EVP_PKEY_CTX_free);
-	if (!rsa_ctx.get()) {
-	    throw UnsupportedKeyException("Failed to set RSA PKEY context");
-	}
-	
+    if (!rsa_ctx.get()) {
+        throw UnsupportedKeyException("Failed to set RSA PKEY context");
+    }
+
     std::unique_ptr<OSSL_PARAM_BLD, decltype(&OSSL_PARAM_BLD_free)> param_build(OSSL_PARAM_BLD_new(), OSSL_PARAM_BLD_free);
-	if (!param_build.get()
+    if (!param_build.get()
         || !OSSL_PARAM_BLD_push_BN_pad(param_build.get(),"e",e_bignum.get(),BN_num_bytes(e_bignum.get()))
         || !OSSL_PARAM_BLD_push_BN_pad(param_build.get(),"n",n_bignum.get(),BN_num_bytes(n_bignum.get()))
         || (params = OSSL_PARAM_BLD_to_param(param_build.get())) == NULL) {
             throw UnsupportedKeyException("Failed to build RSA public key parameters");
     }
-	
+
     EVP_PKEY *pkey = NULL;
-	if (EVP_PKEY_fromdata_init(rsa_ctx.get()) <= 0
-	    || EVP_PKEY_fromdata(rsa_ctx.get(),&pkey,EVP_PKEY_PUBLIC_KEY,params) <= 0
-	    || pkey == NULL) {
-	        throw UnsupportedKeyException("Failed to set the RSA public key");
-	}
-	
+    if (EVP_PKEY_fromdata_init(rsa_ctx.get()) <= 0
+        || EVP_PKEY_fromdata(rsa_ctx.get(),&pkey,EVP_PKEY_PUBLIC_KEY,params) <= 0
+        || pkey == NULL) {
+            throw UnsupportedKeyException("Failed to set the RSA public key");
+    }
+
     if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey) == 0) {
         throw UnsupportedKeyException("Failed to serialize RSA public key");
     }
     EVP_PKEY_free(pkey);
-	OSSL_PARAM_free(params);
+    OSSL_PARAM_free(params);
 #else
     std::unique_ptr<RSA, decltype(&RSA_free)> rsa(RSA_new(), RSA_free);
     #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
@@ -385,7 +385,7 @@ rs256_from_coords(const std::string &e_str, const std::string &n_str) {
     if (EVP_PKEY_set1_RSA(pkey.get(), rsa.get()) != 1) {
         throw UnsupportedKeyException("Failed to set the public key");
     }
-	
+
     if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey.get()) == 0) {
         throw UnsupportedKeyException("Failed to serialize RSA public key");
     }
@@ -616,7 +616,7 @@ scitokens::Validator::store_public_ec_key(const std::string &issuer, const std::
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
     std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(PEM_read_bio_PUBKEY(pubkey_bio.get(),nullptr,nullptr,nullptr), EVP_PKEY_free);
-	if (!pkey.get()) {return false;}
+    if (!pkey.get()) {return false;}
 
     std::unique_ptr<EC_GROUP, decltype(&EC_GROUP_free)> ec_group(EC_GROUP_new_by_curve_name(EC_NAME),EC_GROUP_free);
     if (!ec_group.get()) {
@@ -627,7 +627,7 @@ scitokens::Validator::store_public_ec_key(const std::string &issuer, const std::
     if (!Q_point.get()) {
         throw UnsupportedKeyException("Unable to get OpenSSL EC point");
     }
-	
+
     if (!EC_POINT_get_affine_coordinates(ec_group.get(), Q_point.get(), x_bignum.get(), y_bignum.get(), NULL)) {
         throw UnsupportedKeyException("Unable to get OpenSSL affine coordinates");
     }
