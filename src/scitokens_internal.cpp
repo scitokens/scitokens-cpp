@@ -444,7 +444,7 @@ normalize_absolute_path(const std::string &path) {
 
 void
 SciToken::deserialize(const std::string &data, const std::vector<std::string> allowed_issuers) {
-    m_decoded.reset(new jwt::decoded_jwt(data));
+    m_decoded.reset(new jwt::decoded_jwt<jwt::traits::kazuho_picojson>(data));
 
     scitokens::Validator val;
     val.add_allowed_issuers(allowed_issuers);
@@ -683,7 +683,7 @@ scitokens::Validator::store_public_ec_key(const std::string &issuer, const std::
 bool
 scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
     auto me = reinterpret_cast<scitokens::Enforcer*>(myself);
-    if (claim.get_type() != jwt::claim::type::string) {
+    if (claim.get_type() != jwt::json::type::string) {
         return false;
     }
     std::string scope = claim.as_string();
