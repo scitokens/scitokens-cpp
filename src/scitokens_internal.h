@@ -26,7 +26,7 @@ public:
 class JWTVerificationException : public std::runtime_error {
 public:
     explicit JWTVerificationException(const std::string &msg)
-        : std::runtime_error(msg)
+        : std::runtime_error("token verification failed: " + msg)
     {}
 };
 
