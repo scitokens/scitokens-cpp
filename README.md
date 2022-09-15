@@ -15,7 +15,7 @@ Building
 
 To build the `scitokens-cpp` library, the following dependencies are needed:
 
-   - [jwt-cpp](https://github.com/Thalhammer/jwt-cpp): A header-only C++ library for manipulating
+   - [jwt-cpp] v0.5.0 or later (https://github.com/Thalhammer/jwt-cpp): A header-only C++ library for manipulating
      JWTs.
    - OpenSSL 1.0 or later.
    - `sqlite3`
