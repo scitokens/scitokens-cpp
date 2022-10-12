@@ -623,14 +623,29 @@ scitokens::Validator::store_public_ec_key(const std::string &issuer, const std::
         throw UnsupportedKeyException("Unable to get OpenSSL EC group");
     }
 
-    std::unique_ptr<EC_POINT, decltype(&EC_POINT_free)> Q_point(EC_POINT_new(ec_group.get()), EC_POINT_free);
-    if (!Q_point.get()) {
+    std::unique_ptr<EC_POINT, decltype(&EC_POINT_free)> q_point(EC_POINT_new(ec_group.get()), EC_POINT_free);
+    if (!q_point.get()) {
         throw UnsupportedKeyException("Unable to get OpenSSL EC point");
     }
 
-    if (!EC_POINT_get_affine_coordinates(ec_group.get(), Q_point.get(), x_bignum.get(), y_bignum.get(), NULL)) {
+    OSSL_PARAM *params;
+    if (!EVP_PKEY_todata(pkey.get(), EVP_PKEY_PUBLIC_KEY, &params)) {
+        throw UnsupportedKeyException("Unable to get OpenSSL public key parameters");
+    }
+
+    void* buf = NULL;
+    size_t buf_len, max_len = 256;
+    OSSL_PARAM *p = OSSL_PARAM_locate(params,"pub");
+    if (!p || !OSSL_PARAM_get_octet_string(p, &buf, max_len, &buf_len)
+           || !EC_POINT_oct2point(ec_group.get(), q_point.get(), static_cast<unsigned char*>(buf), buf_len, nullptr)) {
+        throw UnsupportedKeyException("Failed to to set OpenSSL EC point with public key information");
+    }
+
+    if (!EC_POINT_get_affine_coordinates(ec_group.get(), q_point.get(), x_bignum.get(), y_bignum.get(), NULL)) {
         throw UnsupportedKeyException("Unable to get OpenSSL affine coordinates");
     }
+
+    OSSL_PARAM_free(params);
 #else
     std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> pkey
         (PEM_read_bio_EC_PUBKEY(pubkey_bio.get(), nullptr, nullptr, nullptr), EC_KEY_free);

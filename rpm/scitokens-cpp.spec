@@ -18,7 +18,7 @@ Source0: https://github.com/scitokens/scitokens-cpp/releases/download/v%{version
 # inappropriate to include a "Provides", as jwt-cpp is not provided
 # by this package.
 
-BuildRequires: gcc-c++ >= 5.1
+BuildRequires: gcc-c++
 BuildRequires: make
 BuildRequires: cmake3
 BuildRequires: sqlite-devel
