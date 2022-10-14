@@ -15,13 +15,13 @@ env:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
-
     strategy:
       matrix:
         external-gtest: [ YES, NO ]
+        os: [ ubuntu-latest, ubuntu-22.04 ]
 
-    name: Build with external_gtest=${{ matrix.external-gtest }}
+    runs-on: ${{ matrix.os }}
+    name: Build with external_gtest=${{ matrix.external-gtest }} on ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v1
