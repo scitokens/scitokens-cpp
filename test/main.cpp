@@ -1,5 +1,7 @@
 #include "../src/scitokens.h"
 
+#include <memory>
+
 #include <gtest/gtest.h>
 
 namespace {
@@ -77,6 +79,11 @@ class SerializeTest : public ::testing::Test {
                 "1", ec_public, &err_msg);
             ASSERT_TRUE(rv == 0);
 
+            scitoken_set_lifetime(m_token.get(), 60);
+
+            m_audiences_array.push_back("https://demo.scitokens.org/");
+            m_audiences_array.push_back(nullptr);
+
             const char *groups[3] = {nullptr, nullptr, nullptr};
             const char group0[] = "group0";
             const char group1[] = "group1";
@@ -95,6 +102,8 @@ class SerializeTest : public ::testing::Test {
 
     using TokenPtr = std::unique_ptr<void, decltype(&scitoken_destroy)>;
     TokenPtr m_token{nullptr, scitoken_destroy};
+
+    std::vector<const char *> m_audiences_array;
 
     TokenPtr m_read_token{nullptr, scitoken_destroy};
 };
@@ -264,11 +273,7 @@ TEST_F(SerializeTest, EnforcerTest) {
                 "https://demo.scitokens.org/", &err_msg);
     ASSERT_TRUE(rv == 0);
 
-    std::vector<const char *> audiences_array;
-    audiences_array.push_back("https://demo.scitokens.org/");
-    audiences_array.push_back(nullptr);
-
-    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest", &audiences_array[0], &err_msg);
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest", &m_audiences_array[0], &err_msg);
     ASSERT_TRUE(enforcer != nullptr);
     
     Acl acl;
@@ -304,11 +309,7 @@ TEST_F(SerializeTest, EnforcerScopeTest) {
                 "https://demo.scitokens.org/", &err_msg);
     ASSERT_TRUE(rv == 0);
 
-    std::vector<const char *> audiences_array;
-    audiences_array.push_back("https://demo.scitokens.org/");
-    audiences_array.push_back(nullptr);
-
-    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest", &audiences_array[0], &err_msg);
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest", &m_audiences_array[0], &err_msg);
     ASSERT_TRUE(enforcer != nullptr);
 
     scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::WLCG_1_0);
@@ -343,10 +344,46 @@ TEST_F(SerializeTest, EnforcerScopeTest) {
     }
     ASSERT_TRUE(found_read);
     ASSERT_TRUE(found_write);
+}
 
+TEST_F(SerializeTest, ExplicitTime) {
+    time_t now = time(NULL);
+    char *err_msg;
 
+    scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::WLCG_1_0);
+    auto rv = scitoken_set_claim_string(m_token.get(), "scope",
+                "storage.read:/", &err_msg);
 
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0);
 
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest", &m_audiences_array[0], &err_msg);
+    ASSERT_TRUE(enforcer != nullptr);
+    Acl *acls;
+    rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    if (rv) {
+        printf("Failure when generating ACLs: %s\n", err_msg);
+    }
+    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(acls != nullptr);
+
+    enforcer_set_time(enforcer, time(NULL), &err_msg);
+    rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    enforcer_set_time(enforcer, time(NULL) + 100, &err_msg);
+    rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    ASSERT_FALSE(rv == 0);
+
+    enforcer_set_time(enforcer, time(NULL) - 100, &err_msg);
+    rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    ASSERT_FALSE(rv == 0);
+
+    enforcer_destroy(enforcer);
 }
 
 }

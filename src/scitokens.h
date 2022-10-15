@@ -5,7 +5,10 @@
  */
 
 #ifdef __cplusplus
+#include <ctime>
 extern "C" {
+#else
+#include <time.h>
 #endif
 
 typedef void * SciTokenKey;
@@ -100,6 +103,12 @@ Validator validator_create();
  */
 void validator_set_token_profile(Validator, SciTokenProfile profile);
 
+/**
+ * Set the time to use with the validator.  Useful if you want to see if the token would
+ * have been valid at some time in the past.
+ */
+int validator_set_time(Validator validator, time_t now, char **err_msg);
+
 int validator_add(Validator validator, const char *claim, StringValidatorFunction validator_func, char **err_msg);
 
 int validator_add_critical_claims(Validator validator, const char **claims, char **err_msg);
@@ -120,6 +129,12 @@ void enforcer_destroy(Enforcer);
  * will be converted to SciTokens 1.0-style authorizations (so, WLCG's storage.read becomes read).
  */
 void enforcer_set_validate_profile(Enforcer, SciTokenProfile profile);
+
+/**
+ * Set the time to use with the enforcer.  Useful if you want to see if the token would
+ * have been valid at some time in the past.
+ */
+int enforcer_set_time(Enforcer enf, time_t now, char **err_msg);
 
 int enforcer_generate_acls(const Enforcer enf, const SciToken scitokens, Acl **acls, char **err_msg);
 
