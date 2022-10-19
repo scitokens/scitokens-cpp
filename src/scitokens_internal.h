@@ -6,6 +6,15 @@
 #include <jwt-cpp/jwt.h>
 #include <uuid/uuid.h>
 
+namespace {
+
+struct FixedClock {
+    jwt::date m_now;
+    jwt::date now() const {return m_now;}
+};
+
+}
+
 namespace jwt {
     template<typename json_traits>
     class decoded_jwt;
@@ -267,6 +276,10 @@ class Validator {
     typedef std::map<std::string, std::vector<std::pair<ClaimValidatorFunction, void*>>> ClaimValidatorMap;
 
 public:
+    Validator() : m_now(std::chrono::system_clock::now()) {}
+
+    void set_now(std::chrono::system_clock::time_point now) {m_now = now;}
+
     void verify(const SciToken &scitoken) {
         const jwt::decoded_jwt<jwt::traits::kazuho_picojson> *jwt_decoded = scitoken.m_decoded.get();
         if (!jwt_decoded) {
@@ -343,7 +356,8 @@ public:
         get_public_key_pem(jwt.get_issuer(), key_id, public_pem, algorithm);
         // std::cout << "Public PEM: " << public_pem << std::endl << "Algorithm: " << algorithm << std::endl;
         SciTokenKey key(key_id, algorithm, public_pem, "");
-        auto verifier = jwt::verify()
+
+        auto verifier = jwt::verify<FixedClock, jwt::traits::kazuho_picojson>({m_now})
             .allow_algorithm(key);
 
         verifier.verify(jwt);
@@ -544,6 +558,8 @@ private:
     ClaimStringValidatorMap m_validators;
     ClaimValidatorMap m_claim_validators;
 
+    std::chrono::system_clock::time_point m_now;
+
     std::vector<std::string> m_critical_claims;
     std::vector<std::string> m_allowed_issuers;
 };
@@ -571,6 +587,8 @@ public:
         }
         m_validator.add_critical_claims(critical_claims);
     }
+
+    void set_now(std::chrono::system_clock::time_point now) {m_validator.set_now(now);}
 
     void set_validate_profile(SciToken::Profile profile) {
         m_validate_profile = profile;

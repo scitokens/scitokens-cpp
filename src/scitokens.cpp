@@ -347,6 +347,18 @@ int validator_validate(Validator validator, SciToken scitoken, char **err_msg) {
 }
 
 
+int validator_set_time(Validator validator, time_t now, char **err_msg) {
+    if (validator == nullptr) {
+        if (err_msg) {*err_msg = strdup("Validator may not be a null pointer");}
+        return -1;
+    }
+    auto real_validator = reinterpret_cast<scitokens::Validator*>(validator);
+
+    real_validator->set_now(std::chrono::system_clock::from_time_t(now));
+
+    return 0;
+}
+
 Enforcer enforcer_create(const char *issuer, const char **audience_list, char **err_msg) {
     if (issuer == nullptr) {
         if (err_msg) {*err_msg = strdup("Issuer may not be a null pointer");}
@@ -385,6 +397,19 @@ void enforcer_set_validate_profile(Enforcer enf, SciTokenProfile profile) {
 
     auto real_enf = reinterpret_cast<scitokens::Enforcer*>(enf);
     real_enf->set_validate_profile(static_cast<scitokens::SciToken::Profile>(profile));
+}
+
+
+int enforcer_set_time(Enforcer enf, time_t now, char **err_msg) {
+    if (enf == nullptr) {
+        if (err_msg) {*err_msg = strdup("Enforcer may not be a null pointer");}
+        return -1;
+    }
+    auto real_enf = reinterpret_cast<scitokens::Enforcer*>(enf);
+
+    real_enf->set_now(std::chrono::system_clock::from_time_t(now));
+
+    return 0;
 }
 
 
