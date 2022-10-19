@@ -439,6 +439,12 @@ normalize_absolute_path(const std::string &path) {
 }
 
 
+void get_default_expiry_time(int &next_update_delta, int &expiry_delta)
+{
+    next_update_delta = 600;
+    expiry_delta = 4*24*3600;
+}
+
 }
 
 
@@ -511,8 +517,49 @@ Validator::get_public_keys_from_web(const std::string &issuer, picojson::value &
 
     keys = json_obj;
 
-    next_update = now + 600;
-    expires = now + 4*24*3600;
+    int next_update_delta, expiry_delta;
+    get_default_expiry_time(next_update_delta, expiry_delta);
+    next_update = now + next_update_delta;
+    expires = now + expiry_delta;
+}
+
+
+std::string
+Validator::get_jwks(const std::string &issuer)
+{
+    auto now = std::time(NULL);
+    picojson::value jwks;
+    int64_t next_update;
+    if (get_public_keys_from_db(issuer, now, jwks, next_update)) {
+        return jwks.serialize();
+    }
+    return std::string("{\"keys\": []}");
+}
+
+
+bool
+Validator::refresh_jwks(const std::string &issuer)
+{
+    int64_t next_update, expires;
+    picojson::value keys;
+    get_public_keys_from_web(issuer, keys, next_update, expires);
+    return store_public_keys(issuer, keys, next_update, expires);
+}
+
+
+bool
+Validator::store_jwks(const std::string &issuer, const std::string &jwks_str)
+{
+    picojson::value jwks;
+    std::string err = picojson::parse(jwks, jwks_str);
+    auto now = std::time(NULL);
+    int next_update_delta, expiry_delta;
+    get_default_expiry_time(next_update_delta, expiry_delta);
+    int64_t next_update = now + next_update_delta, expires = now + expiry_delta;
+    if (!err.empty()) {
+        throw JsonException(err);
+    }
+    return store_public_keys(issuer, jwks, next_update, expires);
 }
 
 void
@@ -691,7 +738,9 @@ scitokens::Validator::store_public_ec_key(const std::string &issuer, const std::
     picojson::value top_value(top_obj);
 
     auto now = std::time(NULL);
-    return store_public_keys(issuer, top_value, now + 600, now + 4*3600);
+    int next_update_delta, expiry_delta;
+    get_default_expiry_time(next_update_delta, expiry_delta);
+    return store_public_keys(issuer, top_value, now + next_update_delta, now + expiry_delta);
 }
 
 

@@ -530,10 +530,26 @@ public:
      */
     static bool store_public_ec_key(const std::string &issuer, const std::string &kid, const std::string &key);
 
+    /**
+     * Store the contents of a JWKS for a given issuer.
+     */
+    static bool store_jwks(const std::string &issuer, const std::string &jwks);
+
+    /**
+     * Trigger a refresh of the JWKS or a given issuer.
+     */
+    static bool refresh_jwks(const std::string &issuer);
+
+    /**
+     * Fetch the contents of fa JWKS for a given issuer (do not trigger a refresh).
+     * Will return an empty JWKS if no valid JWKS is available.
+     */
+    static std::string get_jwks(const std::string &issuer);
+
 private:
     void get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm);
-    void get_public_keys_from_web(const std::string &issuer, picojson::value &keys, int64_t &next_update, int64_t &expires);
-    bool get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update);
+    static void get_public_keys_from_web(const std::string &issuer, picojson::value &keys, int64_t &next_update, int64_t &expires);
+    static bool get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update);
     static bool store_public_keys(const std::string &issuer, const picojson::value &keys, int64_t next_update, int64_t expires);
 
     bool m_validate_all_claims{true};

@@ -480,3 +480,65 @@ int enforcer_test(const Enforcer enf, const SciToken scitoken, const Acl *acl, c
     }
     return 0;
 }
+
+
+int keycache_refresh_jwks(const char *issuer, char **err_msg)
+{
+    if (!issuer) {
+        if (err_msg) {*err_msg = strdup("Issuer may not be a null pointer");}
+        return -1;
+    }
+    try {
+        if (!scitokens::Validator::refresh_jwks(issuer)) {
+            if (err_msg) {*err_msg = strdup("Failed to refresh JWKS cache for issuer.");}
+            return -1;
+        }
+    } catch (std::exception &exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    return 0;
+}
+
+
+int keycache_get_cached_jwks(const char *issuer, char **jwks, char **err_msg)
+{
+    if (!issuer) {
+        if (err_msg) {*err_msg = strdup("Issuer may not be a null pointer");}
+        return -1;
+    }
+    if (!jwks) {
+        if (err_msg) {*err_msg = strdup("JWKS output pointer may not be null.");}
+        return -1;
+    }
+    try {
+        *jwks = strdup(scitokens::Validator::get_jwks(issuer).c_str());
+    } catch(std::exception &exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    return 0;
+}
+
+
+int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg)
+{
+    if (!issuer) {
+        if (err_msg) {*err_msg = strdup("Issuer may not be a null pointer");}
+        return -1;
+    }
+    if (!jwks) {
+        if (err_msg) {*err_msg = strdup("JWKS pointer may not be null.");}
+        return -1;
+    }
+    try {
+        if (!scitokens::Validator::store_jwks(issuer, jwks)) {
+            if (err_msg) {*err_msg = strdup("Failed to set the JWKS cache for issuer.");}
+            return -1;
+        }
+    } catch(std::exception &exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    return 0;
+}
