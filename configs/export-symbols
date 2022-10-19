@@ -3,6 +3,7 @@ global:
   scitoken*;
   validator*;
   enforcer*;
+  keycache*;
 
 local:
   *;
