@@ -127,6 +127,39 @@ void enforcer_acl_free(Acl *acls);
 
 int enforcer_test(const Enforcer enf, const SciToken sci, const Acl *acl, char **err_msg);
 
+
+/**
+ * API for explicity managing the key cache.
+ *
+ * This manipulates the keycache for the current eUID.
+ */
+
+
+/**
+ * Refresh the JWKS in the keycache for a given issuer; the refresh will occur
+ * even if the JWKS is not otherwise due for updates.
+ * - Returns 0 on success, nonzero on failure.
+ */
+int keycache_refresh_jwks(const char *issuer, char **err_msg);
+
+/**
+ * Retrieve the JWKS from the keycache for a given issuer.
+ * - Returns 0 if successful, nonzero on failure.
+ * - If the existing JWKS has expired - or does not exist - this does not trigger a new
+ *   download of the JWKS from the issuer.  Instead, it will return a JWKS object with
+ *   an empty set of keys.
+ * - `jwks` is an output variable set to the contents of the JWKS in the key cache.
+ */
+int keycache_get_cached_jwks(const char *issuer, char **jwks, char **err_msg);
+
+/**
+ * Replace any existing key cache entry with one provided by the user.
+ * The expiration and next update time of the user-provided JWKS will utilize
+ * the same rules as a download from an issuer with no explicit cache lifetime directives.
+ * - `jwks` is value that will be set in the cache.
+ */
+int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
+
 #ifdef __cplusplus
 }
 #endif

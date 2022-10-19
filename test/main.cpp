@@ -1,5 +1,6 @@
 #include "../src/scitokens.h"
 
+#include <memory>
 #include <gtest/gtest.h>
 
 namespace {
@@ -55,6 +56,95 @@ TEST(SciTokenTest, SignToken) {
     std::unique_ptr<char, decltype(&free)> value_ptr(value, free);
 
     ASSERT_TRUE(strlen(value) > 50);
+}
+
+
+class KeycacheTest : public ::testing::Test
+{
+    protected:
+        std::string demo_scitokens_url = "https://demo.scitokens.org";
+
+        void SetUp() override {
+            char *err_msg;
+            auto rv = keycache_set_jwks(demo_scitokens_url.c_str(), demo_scitokens.c_str(), &err_msg);
+            ASSERT_TRUE(rv == 0);
+        }
+
+        // Reference copy of the keys at https://demo.scitokens.org/oauth2/certs; may need
+        // to be updated periodically.
+        std::string demo_scitokens = "{\"keys\":[{\"alg\":\"RS256\",\"e\":\"AQAB\",\"kid\":\"key-rs256\",\"kty\":\"RSA\",\"n\":\"uGDGTLXnqh3mfopjys6sFUBvFl3F4Qt6NEYphq_u_aBhtN1X9NEyb78uB_I1KjciJNGLIQU0ECsJiFx6qV1hR9xE1dPyrS3bU92AVtnBrvzUtTU-aUZAmZQiuAC_rC0-z_TOQr6qJkkUgZtxR9n9op55ZBpRfZD5dzhkW4Dm146vfTKt0D4cIMoMNJS5xQx9nibeB4E8hryZDW_fPeD0XZDcpByNyP0jFDYkxdUtQFvyRpz4WMZ4ejUfvW3gf4LRAfGZJtMnsZ7ZW4RfoQbhiXKMfWeBEjQDiXh0r-KuZLykxhYJtpf7fTnPna753IzMgRMmW3F69iQn2LQN3LoSMw==\",\"use\":\"sig\"},{\"alg\":\"ES256\",\"kid\":\"key-es256\",\"kty\":\"EC\",\"use\":\"sig\",\"x\":\"ncSCrGTBTXXOhNiAOTwNdPjwRz1hVY4saDNiHQK9Bh4=\",\"y\":\"sCsFXvx7FAAklwq3CzRCBcghqZOFPB2dKUayS6LY_Lo=\"}]}";
+        std::string demo_scitokens2 = "{\"keys\":[{\"alg\":\"ES256\",\"kid\":\"key-es256\",\"kty\":\"EC\",\"use\":\"sig\",\"x\":\"ncSCrGTBTXXOhNiAOTwNdPjwRz1hVY4saDNiHQK9Bh4=\",\"y\":\"sCsFXvx7FAAklwq3CzRCBcghqZOFPB2dKUayS6LY_Lo=\"}]}";
+};
+
+
+TEST_F(KeycacheTest, RefreshTest) {
+    char *err_msg;
+    auto rv = keycache_refresh_jwks(demo_scitokens_url.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    char *output_jwks;
+    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &output_jwks, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(output_jwks != nullptr);
+    std::string output_jwks_str(output_jwks);
+    free(output_jwks);
+
+    EXPECT_EQ(demo_scitokens, output_jwks_str);
+}
+
+
+TEST_F(KeycacheTest, RefreshInvalid)
+{
+    char *err_msg, *jwks;
+    auto rv = keycache_refresh_jwks("https://demo.scitokens.org/invalid", &err_msg);
+    ASSERT_FALSE(rv == 0);
+
+    rv = keycache_get_cached_jwks("https://demo.scitokens.org/invalid", &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    EXPECT_EQ(jwks_str, "{\"keys\": []}");
+}
+
+
+TEST_F(KeycacheTest, GetInvalid)
+{
+    char *err_msg, *jwks;
+    auto rv = keycache_get_cached_jwks("https://demo.scitokens.org/unknown", &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+}
+
+
+TEST_F(KeycacheTest, GetTest) {
+    char *err_msg, *jwks;
+    auto rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    EXPECT_EQ(demo_scitokens, jwks_str);
+}
+
+
+TEST_F(KeycacheTest, SetGetTest) {
+    char *err_msg;
+    auto rv = keycache_set_jwks(demo_scitokens_url.c_str(), demo_scitokens2.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    char *jwks;
+    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    EXPECT_EQ(demo_scitokens2, jwks_str);
 }
 
 
