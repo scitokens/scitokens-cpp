@@ -29,12 +29,16 @@ CurlRaii myCurl;
 class SimpleCurlGet {
 
     int m_maxbytes;
+    unsigned m_timeout;
     std::vector<char> m_data;
     size_t m_len{0};
 
 public:
-    SimpleCurlGet(int maxbytes=1024*1024)
-      : m_maxbytes(maxbytes)
+    static const unsigned default_timeout = 4;
+    static const unsigned extended_timeout = 30;
+
+    SimpleCurlGet(int maxbytes=1024*1024, unsigned timeout=4)
+      : m_maxbytes(maxbytes), m_timeout(timeout)
     {}
 
     int perform(const std::string &url) {
@@ -52,6 +56,8 @@ public:
             }
         }
 
+        long timeout = m_timeout > 120 ? 120 : m_timeout;
+
         CURLcode rv = curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         if (rv != CURLE_OK) {
             throw CurlException("Failed to set CURLOPT_URL.");
@@ -63,6 +69,10 @@ public:
         rv = curl_easy_setopt(curl, CURLOPT_WRITEDATA, this);
         if (rv != CURLE_OK) {
             throw CurlException("Failed to set CURLOPT_WRITEDATA.");
+        }
+        rv = curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
+        if (rv != CURLE_OK) {
+            throw CurlException("Failed to set CURLOPT_TIMEOUT.");
         }
 
         auto res = curl_easy_perform(curl);
@@ -376,12 +386,12 @@ SciToken::deserialize(const std::string &data, const std::vector<std::string> al
 
 
 void
-Validator::get_public_keys_from_web(const std::string &issuer, picojson::value &keys, int64_t &next_update, int64_t &expires)
+Validator::get_public_keys_from_web(const std::string &issuer, unsigned timeout, picojson::value &keys, int64_t &next_update, int64_t &expires)
 {
     std::string openid_metadata, oauth_metadata;
     get_metadata_endpoint(issuer, openid_metadata, oauth_metadata);
 
-    SimpleCurlGet cget;
+    SimpleCurlGet cget(1024*1024, timeout);
     auto status_code = cget.perform(openid_metadata);
 
     if (status_code != 200) {
@@ -439,14 +449,14 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
     if (get_public_keys_from_db(issuer, now, keys, next_update)) {
         if (now > next_update) {
             try {
-                get_public_keys_from_web(issuer, keys, next_update, expires);
+                get_public_keys_from_web(issuer, SimpleCurlGet::default_timeout, keys, next_update, expires);
                 store_public_keys(issuer, keys, next_update, expires);
             } catch (std::runtime_error &) {
                 // ignore the exception: we have a valid set of keys already/
             }
         }
     } else {
-        get_public_keys_from_web(issuer, keys, next_update, expires);
+        get_public_keys_from_web(issuer, SimpleCurlGet::extended_timeout, keys, next_update, expires);
         store_public_keys(issuer, keys, next_update, expires);
     }
 
