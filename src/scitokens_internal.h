@@ -505,7 +505,7 @@ public:
 private:
     void get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm);
     void get_public_keys_from_web(const std::string &issuer, unsigned timeout, picojson::value &keys, int64_t &next_update, int64_t &expires);
-    bool get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update);
+    bool get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update, int64_t &expires);
     static bool store_public_keys(const std::string &issuer, const picojson::value &keys, int64_t next_update, int64_t expires);
 
     bool m_validate_all_claims{true};

@@ -121,7 +121,7 @@ remove_issuer_entry(sqlite3 *db, const std::string &issuer, bool new_transaction
 
 
 bool
-scitokens::Validator::get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update) {
+scitokens::Validator::get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update, int64_t &expires) {
     auto cache_fname = get_cache_file();
     if (cache_fname.size() == 0) {return false;}
 
@@ -177,6 +177,7 @@ scitokens::Validator::get_public_keys_from_db(const std::string issuer, int64_t 
             sqlite3_close(db);
             return false;
         }
+        expires = expiry;
         sqlite3_close(db);
         iter = top_obj.find("next_update");
         if (iter == top_obj.end() || !iter->second.is<int64_t>()) {
