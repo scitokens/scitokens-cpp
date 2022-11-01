@@ -446,13 +446,15 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
     picojson::value keys;
     int64_t next_update, expires;
     auto now = std::time(NULL);
-    if (get_public_keys_from_db(issuer, now, keys, next_update)) {
+    if (get_public_keys_from_db(issuer, now, keys, next_update, expires)) {
         if (now > next_update) {
             try {
                 get_public_keys_from_web(issuer, SimpleCurlGet::default_timeout, keys, next_update, expires);
                 store_public_keys(issuer, keys, next_update, expires);
             } catch (std::runtime_error &) {
-                // ignore the exception: we have a valid set of keys already/
+                // ignore the exception: we have a valid set of keys already.  However, we don't want to continuously
+                // hammer the upstream server which is not currently working ... move forward the next_update by 5 minutes.
+                store_public_keys(issuer, keys, now + 300, expires);
             }
         }
     } else {
