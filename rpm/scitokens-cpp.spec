@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.7.2
+Version: 0.7.3
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -66,6 +66,9 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+* Tue Nov 01 2022 Derek Weitzel <dweitzel@unl.edu> - 0.7.3-1
+- Retry failed key renewal every 5 minutes
+
 * Mon Oct 31 2022 Derek Weitzel <dweitzel@unl.edu> - 0.7.2-1
 - Add curl timeout of 4 seconds for update, and 30 for expired keys
 
