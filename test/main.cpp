@@ -344,9 +344,28 @@ TEST_F(SerializeTest, EnforcerScopeTest) {
     ASSERT_TRUE(found_read);
     ASSERT_TRUE(found_write);
 
+}
 
+TEST_F(SerializeTest, DeserializeAsyncTest) {
+    char *err_msg = nullptr;
 
+    // Serialize as "compat" token.
+    char *token_value = nullptr;
+    scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::COMPAT);
+    auto rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
 
+    SciToken scitoken;
+    SciTokenStatus status;
+
+    // Accepts any profile.
+    rv = scitoken_deserialize_start(token_value, &scitoken, nullptr, &status, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    // Accepts only an at+jwt token, should fail with COMPAT token
+    rv = scitoken_deserialize_continue(&scitoken, &status, &err_msg);
+    ASSERT_FALSE(rv == 0);
 }
 
 }

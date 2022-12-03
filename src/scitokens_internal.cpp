@@ -447,8 +447,37 @@ SciToken::deserialize(const std::string &data, const std::vector<std::string> al
     m_profile = val.get_profile();
 }
 
+std::unique_ptr<SciTokenAsyncStatus>
+SciToken::deserialize_start(const std::string &data, const std::vector<std::string> allowed_issuers) {
+    m_decoded.reset(new jwt::decoded_jwt(data));
 
-std::unique_ptr<Validator::AsyncStatus>
+    scitokens::Validator val;
+    val.add_allowed_issuers(allowed_issuers);
+    val.set_validate_all_claims_scitokens_1(false);
+    val.set_validate_profile(m_deserialize_profile);
+    std::unique_ptr<SciTokenAsyncStatus> status(new SciTokenAsyncStatus());
+    status->m_status = val.verify_async(*m_decoded);
+
+    return std::move(deserialize_continue(std::move(status)));
+}
+
+std::unique_ptr<SciTokenAsyncStatus>
+SciToken::deserialize_continue(std::unique_ptr<SciTokenAsyncStatus> status) {
+
+    status->m_status = status->m_validator->verify_async_continue(std::move(status->m_status));
+    // Check if the status is completed
+    if (status->m_status) {
+        // Set all the claims
+        m_claims = m_decoded->get_payload_claims();
+
+        // Copy over the profile
+        m_profile = m_profile;
+    }
+    return std::move(status);
+}
+
+
+std::unique_ptr<AsyncStatus>
 Validator::get_public_keys_from_web(const std::string &issuer)
 {
     std::string openid_metadata, oauth_metadata;
@@ -466,7 +495,7 @@ Validator::get_public_keys_from_web(const std::string &issuer)
 }
 
 
-std::unique_ptr<Validator::AsyncStatus>
+std::unique_ptr<AsyncStatus>
 Validator::get_public_keys_from_web_continue(std::unique_ptr<AsyncStatus> status)
 {
     char *buffer;
@@ -537,7 +566,7 @@ Validator::get_public_keys_from_web_continue(std::unique_ptr<AsyncStatus> status
 }
 
 
-std::unique_ptr<Validator::AsyncStatus>
+std::unique_ptr<AsyncStatus>
 Validator::get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm) {
 
     auto now = std::time(NULL);
@@ -566,8 +595,8 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
     }
 }
 
-std::unique_ptr<Validator::AsyncStatus>
-Validator::get_public_key_pem_continue(std::unique_ptr<Validator::AsyncStatus> status, std::string &public_pem, std::string &algorithm) {
+std::unique_ptr<AsyncStatus>
+Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status, std::string &public_pem, std::string &algorithm) {
 
     if (status->m_continue_fetch) {
         try {

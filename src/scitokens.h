@@ -92,6 +92,23 @@ void scitoken_set_deserialize_profile(SciToken token, SciTokenProfile profile);
 
 int scitoken_deserialize(const char *value, SciToken *token, char const* const* allowed_issuers, char **err_msg);
 
+/**
+ * @brief Start the deserialization process for a token, returning a status object.
+ * 
+ * @param value The serialized token.
+ * @param token Destination for the token object.
+ * @param allowed_issuers List of allowed issuers, or nullptr for no issuer check.
+ * @param status Destination for the status object.
+ * @param err_msg Destination for error message.
+ * @return int 0 on success, -1 on error.
+ */
+
+int scitoken_deserialize_start(const char *value, SciToken *token, char const* const* allowed_issuers,
+    SciTokenStatus *status, char **err_msg);
+
+
+int scitoken_deserialize_continue(SciToken *token, SciTokenStatus *status, char **err_msg);
+
 int scitoken_deserialize_v2(const char *value, SciToken token, char const* const* allowed_issuers, char **err_msg);
 
 int scitoken_store_public_ec_key(const char *issuer, const char *keyid, const char *value, char **err_msg);

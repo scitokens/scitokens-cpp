@@ -255,6 +255,68 @@ int scitoken_deserialize_v2(const char *value, SciToken token, char const* const
     return 0;
 }
 
+int scitoken_deserialize_start(const char *value, SciToken *token, char const* const* allowed_issuers, SciTokenStatus *status_out, char **err_msg) {
+    if (value == nullptr) {
+        if (err_msg) {*err_msg = strdup("Token may not be NULL");}
+        return -1;
+    }
+    if (token == nullptr) {
+        if (err_msg) {*err_msg = strdup("Output token not provided");}
+        return -1;
+    }
+    
+    scitokens::SciTokenKey key;
+    scitokens::SciToken *real_token = new scitokens::SciToken(key);
+    
+
+    std::vector<std::string> allowed_issuers_vec;
+    if (allowed_issuers != nullptr) {
+        for (int idx=0; allowed_issuers[idx]; idx++) {
+            allowed_issuers_vec.push_back(allowed_issuers[idx]);
+        }
+    }
+
+    std::unique_ptr<scitokens::SciTokenAsyncStatus> status;
+    try {
+        status = real_token->deserialize_start(value, allowed_issuers_vec);
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        delete real_token;
+        return -1;
+    }
+    *token = real_token;
+    *status_out = status.release();
+    return 0;
+}
+
+int scitoken_deserialize_continue(SciToken token, SciTokenStatus *status, char **err_msg) {
+    if (token == nullptr) {
+        if (err_msg) {*err_msg = strdup("Output token not provided");}
+        return -1;
+    }
+    scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
+    std::unique_ptr<scitokens::SciTokenAsyncStatus> real_status(reinterpret_cast<scitokens::SciTokenAsyncStatus*>(*status));
+
+    try {
+        real_status = real_token->deserialize_continue(std::move(real_status));
+    } catch (std::exception &exc) {
+        *status = nullptr;
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+
+    if (real_status->m_status->m_done) {
+        *status = nullptr;
+    } else {
+        *status = real_status.release();
+    }
+    return 0;
+}
+
 int scitoken_store_public_ec_key(const char *issuer, const char *keyid, const char *key, char **err_msg)
 {
     bool success;
@@ -458,7 +520,7 @@ int enforcer_generate_acls_start(const Enforcer enf, const SciToken scitoken,
     auto real_scitoken = reinterpret_cast<scitokens::SciToken*>(scitoken);
 
     scitokens::Enforcer::AclsList acls_list;
-    std::unique_ptr<scitokens::Validator::AsyncStatus> status;
+    std::unique_ptr<scitokens::AsyncStatus> status;
     try {
          status = real_enf->generate_acls_start(*real_scitoken, acls_list);
     } catch (std::exception &exc) {
@@ -491,8 +553,8 @@ int enforcer_generate_acls_continue(const Enforcer enf, SciTokenStatus *status,
     }
     
     scitokens::Enforcer::AclsList acls_list;
-    std::unique_ptr<scitokens::Validator::AsyncStatus> status_internal(
-        reinterpret_cast<scitokens::Validator::AsyncStatus*>(*status));
+    std::unique_ptr<scitokens::AsyncStatus> status_internal(
+        reinterpret_cast<scitokens::AsyncStatus*>(*status));
     try {
         status_internal = real_enf->generate_acls_continue(std::move(status_internal), acls_list);
     } catch (std::exception &exc) {
@@ -539,8 +601,8 @@ int enforcer_test(const Enforcer enf, const SciToken scitoken, const Acl *acl, c
 
 
 void scitoken_status_free(SciTokenStatus status) {
-    std::unique_ptr<scitokens::Validator::AsyncStatus> status_real(
-        reinterpret_cast<scitokens::Validator::AsyncStatus*>(status));
+    std::unique_ptr<scitokens::AsyncStatus> status_real(
+        reinterpret_cast<scitokens::AsyncStatus*>(status));
 }
 
 
@@ -555,7 +617,7 @@ int scitoken_status_get_timeout_val(const SciTokenStatus *status, time_t expiry_
         return -1;
     }
 
-    auto real_status = reinterpret_cast<const scitokens::Validator::AsyncStatus*>(status);
+    auto real_status = reinterpret_cast<const scitokens::AsyncStatus*>(status);
     struct timeval timeout_internal = real_status->get_timeout_val(expiry_time);
     timeout->tv_sec = timeout_internal.tv_sec;
     timeout->tv_usec = timeout_internal.tv_usec;
@@ -575,7 +637,7 @@ int scitoken_status_get_read_fd_set(SciTokenStatus *status, fd_set **read_fd_set
         return -1;
     }
 
-    auto real_status = reinterpret_cast<scitokens::Validator::AsyncStatus*>(status);
+    auto real_status = reinterpret_cast<scitokens::AsyncStatus*>(status);
     *read_fd_set = real_status->get_read_fd_set();
     return 0;
 }
@@ -592,7 +654,7 @@ int scitoken_status_get_write_fd_set(SciTokenStatus *status, fd_set **write_fd_s
         return -1;
     }
 
-    auto real_status = reinterpret_cast<scitokens::Validator::AsyncStatus*>(status);
+    auto real_status = reinterpret_cast<scitokens::AsyncStatus*>(status);
     *write_fd_set = real_status->get_write_fd_set();
     return 0;
 }
@@ -609,7 +671,7 @@ int scitoken_status_get_exc_fd_set(SciTokenStatus *status, fd_set **exc_fd_set, 
         return -1;
     }
 
-    auto real_status = reinterpret_cast<scitokens::Validator::AsyncStatus*>(status);
+    auto real_status = reinterpret_cast<scitokens::AsyncStatus*>(status);
     *exc_fd_set = real_status->get_exc_fd_set();
     return 0;
 }
@@ -626,7 +688,7 @@ int scitoken_status_get_max_fd(const SciTokenStatus *status, int *max_fd, char *
         return -1;
     }
 
-    auto real_status = reinterpret_cast<const scitokens::Validator::AsyncStatus*>(status);
+    auto real_status = reinterpret_cast<const scitokens::AsyncStatus*>(status);
     *max_fd = real_status->get_max_fd();
     return 0;
 }

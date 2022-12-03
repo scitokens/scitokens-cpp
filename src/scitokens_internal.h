@@ -157,6 +157,55 @@ private:
 
 class Validator;
 
+class AsyncStatus {
+public:
+    AsyncStatus() = default;
+    AsyncStatus(const AsyncStatus &) = delete;
+    AsyncStatus & operator=(const AsyncStatus &) = delete;
+
+    bool m_done{false};
+    bool m_continue_fetch{false};
+    bool m_ignore_error{false};
+    bool m_do_store{true};
+    bool m_has_metadata{false};
+    bool m_oauth_fallback{false};
+
+    int64_t m_next_update{-1};
+    int64_t m_expires{-1};
+    picojson::value m_keys;
+    std::string m_issuer;
+    std::string m_kid;
+    std::string m_oauth_metadata_url;
+    std::unique_ptr<internal::SimpleCurlGet> m_cget;
+    std::string m_jwt_string;
+    std::string m_public_pem;
+    std::string m_algorithm;
+
+    struct timeval get_timeout_val(time_t expiry_time) const {
+        auto now = time(NULL);
+        long timeout_ms = 100*(expiry_time - now);
+        if (m_cget && (m_cget->get_timeout_ms() < timeout_ms)) timeout_ms = m_cget->get_timeout_ms();
+        struct timeval timeout;
+        timeout.tv_sec = timeout_ms / 1000;
+        timeout.tv_usec = (timeout_ms % 1000) * 1000;
+        return timeout;
+    }
+
+    int get_max_fd() const {return m_cget ? m_cget->get_max_fd() : -1;}
+    fd_set *get_read_fd_set() {return m_cget ? m_cget->get_read_fd_set() : nullptr;}
+    fd_set *get_write_fd_set() {return m_cget ? m_cget->get_write_fd_set() : nullptr;}
+    fd_set *get_exc_fd_set() {return m_cget ? m_cget->get_exc_fd_set() : nullptr;}
+};
+
+class SciTokenAsyncStatus {
+public:
+    SciTokenAsyncStatus() = default;
+    SciTokenAsyncStatus(const SciTokenAsyncStatus &) = delete;
+    SciTokenAsyncStatus & operator=(const SciTokenAsyncStatus &) = delete;
+
+    std::unique_ptr<Validator> m_validator;
+    std::unique_ptr<AsyncStatus> m_status;
+};
 
 class SciToken {
 
@@ -286,6 +335,10 @@ public:
     void
     deserialize(const std::string &data, std::vector<std::string> allowed_issuers={});
 
+    std::unique_ptr<SciTokenAsyncStatus> deserialize_start(const std::string &data, std::vector<std::string> allowed_issuers={});
+
+    std::unique_ptr<SciTokenAsyncStatus> deserialize_continue(std::unique_ptr<SciTokenAsyncStatus> status);
+
 private:
     bool m_issuer_set{false};
     int m_lifetime{600};
@@ -305,46 +358,6 @@ class Validator {
     typedef std::map<std::string, std::vector<std::pair<ClaimValidatorFunction, void*>>> ClaimValidatorMap;
 
 public:
-
-    class AsyncStatus {
-    public:
-        AsyncStatus() = default;
-        AsyncStatus(const AsyncStatus &) = delete;
-        AsyncStatus & operator=(const AsyncStatus &) = delete;
-
-        bool m_done{false};
-        bool m_continue_fetch{false};
-        bool m_ignore_error{false};
-        bool m_do_store{true};
-        bool m_has_metadata{false};
-        bool m_oauth_fallback{false};
-
-        int64_t m_next_update{-1};
-        int64_t m_expires{-1};
-        picojson::value m_keys;
-        std::string m_issuer;
-        std::string m_kid;
-        std::string m_oauth_metadata_url;
-        std::unique_ptr<internal::SimpleCurlGet> m_cget;
-        std::string m_jwt_string;
-        std::string m_public_pem;
-        std::string m_algorithm;
-
-        struct timeval get_timeout_val(time_t expiry_time) const {
-            auto now = time(NULL);
-            long timeout_ms = 100*(expiry_time - now);
-            if (m_cget && (m_cget->get_timeout_ms() < timeout_ms)) timeout_ms = m_cget->get_timeout_ms();
-            struct timeval timeout;
-            timeout.tv_sec = timeout_ms / 1000;
-            timeout.tv_usec = (timeout_ms % 1000) * 1000;
-            return timeout;
-        }
-
-        int get_max_fd() const {return m_cget ? m_cget->get_max_fd() : -1;}
-        fd_set *get_read_fd_set() {return m_cget ? m_cget->get_read_fd_set() : nullptr;}
-        fd_set *get_write_fd_set() {return m_cget ? m_cget->get_write_fd_set() : nullptr;}
-        fd_set *get_exc_fd_set() {return m_cget ? m_cget->get_exc_fd_set() : nullptr;}
-    };
 
     std::unique_ptr<AsyncStatus> verify_async(const SciToken &scitoken) {
         const jwt::decoded_jwt *jwt_decoded = scitoken.m_decoded.get();
@@ -701,7 +714,7 @@ public:
     }
 
 
-    std::unique_ptr<Validator::AsyncStatus> generate_acls_start(const SciToken &scitoken, AclsList &acls) {
+    std::unique_ptr<AsyncStatus> generate_acls_start(const SciToken &scitoken, AclsList &acls) {
         reset_state();
         auto status = m_validator.verify_async(scitoken);
         if (status->m_done) {
@@ -711,7 +724,7 @@ public:
     }
 
 
-    std::unique_ptr<Validator::AsyncStatus>  generate_acls_continue(std::unique_ptr<Validator::AsyncStatus> status, AclsList &acls) {
+    std::unique_ptr<AsyncStatus>  generate_acls_continue(std::unique_ptr<AsyncStatus> status, AclsList &acls) {
         auto result = m_validator.verify_async_continue(std::move(status));
         if (result->m_done) {
             acls = m_gen_acls;
