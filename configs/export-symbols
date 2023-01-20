@@ -4,7 +4,8 @@ global:
   validator*;
   enforcer*;
   keycache*;
-
+  config*;
+  
 local:
   *;
 };

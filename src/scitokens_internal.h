@@ -6,6 +6,7 @@
 #include <curl/curl.h>
 #include <jwt-cpp/jwt.h>
 #include <uuid/uuid.h>
+#include <atomic>
 
 #if defined(__GNUC__)
 #define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
@@ -28,6 +29,22 @@ namespace traits {
 struct kazuho_picojson;
 }
 } // namespace jwt
+
+namespace configurer {
+class Configuration {
+    public:
+        Configuration() {}
+        static void set_next_update_delta(int _next_update_delta) {m_next_update_delta = _next_update_delta;}
+        static int get_next_update_delta() {return m_next_update_delta;}
+        
+        static void set_expiry_delta(int _expiry_delta) {m_expiry_delta = _expiry_delta;}
+        static int get_expiry_delta() {return m_expiry_delta;}
+        
+    private:
+        static std::atomic_int m_next_update_delta;
+        static std::atomic_int m_expiry_delta;
+};
+}
 
 namespace scitokens {
 

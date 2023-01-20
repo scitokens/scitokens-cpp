@@ -546,11 +546,6 @@ std::string normalize_absolute_path(const std::string &path) {
     return result.empty() ? "/" : result;
 }
 
-void get_default_expiry_time(int &next_update_delta, int &expiry_delta) {
-    next_update_delta = 600;
-    expiry_delta = 4 * 24 * 3600;
-}
-
 } // namespace
 
 void SciToken::deserialize(const std::string &data,
@@ -695,8 +690,8 @@ std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
         // TODO: take expiration time from the cache-control header in the
         // response.
 
-        int next_update_delta, expiry_delta;
-        get_default_expiry_time(next_update_delta, expiry_delta);
+        int next_update_delta = configurer::Configuration::get_next_update_delta();
+        int expiry_delta = configurer::Configuration::get_expiry_delta();
         status->m_next_update = now + next_update_delta;
         status->m_expires = now + expiry_delta;
         status->m_keys = json_obj;
@@ -738,8 +733,8 @@ bool Validator::store_jwks(const std::string &issuer,
     picojson::value jwks;
     std::string err = picojson::parse(jwks, jwks_str);
     auto now = std::time(NULL);
-    int next_update_delta, expiry_delta;
-    get_default_expiry_time(next_update_delta, expiry_delta);
+    int next_update_delta = configurer::Configuration::get_next_update_delta();
+    int expiry_delta = configurer::Configuration::get_expiry_delta();
     int64_t next_update = now + next_update_delta, expires = now + expiry_delta;
     if (!err.empty()) {
         throw JsonException(err);
@@ -980,8 +975,8 @@ bool scitokens::Validator::store_public_ec_key(const std::string &issuer,
     picojson::value top_value(top_obj);
 
     auto now = std::time(NULL);
-    int next_update_delta, expiry_delta;
-    get_default_expiry_time(next_update_delta, expiry_delta);
+    int next_update_delta = configurer::Configuration::get_next_update_delta();
+    int expiry_delta = configurer::Configuration::get_expiry_delta();
     return store_public_keys(issuer, top_value, now + next_update_delta,
                              now + expiry_delta);
 }
