@@ -8,7 +8,10 @@
 #include <sys/select.h>
 
 #ifdef __cplusplus
+#include <ctime>
 extern "C" {
+#else
+#include <time.h>
 #endif
 
 typedef void * SciTokenKey;
@@ -106,6 +109,17 @@ int scitoken_deserialize(const char *value, SciToken *token, char const* const* 
 int scitoken_deserialize_start(const char *value, SciToken *token, char const* const* allowed_issuers,
     SciTokenStatus *status, char **err_msg);
 
+/**
+ * @brief Continue the deserialization process for a token, updating the status object.
+ * 
+ * If the status object indicates that the token is complete, the token object will be
+ * populated and the status object will be nullptr.
+ * 
+ * @param token The token object, returned from scitoken_deserialize_start.
+ * @param status Status object for the deserialize.
+ * @param err_msg Destination for error message.
+ * @return int 0 on success, -1 on error.
+ */
 
 int scitoken_deserialize_continue(SciToken *token, SciTokenStatus *status, char **err_msg);
 
@@ -120,6 +134,12 @@ Validator validator_create();
  * type while others will only support that specific profile.
  */
 void validator_set_token_profile(Validator, SciTokenProfile profile);
+
+/**
+ * Set the time to use with the validator.  Useful if you want to see if the token would
+ * have been valid at some time in the past.
+ */
+int validator_set_time(Validator validator, time_t now, char **err_msg);
 
 int validator_add(Validator validator, const char *claim, StringValidatorFunction validator_func, char **err_msg);
 
@@ -141,6 +161,12 @@ void enforcer_destroy(Enforcer);
  * will be converted to SciTokens 1.0-style authorizations (so, WLCG's storage.read becomes read).
  */
 void enforcer_set_validate_profile(Enforcer, SciTokenProfile profile);
+
+/**
+ * Set the time to use with the enforcer.  Useful if you want to see if the token would
+ * have been valid at some time in the past.
+ */
+int enforcer_set_time(Enforcer enf, time_t now, char **err_msg);
 
 int enforcer_generate_acls(const Enforcer enf, const SciToken scitokens, Acl **acls, char **err_msg);
 
@@ -195,6 +221,38 @@ int scitoken_status_get_exc_fd_set(SciTokenStatus *status, fd_set **exc_fd_set, 
  * See <https://curl.se/libcurl/c/curl_multi_fdset.html>.
  */
 int scitoken_status_get_max_fd(const SciTokenStatus *status, int *max_fd, char **err_msg);
+
+/**
+ * API for explicity managing the key cache.
+ *
+ * This manipulates the keycache for the current eUID.
+ */
+
+
+/**
+ * Refresh the JWKS in the keycache for a given issuer; the refresh will occur
+ * even if the JWKS is not otherwise due for updates.
+ * - Returns 0 on success, nonzero on failure.
+ */
+int keycache_refresh_jwks(const char *issuer, char **err_msg);
+
+/**
+ * Retrieve the JWKS from the keycache for a given issuer.
+ * - Returns 0 if successful, nonzero on failure.
+ * - If the existing JWKS has expired - or does not exist - this does not trigger a new
+ *   download of the JWKS from the issuer.  Instead, it will return a JWKS object with
+ *   an empty set of keys.
+ * - `jwks` is an output variable set to the contents of the JWKS in the key cache.
+ */
+int keycache_get_cached_jwks(const char *issuer, char **jwks, char **err_msg);
+
+/**
+ * Replace any existing key cache entry with one provided by the user.
+ * The expiration and next update time of the user-provided JWKS will utilize
+ * the same rules as a download from an issuer with no explicit cache lifetime directives.
+ * - `jwks` is value that will be set in the cache.
+ */
+int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
 
 #ifdef __cplusplus
 }

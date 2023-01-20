@@ -284,20 +284,36 @@ int scitoken_deserialize_start(const char *value, SciToken *token, char const* c
             *err_msg = strdup(exc.what());
         }
         delete real_token;
+        *status_out = nullptr;
         return -1;
     }
+
+    // Check if we're done
+    if (status->m_status->m_done) {
+        *token = real_token;
+        *status_out = nullptr;
+        return 0;
+    }
+
     *token = real_token;
     *status_out = status.release();
     return 0;
 }
 
-int scitoken_deserialize_continue(SciToken token, SciTokenStatus *status, char **err_msg) {
+int scitoken_deserialize_continue(SciToken *token, SciTokenStatus *status, char **err_msg) {
     if (token == nullptr) {
         if (err_msg) {*err_msg = strdup("Output token not provided");}
         return -1;
     }
+
+    
     scitokens::SciToken *real_token = reinterpret_cast<scitokens::SciToken*>(token);
     std::unique_ptr<scitokens::SciTokenAsyncStatus> real_status(reinterpret_cast<scitokens::SciTokenAsyncStatus*>(*status));
+
+    if (*status == nullptr || real_status->m_status->m_done) {
+        *status = nullptr;
+        return 0;
+    }
 
     try {
         real_status = real_token->deserialize_continue(std::move(real_status));
@@ -409,6 +425,18 @@ int validator_validate(Validator validator, SciToken scitoken, char **err_msg) {
 }
 
 
+int validator_set_time(Validator validator, time_t now, char **err_msg) {
+    if (validator == nullptr) {
+        if (err_msg) {*err_msg = strdup("Validator may not be a null pointer");}
+        return -1;
+    }
+    auto real_validator = reinterpret_cast<scitokens::Validator*>(validator);
+
+    real_validator->set_now(std::chrono::system_clock::from_time_t(now));
+
+    return 0;
+}
+
 Enforcer enforcer_create(const char *issuer, const char **audience_list, char **err_msg) {
     if (issuer == nullptr) {
         if (err_msg) {*err_msg = strdup("Issuer may not be a null pointer");}
@@ -476,6 +504,18 @@ Acl *convert_acls(scitokens::Enforcer::AclsList &acls_list, char **err_msg)
     return acl_result;
 }
 
+}
+
+int enforcer_set_time(Enforcer enf, time_t now, char **err_msg) {
+    if (enf == nullptr) {
+        if (err_msg) {*err_msg = strdup("Enforcer may not be a null pointer");}
+        return -1;
+    }
+    auto real_enf = reinterpret_cast<scitokens::Enforcer*>(enf);
+
+    real_enf->set_now(std::chrono::system_clock::from_time_t(now));
+
+    return 0;
 }
 
 
@@ -621,7 +661,6 @@ int scitoken_status_get_timeout_val(const SciTokenStatus *status, time_t expiry_
     struct timeval timeout_internal = real_status->get_timeout_val(expiry_time);
     timeout->tv_sec = timeout_internal.tv_sec;
     timeout->tv_usec = timeout_internal.tv_usec;
-
     return 0;
 }
 
@@ -692,3 +731,66 @@ int scitoken_status_get_max_fd(const SciTokenStatus *status, int *max_fd, char *
     *max_fd = real_status->get_max_fd();
     return 0;
 }
+
+
+int keycache_refresh_jwks(const char *issuer, char **err_msg)
+{
+    if (!issuer) {
+        if (err_msg) {*err_msg = strdup("Issuer may not be a null pointer");}
+        return -1;
+    }
+    try {
+        if (!scitokens::Validator::refresh_jwks(issuer)) {
+            if (err_msg) {*err_msg = strdup("Failed to refresh JWKS cache for issuer.");}
+            return -1;
+        }
+    } catch (std::exception &exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    return 0;
+}
+
+
+int keycache_get_cached_jwks(const char *issuer, char **jwks, char **err_msg)
+{
+    if (!issuer) {
+        if (err_msg) {*err_msg = strdup("Issuer may not be a null pointer");}
+        return -1;
+    }
+    if (!jwks) {
+        if (err_msg) {*err_msg = strdup("JWKS output pointer may not be null.");}
+        return -1;
+    }
+    try {
+        *jwks = strdup(scitokens::Validator::get_jwks(issuer).c_str());
+    } catch(std::exception &exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    return 0;
+}
+
+
+int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg)
+{
+    if (!issuer) {
+        if (err_msg) {*err_msg = strdup("Issuer may not be a null pointer");}
+        return -1;
+    }
+    if (!jwks) {
+        if (err_msg) {*err_msg = strdup("JWKS pointer may not be null.");}
+        return -1;
+    }
+    try {
+        if (!scitokens::Validator::store_jwks(issuer, jwks)) {
+            if (err_msg) {*err_msg = strdup("Failed to set the JWKS cache for issuer.");}
+            return -1;
+        }
+    } catch(std::exception &exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+    return 0;
+}
+

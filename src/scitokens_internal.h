@@ -13,6 +13,23 @@
 #define WARN_UNUSED_RESULT
 #endif
 
+namespace {
+
+struct FixedClock {
+    jwt::date m_now;
+    jwt::date now() const {return m_now;}
+};
+
+}
+
+namespace jwt {
+    template<typename json_traits>
+    class decoded_jwt;
+    namespace traits {
+        struct kazuho_picojson;
+    }
+}
+
 namespace scitokens {
 
 namespace internal {
@@ -20,6 +37,7 @@ namespace internal {
 class SimpleCurlGet {
 
     int m_maxbytes{1048576};
+    unsigned m_timeout;
     std::vector<char> m_data;
     size_t m_len{0};
     std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> m_curl;
@@ -31,8 +49,12 @@ class SimpleCurlGet {
     long m_timeout_ms{0};
 
 public:
-    SimpleCurlGet(int maxbytes=1024*1024)
+    static const unsigned default_timeout = 4;
+    static const unsigned extended_timeout = 30;
+
+    SimpleCurlGet(int maxbytes=1024*1024, unsigned timeout=30)
       : m_maxbytes(maxbytes),
+        m_timeout(timeout),
         m_curl(nullptr, &curl_easy_cleanup),
         m_curl_multi(nullptr, &curl_multi_cleanup)
     {}
@@ -67,6 +89,12 @@ public:
     {}
 };
 
+class JWTVerificationException : public std::runtime_error {
+public:
+    explicit JWTVerificationException(const std::string &msg)
+        : std::runtime_error("token verification failed: " + msg)
+    {}
+};
 
 class CurlException : public std::runtime_error {
 public:
@@ -99,7 +127,6 @@ public:
     {}
 };
 
-
 class SciTokenKey {
 
 public:
@@ -116,17 +143,18 @@ public:
     {}
 
     std::string
-    serialize(jwt::builder &builder) {
+    serialize(jwt::builder<jwt::traits::kazuho_picojson> &builder) {
+        std::error_code ec;
         builder.set_key_id(m_kid);
         return builder.sign(*this);
     }
 
     std::string
-    sign(const std::string &data) const {
+    sign(const std::string &data, std::error_code &ec) const {
         if (m_name == "RS256") {
-            return jwt::algorithm::rs256(m_public, m_private).sign(data);
+            return jwt::algorithm::rs256(m_public, m_private).sign(data, ec);
         } else if (m_name == "ES256") {
-            return jwt::algorithm::es256(m_public, m_private).sign(data);
+            return jwt::algorithm::es256(m_public, m_private).sign(data, ec);
         }
         throw UnsupportedKeyException("Provided algorithm name is not supported");
     }
@@ -137,13 +165,13 @@ public:
     }
 
     void
-    verify(const std::string &data, const std::string &signature) const {
+    verify(const std::string &data, const std::string &signature, std::error_code &ec) const {
         if (m_name == "RS256") {
-            jwt::algorithm::rs256(m_public, m_private).verify(data, signature);
+            jwt::algorithm::rs256(m_public, m_private).verify(data, signature, ec);
         } else if (m_name == "ES256") {
-            jwt::algorithm::es256(m_public, m_private).verify(data, signature);
+            jwt::algorithm::es256(m_public, m_private).verify(data, signature, ec);
         } else {
-            throw jwt::signature_verification_exception("Provided algorithm is not supported.");
+            throw UnsupportedKeyException("Provided algorithm is not supported.");
         }
     }
 
@@ -163,12 +191,19 @@ public:
     AsyncStatus(const AsyncStatus &) = delete;
     AsyncStatus & operator=(const AsyncStatus &) = delete;
 
+    enum AsyncState {
+        DOWNLOAD_METADATA,
+        DOWNLOAD_PUBLIC_KEY,
+        DONE
+    };
+
     bool m_done{false};
     bool m_continue_fetch{false};
     bool m_ignore_error{false};
     bool m_do_store{true};
     bool m_has_metadata{false};
     bool m_oauth_fallback{false};
+    AsyncState m_state{DOWNLOAD_METADATA};
 
     int64_t m_next_update{-1};
     int64_t m_expires{-1};
@@ -291,7 +326,7 @@ public:
 
     std::string
     serialize() {
-        jwt::builder builder(jwt::create());
+        jwt::builder<jwt::traits::kazuho_picojson> builder(jwt::create());
 
         if (!m_issuer_set) {
             throw MissingIssuerException();
@@ -346,7 +381,7 @@ private:
     Profile m_serialize_profile{Profile::COMPAT};
     Profile m_deserialize_profile{Profile::COMPAT};
     std::unordered_map<std::string, jwt::claim> m_claims;
-    std::unique_ptr<jwt::decoded_jwt> m_decoded;
+    std::unique_ptr<jwt::decoded_jwt<jwt::traits::kazuho_picojson>> m_decoded;
     SciTokenKey &m_key;
 };
 
@@ -359,10 +394,14 @@ class Validator {
 
 public:
 
+    Validator() : m_now(std::chrono::system_clock::now()) {}
+
+    void set_now(std::chrono::system_clock::time_point now) {m_now = now;}
+
     std::unique_ptr<AsyncStatus> verify_async(const SciToken &scitoken) {
-        const jwt::decoded_jwt *jwt_decoded = scitoken.m_decoded.get();
+        const jwt::decoded_jwt<jwt::traits::kazuho_picojson> *jwt_decoded = scitoken.m_decoded.get();
         if (!jwt_decoded) {
-            throw jwt::token_verification_exception("Token is not deserialized from string.");
+            throw JWTVerificationException("Token is not deserialized from string.");
         }
         return verify_async(*jwt_decoded);
     }
@@ -381,14 +420,14 @@ public:
         }
     }
 
-    void verify(const jwt::decoded_jwt &jwt) {
+    void verify(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
         auto result = verify_async(jwt);
         while (!result->m_done) {
-            result = verify_async(jwt);
+            result = verify_async_continue(std::move(result));
         }
     }
 
-    std::unique_ptr<AsyncStatus> verify_async(const jwt::decoded_jwt &jwt)
+    std::unique_ptr<AsyncStatus> verify_async(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt)
     {
         // If token has a typ header claim (RFC8725 Section 3.11), trust that in COMPAT mode.
         if (jwt.has_type()) {
@@ -399,28 +438,28 @@ public:
                 }
             } else if (m_validate_profile == SciToken::Profile::AT_JWT) {
                 if (t_type != "at+jwt" && t_type != "application/at+jwt") {
-                    throw jwt::token_verification_exception("'typ' header claim must be at+jwt");
+                    throw JWTVerificationException("'typ' header claim must be at+jwt");
                 }
                 m_profile = SciToken::Profile::AT_JWT;
             }
         } else {
             if (m_validate_profile == SciToken::Profile::AT_JWT) {
-                throw jwt::token_verification_exception("'typ' header claim must be set for at+jwt tokens");
+                throw JWTVerificationException("'typ' header claim must be set for at+jwt tokens");
             }
         }
         if (!jwt.has_payload_claim("iat")) {
-            throw jwt::token_verification_exception("'iat' claim is mandatory");
+            throw JWTVerificationException("'iat' claim is mandatory");
         }
         if (m_profile != SciToken::Profile::AT_JWT) {
             if (!jwt.has_payload_claim("nbf")) {
-                throw jwt::token_verification_exception("'nbf' claim is mandatory");
+                throw JWTVerificationException("'nbf' claim is mandatory");
             }
         }
         if (!jwt.has_payload_claim("exp")) {
-            throw jwt::token_verification_exception("'exp' claim is mandatory");
+            throw JWTVerificationException("'exp' claim is mandatory");
         }
         if (!jwt.has_payload_claim("iss")) {
-            throw jwt::token_verification_exception("'iss' claim is mandatory");
+            throw JWTVerificationException("'iss' claim is mandatory");
         }
         if (!m_allowed_issuers.empty()) {
             std::string issuer = jwt.get_issuer();
@@ -432,7 +471,7 @@ public:
                  }
             }
             if (!permitted) {
-                throw jwt::token_verification_exception("Token issuer is not in list of allowed issuers.");
+                throw JWTVerificationException("Token issuer is not in list of allowed issuers.");
             }
         }
 
@@ -440,7 +479,7 @@ public:
             if (!jwt.has_payload_claim(claim)) {
                 std::stringstream ss;
                 ss << "'" << claim << "' claim is mandatory";
-                throw jwt::token_verification_exception(ss.str());
+                throw JWTVerificationException(ss.str());
             }
         }
 
@@ -468,21 +507,23 @@ public:
             status = get_public_key_pem_continue(std::move(status), public_pem, algorithm);
             status->m_public_pem = public_pem;
             status->m_algorithm = algorithm;
-            if (!status->m_done) {return status;}
+            if (!status->m_done) {return std::move(status);}
         }
 
         // std::cout << "Public PEM: " << public_pem << std::endl << "Algorithm: " << algorithm << std::endl;
         SciTokenKey key(status->m_kid, status->m_algorithm, status->m_public_pem, "");
-        auto verifier = jwt::verify()
+
+        auto verifier = jwt::verify<FixedClock, jwt::traits::kazuho_picojson>({m_now})
             .allow_algorithm(key);
 
-        const jwt::decoded_jwt jwt(status->m_jwt_string);
+        const jwt::decoded_jwt<jwt::traits::kazuho_picojson> jwt(status->m_jwt_string);
+        verifier.verify(jwt);
 
         bool must_verify_everything = true;
         if (jwt.has_payload_claim("ver")) {
             const jwt::claim &claim = jwt.get_payload_claim("ver");
-            if (claim.get_type() != jwt::claim::type::string) {
-                throw jwt::token_verification_exception("'ver' claim value must be a string (if present)");
+            if (claim.get_type() != jwt::json::type::string) {
+                throw JWTVerificationException("'ver' claim value must be a string (if present)");
             }
             std::string ver_string = claim.as_string();
             if ((ver_string == "scitokens:2.0") || (ver_string == "scitoken:2.0")) {
@@ -490,11 +531,11 @@ public:
                 if ((m_validate_profile != SciToken::Profile::COMPAT) &&
                     (m_validate_profile != SciToken::Profile::SCITOKENS_2_0))
                 {
-                    throw jwt::token_verification_exception("Invalidate token type; not expecting a SciToken 2.0.");
+                    throw JWTVerificationException("Invalidate token type; not expecting a SciToken 2.0.");
                 }
                 m_profile = SciToken::Profile::SCITOKENS_2_0;
                 if (!jwt.has_payload_claim("aud")) {
-                    throw jwt::token_verification_exception("'aud' claim required for SciTokens 2.0 profile");
+                    throw JWTVerificationException("'aud' claim required for SciTokens 2.0 profile");
                 }
             }
             else if (ver_string == "scitokens:1.0") {
@@ -502,36 +543,36 @@ public:
                 if ((m_validate_profile != SciToken::Profile::COMPAT) &&
                     (m_validate_profile != SciToken::Profile::SCITOKENS_1_0))
                 {
-                    throw jwt::token_verification_exception("Invalidate token type; not expecting a SciToken 1.0.");
+                    throw JWTVerificationException("Invalidate token type; not expecting a SciToken 1.0.");
                 }
                 m_profile = SciToken::Profile::SCITOKENS_1_0;
             } else {
                 std::stringstream ss;
                 ss << "Unknown profile version in token: " << ver_string;
-                throw jwt::token_verification_exception(ss.str());
+                throw JWTVerificationException(ss.str());
             }
             // Handle WLCG common JWT profile.
         } else if (jwt.has_payload_claim("wlcg.ver")) {
             if ((m_validate_profile != SciToken::Profile::COMPAT) &&
                 (m_validate_profile != SciToken::Profile::WLCG_1_0))
             {
-                throw jwt::token_verification_exception("Invalidate token type; not expecting a WLCG 1.0.");
+                throw JWTVerificationException("Invalidate token type; not expecting a WLCG 1.0.");
             }
 
             m_profile = SciToken::Profile::WLCG_1_0;
             must_verify_everything = false;
             const jwt::claim &claim = jwt.get_payload_claim("wlcg.ver");
-            if (claim.get_type() != jwt::claim::type::string) {
-                throw jwt::token_verification_exception("'ver' claim value must be a string (if present)");
+            if (claim.get_type() != jwt::json::type::string) {
+                throw JWTVerificationException("'ver' claim value must be a string (if present)");
             }
             std::string ver_string = claim.as_string();
             if (ver_string != "1.0") {
                 std::stringstream ss;
                 ss << "Unknown WLCG profile version in token: " << ver_string;
-                throw jwt::token_verification_exception(ss.str());
+                throw JWTVerificationException(ss.str());
             }
             if (!jwt.has_payload_claim("aud")) {
-                throw jwt::token_verification_exception("Malformed token: 'aud' claim required for WLCG profile");
+                throw JWTVerificationException("Malformed token: 'aud' claim required for WLCG profile");
             }
         } else if (m_profile == SciToken::Profile::AT_JWT) {
             // detected early above from typ header claim.
@@ -540,7 +581,7 @@ public:
             if ((m_validate_profile != SciToken::Profile::COMPAT) &&
                 (m_validate_profile != SciToken::Profile::SCITOKENS_1_0))
             {
-                throw jwt::token_verification_exception("Invalidate token type; not expecting a SciToken 1.0.");
+                throw JWTVerificationException("Invalidate token type; not expecting a SciToken 1.0.");
             }
 
             m_profile = SciToken::Profile::SCITOKENS_1_0;
@@ -562,26 +603,26 @@ public:
                      std::stringstream ss;
                      ss << "'" << claim_pair.first << "' claim verification is mandatory";
                      // std::cout << ss.str() << std::endl;
-                     throw jwt::token_verification_exception(ss.str());
+                     throw JWTVerificationException(ss.str());
                  }
              }
              // std::cout << "Running claim " << claim_pair.first << " through validation." << std::endl;
              if (iter != m_validators.end()) for (const auto &verification_func : iter->second) {
                  const jwt::claim &claim = jwt.get_payload_claim(claim_pair.first);
-                 if (claim.get_type() != jwt::claim::type::string) {
+                 if (claim.get_type() != jwt::json::type::string) {
                      std::stringstream ss;
                      ss << "'" << claim_pair.first << "' claim value must be a string to verify.";
-                     throw jwt::token_verification_exception(ss.str());
+                     throw JWTVerificationException(ss.str());
                  }
                  std::string value = claim.as_string();
                  char *err_msg = nullptr;
                  if (verification_func(value.c_str(), &err_msg)) {
                      if (err_msg) {
-                         throw jwt::token_verification_exception(err_msg);
+                         throw JWTVerificationException(err_msg);
                      } else {
                          std::stringstream ss;
                          ss << "'" << claim_pair.first << "' claim verification failed.";
-                         throw jwt::token_verification_exception(ss.str());
+                         throw JWTVerificationException(ss.str());
                      }
                  }
              }
@@ -590,13 +631,13 @@ public:
                  if (verification_pair.first(claim, verification_pair.second) == false) {
                      std::stringstream ss;
                      ss << "'" << claim_pair.first << "' claim verification failed.";
-                     throw jwt::token_verification_exception(ss.str());
+                     throw JWTVerificationException(ss.str());
                  }
              }
         }
         std::unique_ptr<AsyncStatus> result(new AsyncStatus());
         result->m_done = true;
-        return result;
+        return std::move(result);
     }
 
     void add_critical_claims(const std::vector<std::string> &claims) {
@@ -631,7 +672,7 @@ public:
      */
     SciToken::Profile get_profile() const {
         if (m_profile == SciToken::Profile::COMPAT) {
-            throw jwt::token_verification_exception("Token profile has not been set.");
+            throw JWTVerificationException("Token profile has not been set.");
         }
         return m_profile;
     }
@@ -649,12 +690,28 @@ public:
      */
     static bool store_public_ec_key(const std::string &issuer, const std::string &kid, const std::string &key);
 
+    /**
+     * Store the contents of a JWKS for a given issuer.
+     */
+    static bool store_jwks(const std::string &issuer, const std::string &jwks);
+
+    /**
+     * Trigger a refresh of the JWKS or a given issuer.
+     */
+    static bool refresh_jwks(const std::string &issuer);
+
+    /**
+     * Fetch the contents of fa JWKS for a given issuer (do not trigger a refresh).
+     * Will return an empty JWKS if no valid JWKS is available.
+     */
+    static std::string get_jwks(const std::string &issuer);
+
 private:
-    std::unique_ptr<AsyncStatus> get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm);
-    std::unique_ptr<AsyncStatus> get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status, std::string &public_pem, std::string &algorithm);
-    std::unique_ptr<AsyncStatus> get_public_keys_from_web(const std::string &issuer);
-    std::unique_ptr<AsyncStatus> get_public_keys_from_web_continue(std::unique_ptr<AsyncStatus> status);
-    bool get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update);
+    static std::unique_ptr<AsyncStatus> get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm);
+    static std::unique_ptr<AsyncStatus> get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status, std::string &public_pem, std::string &algorithm);
+    static std::unique_ptr<AsyncStatus> get_public_keys_from_web(const std::string &issuer, unsigned timeout);
+    static std::unique_ptr<AsyncStatus> get_public_keys_from_web_continue(std::unique_ptr<AsyncStatus> status);
+    static bool get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update);
     static bool store_public_keys(const std::string &issuer, const picojson::value &keys, int64_t next_update, int64_t expires);
 
     bool m_validate_all_claims{true};
@@ -662,6 +719,8 @@ private:
     SciToken::Profile m_validate_profile{SciToken::Profile::COMPAT};
     ClaimStringValidatorMap m_validators;
     ClaimValidatorMap m_claim_validators;
+
+    std::chrono::system_clock::time_point m_now;
 
     std::vector<std::string> m_critical_claims;
     std::vector<std::string> m_allowed_issuers;
@@ -690,6 +749,8 @@ public:
         }
         m_validator.add_critical_claims(critical_claims);
     }
+
+    void set_now(std::chrono::system_clock::time_point now) {m_validator.set_now(now);}
 
     void set_validate_profile(SciToken::Profile profile) {
         m_validate_profile = profile;
@@ -737,7 +798,7 @@ private:
     static bool all_validator(const jwt::claim &, void *) {return true;}
 
     static bool str_validator(const jwt::claim &claim, void *) {
-        return claim.get_type() == jwt::claim::type::string;
+        return claim.get_type() == jwt::json::type::string;
     }
 
     static bool scope_validator(const jwt::claim &claim, void *myself);
@@ -745,10 +806,10 @@ private:
     static bool aud_validator(const jwt::claim &claim, void *myself) {
         auto me = reinterpret_cast<scitokens::Enforcer*>(myself);
         std::vector<std::string> jwt_audiences;
-        if (claim.get_type() == jwt::claim::type::string) {
+        if (claim.get_type() == jwt::json::type::string) {
             const std::string &audience = claim.as_string();
             jwt_audiences.push_back(audience);
-        } else if (claim.get_type() == jwt::claim::type::array) {
+        } else if (claim.get_type() == jwt::json::type::array) {
             const picojson::array &audiences = claim.as_array();
             for (const auto &aud_value : audiences) {
                 const std::string &audience = aud_value.get<std::string>();

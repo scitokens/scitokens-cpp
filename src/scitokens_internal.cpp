@@ -9,6 +9,12 @@
 #include <openssl/bn.h>
 #include <openssl/ec.h>
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    #include <openssl/evp.h>
+    #include <openssl/param_build.h>
+#endif
+#define EC_NAME NID_X9_62_prime256v1
+
 #include "scitokens_internal.h"
 
 using namespace scitokens;
@@ -43,12 +49,6 @@ SimpleCurlGet::perform_start(const std::string &url)
     if (!m_curl) {
         throw CurlException("Failed to create a new curl handle.");
     }
-    {
-        auto mres = curl_multi_add_handle(m_curl_multi.get(), m_curl.get());
-        if (mres) {
-            throw CurlException("Failed to add curl handle to async object");
-        }
-    }
 
     if (m_maxbytes > 0) {
         size_t new_size = std::min(m_maxbytes, 8*1024);
@@ -56,6 +56,8 @@ SimpleCurlGet::perform_start(const std::string &url)
             m_data.resize(new_size);
         }
     }
+
+    long timeout = m_timeout > 120 ? 120 : m_timeout;
 
     CURLcode rv = curl_easy_setopt(m_curl.get(), CURLOPT_URL, url.c_str());
     if (rv != CURLE_OK) {
@@ -68,6 +70,17 @@ SimpleCurlGet::perform_start(const std::string &url)
     rv = curl_easy_setopt(m_curl.get(), CURLOPT_WRITEDATA, this);
     if (rv != CURLE_OK) {
         throw CurlException("Failed to set CURLOPT_WRITEDATA.");
+    }
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_TIMEOUT, timeout);
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_TIMEOUT.");
+    }
+
+    {
+        auto mres = curl_multi_add_handle(m_curl_multi.get(), m_curl.get());
+        if (mres) {
+            throw CurlException("Failed to add curl handle to async object");
+        }
     }
 
     return perform_continue();
@@ -110,9 +123,6 @@ SimpleCurlGet::perform_continue()
             curl_multi_remove_handle(m_curl_multi.get(), easy_handle);
         }
     } while (msg);
-    if (res == -1) {
-        throw CurlException("Internal libcurl logic error - no done handles");
-    }
     if (res) {
         throw CurlException(curl_easy_strerror(res));
     }
@@ -316,8 +326,60 @@ std::string
 es256_from_coords(const std::string &x_str, const std::string &y_str) {
     auto x_decode = b64url_decode_nopadding(x_str);
     auto y_decode = b64url_decode_nopadding(y_str);
+    std::unique_ptr<BIO, decltype(&BIO_free_all)> pubkey_bio(BIO_new(BIO_s_mem()), BIO_free_all);
+    std::unique_ptr<BIGNUM, decltype(&BN_free)> x_bignum(BN_bin2bn(reinterpret_cast<const unsigned char *>(x_decode.c_str()), x_decode.size(), nullptr), BN_free);
+    std::unique_ptr<BIGNUM, decltype(&BN_free)> y_bignum(BN_bin2bn(reinterpret_cast<const unsigned char *>(y_decode.c_str()), y_decode.size(), nullptr), BN_free);
 
-    std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> ec(EC_KEY_new_by_curve_name(NID_X9_62_prime256v1), EC_KEY_free);
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L 
+    unsigned char *buf;
+    OSSL_PARAM *params;
+    std::unique_ptr<EC_GROUP, decltype(&EC_GROUP_free)> ec_group(EC_GROUP_new_by_curve_name(EC_NAME),EC_GROUP_free);
+    if (!ec_group.get()) {
+        throw UnsupportedKeyException("Unable to get OpenSSL EC group");
+    }
+
+    std::unique_ptr<EC_POINT, decltype(&EC_POINT_free)> Q_point(EC_POINT_new(ec_group.get()), EC_POINT_free);
+    if (!Q_point.get()) {
+        throw UnsupportedKeyException("Unable to allocate new EC point");
+    }
+
+    if (!EC_POINT_set_affine_coordinates(ec_group.get(), Q_point.get(), x_bignum.get(), y_bignum.get(), NULL)) {
+        throw UnsupportedKeyException("Invalid elliptic curve point in key");
+    }
+
+    size_t out_len = EC_POINT_point2buf(ec_group.get(), Q_point.get(),POINT_CONVERSION_UNCOMPRESSED,&buf,NULL);
+    if (out_len == 0) {
+        throw UnsupportedKeyException("Failed to convert EC point to octet base buffer");
+    }
+
+    std::unique_ptr<OSSL_PARAM_BLD, decltype(&OSSL_PARAM_BLD_free)> param_build(OSSL_PARAM_BLD_new(), OSSL_PARAM_BLD_free);
+    if (!param_build.get()
+        || !OSSL_PARAM_BLD_push_utf8_string(param_build.get(),"group","prime256v1",0)
+        || !OSSL_PARAM_BLD_push_octet_string(param_build.get(),"pub",buf,out_len)
+        || (params = OSSL_PARAM_BLD_to_param(param_build.get())) == NULL) {
+            throw UnsupportedKeyException("Failed to build EC public key parameters");
+    }
+
+    EVP_PKEY *pkey = NULL;
+    std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> ec_ctx(EVP_PKEY_CTX_new_from_name(NULL, "EC", NULL), EVP_PKEY_CTX_free);
+    if (!ec_ctx.get()) {
+        throw UnsupportedKeyException("Failed to set EC PKEY context");
+    }
+
+    if (EVP_PKEY_fromdata_init(ec_ctx.get()) <= 0
+        || EVP_PKEY_fromdata(ec_ctx.get(),&pkey,EVP_PKEY_PUBLIC_KEY,params) <= 0
+        || pkey == NULL) {
+            throw UnsupportedKeyException("Failed to set the EC public key");
+    }
+
+    if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey) == 0) {
+        throw UnsupportedKeyException("Failed to serialize EC public key");
+    }
+    EVP_PKEY_free(pkey);
+    OSSL_PARAM_free(params);
+    OPENSSL_free(buf);
+#else
+    std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> ec(EC_KEY_new_by_curve_name(EC_NAME), EC_KEY_free);
     if (!ec.get()) {
         throw UnsupportedKeyException("OpenSSL does not support the P-256 curve");
     }
@@ -331,8 +393,7 @@ es256_from_coords(const std::string &x_str, const std::string &y_str) {
     if (!Q_point.get()) {
         throw UnsupportedKeyException("Unable to allocate new EC point");
     }
-    std::unique_ptr<BIGNUM, decltype(&BN_free)> x_bignum(BN_bin2bn(reinterpret_cast<const unsigned char *>(x_decode.c_str()), x_decode.size(), nullptr), BN_free);
-    std::unique_ptr<BIGNUM, decltype(&BN_free)> y_bignum(BN_bin2bn(reinterpret_cast<const unsigned char *>(y_decode.c_str()), y_decode.size(), nullptr), BN_free);
+
     if (EC_POINT_set_affine_coordinates_GFp(params, Q_point.get(), x_bignum.get(), y_bignum.get(), NULL) != 1) {
         throw UnsupportedKeyException("Invalid elliptic curve point in key");
     }
@@ -341,10 +402,10 @@ es256_from_coords(const std::string &x_str, const std::string &y_str) {
         throw UnsupportedKeyException("Unable to set the EC public key");
     }
 
-    std::unique_ptr<BIO, decltype(&BIO_free_all)> pubkey_bio(BIO_new(BIO_s_mem()), BIO_free_all);
-    if (PEM_write_bio_EC_PUBKEY(pubkey_bio.get(), ec.get()) == 0) {
+    if (PEM_write_bio_EC_PUBKEY(pubkey_bio.get(), ec.get()) == 0) { 
         throw UnsupportedKeyException("Failed to serialize EC public key");
     }
+#endif
 
     char *mem_data;
     size_t mem_len = BIO_get_mem_data(pubkey_bio.get(), &mem_data);
@@ -357,29 +418,57 @@ std::string
 rs256_from_coords(const std::string &e_str, const std::string &n_str) {
     auto e_decode = b64url_decode_nopadding(e_str);
     auto n_decode = b64url_decode_nopadding(n_str);
+    std::unique_ptr<BIO, decltype(&BIO_free_all)> pubkey_bio(BIO_new(BIO_s_mem()), BIO_free_all);
     std::unique_ptr<BIGNUM, decltype(&BN_free)> e_bignum(BN_bin2bn(reinterpret_cast<const unsigned char *>(e_decode.c_str()), e_decode.size(), nullptr), BN_free);
     std::unique_ptr<BIGNUM, decltype(&BN_free)> n_bignum(BN_bin2bn(reinterpret_cast<const unsigned char *>(n_decode.c_str()), n_decode.size(), nullptr), BN_free);
+	
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    OSSL_PARAM *params;
+    std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> rsa_ctx(EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL), EVP_PKEY_CTX_free);
+    if (!rsa_ctx.get()) {
+        throw UnsupportedKeyException("Failed to set RSA PKEY context");
+    }
 
-    std::unique_ptr<RSA, decltype(&RSA_free)> rsa(RSA_new(), RSA_free);
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-    rsa->e = e_bignum.get();
-    rsa->n = n_bignum.get();
-    rsa->d = nullptr;
+    std::unique_ptr<OSSL_PARAM_BLD, decltype(&OSSL_PARAM_BLD_free)> param_build(OSSL_PARAM_BLD_new(), OSSL_PARAM_BLD_free);
+    if (!param_build.get()
+        || !OSSL_PARAM_BLD_push_BN_pad(param_build.get(),"e",e_bignum.get(),BN_num_bytes(e_bignum.get()))
+        || !OSSL_PARAM_BLD_push_BN_pad(param_build.get(),"n",n_bignum.get(),BN_num_bytes(n_bignum.get()))
+        || (params = OSSL_PARAM_BLD_to_param(param_build.get())) == NULL) {
+            throw UnsupportedKeyException("Failed to build RSA public key parameters");
+    }
+
+    EVP_PKEY *pkey = NULL;
+    if (EVP_PKEY_fromdata_init(rsa_ctx.get()) <= 0
+        || EVP_PKEY_fromdata(rsa_ctx.get(),&pkey,EVP_PKEY_PUBLIC_KEY,params) <= 0
+        || pkey == NULL) {
+            throw UnsupportedKeyException("Failed to set the RSA public key");
+    }
+
+    if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey) == 0) {
+        throw UnsupportedKeyException("Failed to serialize RSA public key");
+    }
+    EVP_PKEY_free(pkey);
+    OSSL_PARAM_free(params);
 #else
-    RSA_set0_key(rsa.get(), n_bignum.get(), e_bignum.get(), nullptr);
-#endif
-    e_bignum.release();
-    n_bignum.release();
-
+    std::unique_ptr<RSA, decltype(&RSA_free)> rsa(RSA_new(), RSA_free);
+    #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+        rsa->e = e_bignum.get();
+        rsa->n = n_bignum.get();
+        rsa->d = nullptr;
+    #else
+        RSA_set0_key(rsa.get(), n_bignum.get(), e_bignum.get(), nullptr);
+    #endif
     std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(EVP_PKEY_new(), EVP_PKEY_free);
     if (EVP_PKEY_set1_RSA(pkey.get(), rsa.get()) != 1) {
         throw UnsupportedKeyException("Failed to set the public key");
     }
 
-    std::unique_ptr<BIO, decltype(&BIO_free_all)> pubkey_bio(BIO_new(BIO_s_mem()), BIO_free_all);
     if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey.get()) == 0) {
         throw UnsupportedKeyException("Failed to serialize RSA public key");
     }
+#endif
+    e_bignum.release();
+    n_bignum.release();
 
     char *mem_data;
     size_t mem_len = BIO_get_mem_data(pubkey_bio.get(), &mem_data);
@@ -427,12 +516,18 @@ normalize_absolute_path(const std::string &path) {
 }
 
 
+void get_default_expiry_time(int &next_update_delta, int &expiry_delta)
+{
+    next_update_delta = 600;
+    expiry_delta = 4*24*3600;
+}
+
 }
 
 
 void
 SciToken::deserialize(const std::string &data, const std::vector<std::string> allowed_issuers) {
-    m_decoded.reset(new jwt::decoded_jwt(data));
+    m_decoded.reset(new jwt::decoded_jwt<jwt::traits::kazuho_picojson>(data));
 
     scitokens::Validator val;
     val.add_allowed_issuers(allowed_issuers);
@@ -447,49 +542,55 @@ SciToken::deserialize(const std::string &data, const std::vector<std::string> al
     m_profile = val.get_profile();
 }
 
+
 std::unique_ptr<SciTokenAsyncStatus>
 SciToken::deserialize_start(const std::string &data, const std::vector<std::string> allowed_issuers) {
-    m_decoded.reset(new jwt::decoded_jwt(data));
+    m_decoded.reset(new jwt::decoded_jwt<jwt::traits::kazuho_picojson>(data));
 
-    scitokens::Validator val;
-    val.add_allowed_issuers(allowed_issuers);
-    val.set_validate_all_claims_scitokens_1(false);
-    val.set_validate_profile(m_deserialize_profile);
     std::unique_ptr<SciTokenAsyncStatus> status(new SciTokenAsyncStatus());
-    status->m_status = val.verify_async(*m_decoded);
+    status->m_validator.reset(new scitokens::Validator());
+    status->m_validator->add_allowed_issuers(allowed_issuers);
+    status->m_validator->set_validate_all_claims_scitokens_1(false);
+    status->m_validator->set_validate_profile(m_deserialize_profile);
+    
+    status->m_status = status->m_validator->verify_async(*m_decoded);
 
-    return std::move(deserialize_continue(std::move(status)));
+    return deserialize_continue(std::move(status));
 }
+
 
 std::unique_ptr<SciTokenAsyncStatus>
 SciToken::deserialize_continue(std::unique_ptr<SciTokenAsyncStatus> status) {
 
-    status->m_status = status->m_validator->verify_async_continue(std::move(status->m_status));
-    // Check if the status is completed
+    // Check if the status is completed (verification is complete)
     if (status->m_status) {
         // Set all the claims
         m_claims = m_decoded->get_payload_claims();
 
         // Copy over the profile
-        m_profile = m_profile;
+        m_profile = status->m_validator->get_profile();
+    } else {
+        status->m_status = status->m_validator->verify_async_continue(std::move(status->m_status));
     }
+    
+    
     return std::move(status);
 }
 
 
 std::unique_ptr<AsyncStatus>
-Validator::get_public_keys_from_web(const std::string &issuer)
+Validator::get_public_keys_from_web(const std::string &issuer, unsigned timeout)
 {
     std::string openid_metadata, oauth_metadata;
     get_metadata_endpoint(issuer, openid_metadata, oauth_metadata);
 
-    std::unique_ptr<AsyncStatus> status;
+    std::unique_ptr<AsyncStatus> status(new AsyncStatus());
     status->m_oauth_metadata_url = oauth_metadata;
-    status->m_cget.reset(new internal::SimpleCurlGet());
+    status->m_cget.reset(new internal::SimpleCurlGet(1024*1024, timeout));
     auto cget_status = status->m_cget->perform_start(openid_metadata);
     status->m_continue_fetch = true;
     if (!cget_status.m_done) {
-        return status;
+        return std::move(status);
     }
     return get_public_keys_from_web_continue(std::move(status));
 }
@@ -500,11 +601,14 @@ Validator::get_public_keys_from_web_continue(std::unique_ptr<AsyncStatus> status
 {
     char *buffer;
     size_t len;
-    if (!status->m_has_metadata)
+
+    switch (status->m_state) {
+    
+    case AsyncStatus::DOWNLOAD_METADATA:
     {
         auto cget_status = status->m_cget->perform_continue();
         if (!cget_status.m_done) {
-            return status;
+            return std::move(status);
         }
         if (cget_status.m_status_code != 200) {
             if (status->m_oauth_fallback) {
@@ -534,35 +638,90 @@ Validator::get_public_keys_from_web_continue(std::unique_ptr<AsyncStatus> status
         }
         auto jwks_uri = iter->second.get<std::string>();
         status->m_has_metadata = true;
+        status->m_state = AsyncStatus::DOWNLOAD_PUBLIC_KEY;
         status->m_cget.reset(new internal::SimpleCurlGet());
         status->m_cget->perform_start(jwks_uri);
+        // This should also fall through the next state
     }
 
-    auto cget_status = status->m_cget->perform_continue();
-    if (!cget_status.m_done) {
-        return status;
-    }
-    if (cget_status.m_status_code != 200) {
-        throw CurlException("Failed to retrieve the issuer's key set");
-    }
+    case AsyncStatus::DOWNLOAD_PUBLIC_KEY:
+    {
+        auto cget_status = status->m_cget->perform_continue();
+        if (!cget_status.m_done) {
+            return std::move(status);
+        }
+        if (cget_status.m_status_code != 200) {
+            throw CurlException("Failed to retrieve the issuer's key set");
+        }
 
-    status->m_cget->get_data(buffer, len);
-    status->m_cget.reset();
-    auto metadata = std::string(buffer, len);
-    picojson::value json_obj;
-    auto err = picojson::parse(json_obj, metadata);
+        status->m_cget->get_data(buffer, len);
+        status->m_cget.reset();
+        auto metadata = std::string(buffer, len);
+        picojson::value json_obj;
+        auto err = picojson::parse(json_obj, metadata);
+        if (!err.empty()) {
+            throw JsonException(err);
+        }
+
+        auto now = std::time(NULL);
+        // TODO: take expiration time from the cache-control header in the response.
+        
+        int next_update_delta, expiry_delta;
+        get_default_expiry_time(next_update_delta, expiry_delta);
+        status->m_next_update = now + next_update_delta;
+        status->m_expires = now + expiry_delta;
+        status->m_keys = json_obj;
+        status->m_continue_fetch = false;
+        status->m_done = true;
+        status->m_state = AsyncStatus::DONE;
+        return std::move(status);
+    }
+    case AsyncStatus::DONE:
+        status->m_done = true;
+        return std::move(status);
+
+    } // Switch
+}
+
+std::string
+Validator::get_jwks(const std::string &issuer)
+{
+    auto now = std::time(NULL);
+    picojson::value jwks;
+    int64_t next_update;
+    if (get_public_keys_from_db(issuer, now, jwks, next_update)) {
+        return jwks.serialize();
+    }
+    return std::string("{\"keys\": []}");
+}
+
+
+bool
+Validator::refresh_jwks(const std::string &issuer)
+{
+    int64_t next_update, expires;
+    picojson::value keys;
+    std::unique_ptr<scitokens::AsyncStatus> status = get_public_keys_from_web(issuer, internal::SimpleCurlGet::extended_timeout);
+    while (!status->m_done) {
+        status = get_public_keys_from_web_continue(std::move(status));
+    }
+    return store_public_keys(issuer, status->m_keys, status->m_next_update, status->m_expires);
+}
+
+
+bool
+Validator::store_jwks(const std::string &issuer, const std::string &jwks_str)
+{
+    picojson::value jwks;
+    std::string err = picojson::parse(jwks, jwks_str);
+    auto now = std::time(NULL);
+    int next_update_delta, expiry_delta;
+    get_default_expiry_time(next_update_delta, expiry_delta);
+    int64_t next_update = now + next_update_delta, expires = now + expiry_delta;
     if (!err.empty()) {
         throw JsonException(err);
     }
-
-    auto now = std::time(NULL);
-    // TODO: take expiration time from the cache-control header in the response.
-
-    status->m_next_update = now + 600;
-    status->m_expires = now + 4*24*3600;
-    status->m_keys = json_obj;
-    status->m_continue_fetch = false;
-    return status;
+    return store_public_keys(issuer, jwks, next_update, expires);
 }
 
 
@@ -570,42 +729,40 @@ std::unique_ptr<AsyncStatus>
 Validator::get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm) {
 
     auto now = std::time(NULL);
-    std::unique_ptr<AsyncStatus> result;
+    std::unique_ptr<AsyncStatus> result(new AsyncStatus());
 
     if (get_public_keys_from_db(issuer, now, result->m_keys, result->m_next_update)) {
         if (now > result->m_next_update) {
             try {
                 result->m_ignore_error = true;
-                result = get_public_keys_from_web(issuer);
+                result = get_public_keys_from_web(issuer, internal::SimpleCurlGet::default_timeout);
             } catch (std::runtime_error &) {
                 result->m_do_store = false;
-                // ignore the exception: we have a valid set of keys already/
+                // ignore the exception: we have a valid set of keys already
             }
+        } else {
+            // Got the keys from the DB, and they are still valid.
+            result->m_continue_fetch = false;
+            result->m_do_store = false;
+            result->m_done = true;
         }
     } else {
-        result = get_public_keys_from_web(issuer);
+        // No keys in the DB, or they are expired, so get them from the web.
+        result = get_public_keys_from_web(issuer, internal::SimpleCurlGet::default_timeout);
     }
     result->m_issuer = issuer;
     result->m_kid = kid;
 
-    if (!result->m_continue_fetch) {
-        return get_public_key_pem_continue(std::move(result), public_pem, algorithm);
-    } else {
-        return result;
-    }
+    // Always call the continue because it formats the public_pem and algorithm
+    return get_public_key_pem_continue(std::move(result), public_pem, algorithm);
 }
 
 std::unique_ptr<AsyncStatus>
 Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status, std::string &public_pem, std::string &algorithm) {
 
     if (status->m_continue_fetch) {
-        try {
-            status = get_public_keys_from_web_continue(std::move(status));
-        } catch (std::runtime_error &) {
-            status->m_do_store = false;
-            if (!status->m_ignore_error) {throw;}
-        }
-        if (status->m_continue_fetch) {return status;}
+        status = get_public_keys_from_web_continue(std::move(status));
+        if (status->m_continue_fetch) {return std::move(status);}
     }
     if (status->m_do_store) {
         store_public_keys(status->m_issuer, status->m_keys, status->m_next_update, status->m_expires);
@@ -677,7 +834,7 @@ Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status, std:
     public_pem = pem;
     algorithm = alg;
 
-    return status;
+    return std::move(status);
 }
 
 
@@ -689,6 +846,43 @@ scitokens::Validator::store_public_ec_key(const std::string &issuer, const std::
     if ((size_t)BIO_write(pubkey_bio.get(), public_key.data(), public_key.size()) != public_key.size()) {
         return false;
     }
+
+    std::unique_ptr<BIGNUM, decltype(&BN_free)> x_bignum(BN_new(), BN_free);
+    std::unique_ptr<BIGNUM, decltype(&BN_free)> y_bignum(BN_new(), BN_free);
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(PEM_read_bio_PUBKEY(pubkey_bio.get(),nullptr,nullptr,nullptr), EVP_PKEY_free);
+    if (!pkey.get()) {return false;}
+
+    std::unique_ptr<EC_GROUP, decltype(&EC_GROUP_free)> ec_group(EC_GROUP_new_by_curve_name(EC_NAME),EC_GROUP_free);
+    if (!ec_group.get()) {
+        throw UnsupportedKeyException("Unable to get OpenSSL EC group");
+    }
+
+    std::unique_ptr<EC_POINT, decltype(&EC_POINT_free)> q_point(EC_POINT_new(ec_group.get()), EC_POINT_free);
+    if (!q_point.get()) {
+        throw UnsupportedKeyException("Unable to get OpenSSL EC point");
+    }
+
+    OSSL_PARAM *params;
+    if (!EVP_PKEY_todata(pkey.get(), EVP_PKEY_PUBLIC_KEY, &params)) {
+        throw UnsupportedKeyException("Unable to get OpenSSL public key parameters");
+    }
+
+    void* buf = NULL;
+    size_t buf_len, max_len = 256;
+    OSSL_PARAM *p = OSSL_PARAM_locate(params,"pub");
+    if (!p || !OSSL_PARAM_get_octet_string(p, &buf, max_len, &buf_len)
+           || !EC_POINT_oct2point(ec_group.get(), q_point.get(), static_cast<unsigned char*>(buf), buf_len, nullptr)) {
+        throw UnsupportedKeyException("Failed to to set OpenSSL EC point with public key information");
+    }
+
+    if (!EC_POINT_get_affine_coordinates(ec_group.get(), q_point.get(), x_bignum.get(), y_bignum.get(), NULL)) {
+        throw UnsupportedKeyException("Unable to get OpenSSL affine coordinates");
+    }
+
+    OSSL_PARAM_free(params);
+#else
     std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> pkey
         (PEM_read_bio_EC_PUBKEY(pubkey_bio.get(), nullptr, nullptr, nullptr), EC_KEY_free);
     if (!pkey) {return false;}
@@ -703,11 +897,10 @@ scitokens::Validator::store_public_ec_key(const std::string &issuer, const std::
         throw UnsupportedKeyException("Unable to get OpenSSL EC point");
     }
 
-    std::unique_ptr<BIGNUM, decltype(&BN_free)> x_bignum(BN_new(), BN_free);
-    std::unique_ptr<BIGNUM, decltype(&BN_free)> y_bignum(BN_new(), BN_free);
     if (!EC_POINT_get_affine_coordinates_GFp(params, point, x_bignum.get(), y_bignum.get(), nullptr)) {
         throw UnsupportedKeyException("Unable to get OpenSSL affine coordinates");
     }
+#endif
 
     auto x_num = BN_num_bytes(x_bignum.get());
     auto y_num = BN_num_bytes(y_bignum.get());
@@ -734,14 +927,16 @@ scitokens::Validator::store_public_ec_key(const std::string &issuer, const std::
     picojson::value top_value(top_obj);
 
     auto now = std::time(NULL);
-    return store_public_keys(issuer, top_value, now + 600, now + 4*3600);
+    int next_update_delta, expiry_delta;
+    get_default_expiry_time(next_update_delta, expiry_delta);
+    return store_public_keys(issuer, top_value, now + next_update_delta, now + expiry_delta);
 }
 
 
 bool
 scitokens::Enforcer::scope_validator(const jwt::claim &claim, void *myself) {
     auto me = reinterpret_cast<scitokens::Enforcer*>(myself);
-    if (claim.get_type() != jwt::claim::type::string) {
+    if (claim.get_type() != jwt::json::type::string) {
         return false;
     }
     std::string scope = claim.as_string();
