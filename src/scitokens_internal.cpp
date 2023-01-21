@@ -655,10 +655,10 @@ Validator::get_public_keys_from_web_continue(std::unique_ptr<AsyncStatus> status
         }
 
         status->m_cget->get_data(buffer, len);
-        status->m_cget.reset();
         auto metadata = std::string(buffer, len);
         picojson::value json_obj;
         auto err = picojson::parse(json_obj, metadata);
+        status->m_cget.reset();
         if (!err.empty()) {
             throw JsonException(err);
         }
@@ -674,13 +674,12 @@ Validator::get_public_keys_from_web_continue(std::unique_ptr<AsyncStatus> status
         status->m_continue_fetch = false;
         status->m_done = true;
         status->m_state = AsyncStatus::DONE;
-        return std::move(status);
     }
     case AsyncStatus::DONE:
         status->m_done = true;
-        return std::move(status);
 
     } // Switch
+    return std::move(status);
 }
 
 std::string
