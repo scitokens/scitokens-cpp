@@ -3,7 +3,6 @@
 #include <sstream>
 #include <functional>
 
-#include <curl/curl.h>
 #include <jwt-cpp/base.h>
 #include <jwt-cpp/jwt.h>
 #include <picojson/picojson.h>
@@ -31,94 +30,162 @@ CurlRaii() {curl_global_init(CURL_GLOBAL_DEFAULT);}
 
 CurlRaii myCurl;
 
+}
 
-class SimpleCurlGet {
+namespace scitokens {
 
-    int m_maxbytes;
-    unsigned m_timeout;
-    std::vector<char> m_data;
-    size_t m_len{0};
+namespace internal {
 
-public:
-    static const unsigned default_timeout = 4;
-    static const unsigned extended_timeout = 30;
+SimpleCurlGet::GetStatus
+SimpleCurlGet::perform_start(const std::string &url)
+{
+    m_len = 0;
 
-    SimpleCurlGet(int maxbytes=1024*1024, unsigned timeout=4)
-      : m_maxbytes(maxbytes), m_timeout(timeout)
-    {}
-
-    int perform(const std::string &url) {
-        m_len = 0;
-
-        auto curl = curl_easy_init();
-        if (!curl) {
-            throw CurlException("Failed to create a new curl handle.");
-        }
-
-        if (m_maxbytes > 0) {
-            size_t new_size = std::min(m_maxbytes, 8*1024);
-            if (m_data.size() < new_size) {
-                m_data.resize(new_size);
-            }
-        }
-
-        long timeout = m_timeout > 120 ? 120 : m_timeout;
-
-        CURLcode rv = curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        if (rv != CURLE_OK) {
-            throw CurlException("Failed to set CURLOPT_URL.");
-        }
-        rv = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &write_data);
-        if (rv != CURLE_OK) {
-            throw CurlException("Failed to set CURLOPT_WRITEFUNCTION.");
-        }
-        rv = curl_easy_setopt(curl, CURLOPT_WRITEDATA, this);
-        if (rv != CURLE_OK) {
-            throw CurlException("Failed to set CURLOPT_WRITEDATA.");
-        }
-        rv = curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
-        if (rv != CURLE_OK) {
-            throw CurlException("Failed to set CURLOPT_TIMEOUT.");
-        }
-
-        auto res = curl_easy_perform(curl);
-        if (res != CURLE_OK) {
-            curl_easy_cleanup(curl);
-            throw CurlException(curl_easy_strerror(res));
-        }
-        long status_code;
-        res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-        if (res != CURLE_OK) {
-            curl_easy_cleanup(curl);
-            throw CurlException(curl_easy_strerror(res));
-        }
-        curl_easy_cleanup(curl);
-        return status_code;
+    m_curl_multi.reset(curl_multi_init());
+    if (!m_curl_multi) {
+        throw CurlException("Failed to create a new curl async handle.");
+    }
+    m_curl.reset(curl_easy_init());
+    if (!m_curl) {
+        throw CurlException("Failed to create a new curl handle.");
     }
 
-    void get_data(char *&buffer, size_t &len) {
-        buffer = &m_data[0];
-        len = m_len;
+    if (m_maxbytes > 0) {
+        size_t new_size = std::min(m_maxbytes, 8*1024);
+        if (m_data.size() < new_size) {
+            m_data.resize(new_size);
+        }
     }
 
-private:
-    static size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp) {
-        SimpleCurlGet *myself = reinterpret_cast<SimpleCurlGet*>(userp);
-        size_t new_data = size * nmemb;
-        size_t new_length = myself->m_len + new_data;
+    long timeout = m_timeout > 120 ? 120 : m_timeout;
 
-        if (myself->m_maxbytes > 0 && (new_length > static_cast<size_t>(myself->m_maxbytes))) {
-            return 0;
-        }
-        if (myself->m_data.size() < new_length) {
-            myself->m_data.resize(new_length);
-        }
-        memcpy(&(myself->m_data[myself->m_len]), buffer, new_data);
-        myself->m_len = new_length;
-        return new_data;
+    CURLcode rv = curl_easy_setopt(m_curl.get(), CURLOPT_URL, url.c_str());
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_URL.");
     }
-};
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_WRITEFUNCTION, &write_data);
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_WRITEFUNCTION.");
+    }
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_WRITEDATA, this);
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_WRITEDATA.");
+    }
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_TIMEOUT, timeout);
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_TIMEOUT.");
+    }
 
+    {
+        auto mres = curl_multi_add_handle(m_curl_multi.get(), m_curl.get());
+        if (mres) {
+            throw CurlException("Failed to add curl handle to async object");
+        }
+    }
+
+    return perform_continue();
+}
+
+
+SimpleCurlGet::GetStatus
+SimpleCurlGet::perform_continue()
+{
+    int still_running;
+    auto resm = curl_multi_perform(m_curl_multi.get(), &still_running);
+    if (!resm && still_running) {
+        resm = curl_multi_timeout(m_curl_multi.get(), &m_timeout_ms);
+        if (resm) {
+            throw CurlException(curl_multi_strerror(resm));
+        }
+        if (m_timeout_ms < 0) {m_timeout_ms = 100;}
+        FD_ZERO(m_read_fd_set);
+        FD_ZERO(m_write_fd_set);
+        FD_ZERO(m_exc_fd_set);
+        resm = curl_multi_fdset(m_curl_multi.get(), m_read_fd_set, m_write_fd_set, m_exc_fd_set, &m_max_fd);
+        if (resm) {
+            throw CurlException(curl_multi_strerror(resm));
+        }
+        if (m_max_fd < 0) m_timeout_ms = 100;
+        return GetStatus();
+    }
+    if (resm) {
+        throw CurlException(curl_multi_strerror(resm));
+    }
+
+    CURLMsg *msg;
+    CURLcode res = static_cast<CURLcode>(-1);
+    do {
+        int msgq = 0;
+        msg = curl_multi_info_read(m_curl_multi.get(), &msgq);
+        if (msg && (msg->msg == CURLMSG_DONE)) {
+            CURL *easy_handle = msg->easy_handle;
+            res = msg->data.result;
+            curl_multi_remove_handle(m_curl_multi.get(), easy_handle);
+        }
+    } while (msg);
+    if (res) {
+        throw CurlException(curl_easy_strerror(res));
+    }
+
+    long status_code;
+    res = curl_easy_getinfo(m_curl.get(), CURLINFO_RESPONSE_CODE, &status_code);
+    if (res != CURLE_OK) {
+        throw CurlException(curl_easy_strerror(res));
+    }
+    GetStatus status;
+    status.m_done = true;
+    status.m_status_code = status_code;
+    return status;
+}
+
+
+int SimpleCurlGet::perform(const std::string &url, time_t expiry_time)
+{
+    GetStatus status = perform_start(url);
+    while (!status.m_done) {
+        auto now = time(NULL);
+        int timeout_ms = 1000*(expiry_time - now);
+        if (timeout_ms < 0) timeout_ms = 0;
+        if (m_timeout_ms < timeout_ms) timeout_ms = m_timeout_ms;
+        struct timeval timeout;
+        timeout.tv_sec = timeout_ms / 1000;
+        timeout.tv_usec = (timeout_ms % 1000) * 1000;
+        // Return value of select is ignored; curl will take care of it.
+        select(m_max_fd + 1, m_read_fd_set, m_write_fd_set, m_exc_fd_set, &timeout);
+        status = perform_continue();
+    }
+    return status.m_status_code;
+}
+
+
+void SimpleCurlGet::get_data(char *&buffer, size_t &len) {
+    buffer = &m_data[0];
+    len = m_len;
+}
+
+
+size_t SimpleCurlGet::write_data(void *buffer, size_t size, size_t nmemb, void *userp) {
+    SimpleCurlGet *myself = reinterpret_cast<SimpleCurlGet*>(userp);
+    size_t new_data = size * nmemb;
+    size_t new_length = myself->m_len + new_data;
+
+    if (myself->m_maxbytes > 0 && (new_length > static_cast<size_t>(myself->m_maxbytes))) {
+        return 0;
+    }
+    if (myself->m_data.size() < new_length) {
+        myself->m_data.resize(new_length);
+    }
+    memcpy(&(myself->m_data[myself->m_len]), buffer, new_data);
+    myself->m_len = new_length;
+    return new_data;
+}
+
+} // namspace internal
+
+} // namespace scitokens
+
+
+namespace {
 
 void
 parse_url(const std::string &url, std::string &schema, std::string &netloc,
@@ -476,63 +543,144 @@ SciToken::deserialize(const std::string &data, const std::vector<std::string> al
 }
 
 
-void
-Validator::get_public_keys_from_web(const std::string &issuer, unsigned timeout, picojson::value &keys, int64_t &next_update, int64_t &expires)
+std::unique_ptr<SciTokenAsyncStatus>
+SciToken::deserialize_start(const std::string &data, const std::vector<std::string> allowed_issuers) {
+    m_decoded.reset(new jwt::decoded_jwt<jwt::traits::kazuho_picojson>(data));
+
+    std::unique_ptr<SciTokenAsyncStatus> status(new SciTokenAsyncStatus());
+    status->m_validator.reset(new scitokens::Validator());
+    status->m_validator->add_allowed_issuers(allowed_issuers);
+    status->m_validator->set_validate_all_claims_scitokens_1(false);
+    status->m_validator->set_validate_profile(m_deserialize_profile);
+    
+    status->m_status = status->m_validator->verify_async(*m_decoded);
+
+    return deserialize_continue(std::move(status));
+}
+
+
+std::unique_ptr<SciTokenAsyncStatus>
+SciToken::deserialize_continue(std::unique_ptr<SciTokenAsyncStatus> status) {
+
+    // Check if the status is completed (verification is complete)
+    if (status->m_status) {
+        // Set all the claims
+        m_claims = m_decoded->get_payload_claims();
+
+        // Copy over the profile
+        m_profile = status->m_validator->get_profile();
+    } else {
+        status->m_status = status->m_validator->verify_async_continue(std::move(status->m_status));
+    }
+    
+    
+    return std::move(status);
+}
+
+
+std::unique_ptr<AsyncStatus>
+Validator::get_public_keys_from_web(const std::string &issuer, unsigned timeout)
 {
     std::string openid_metadata, oauth_metadata;
     get_metadata_endpoint(issuer, openid_metadata, oauth_metadata);
 
-    SimpleCurlGet cget(1024*1024, timeout);
-    auto status_code = cget.perform(openid_metadata);
-
-    if (status_code != 200) {
-        status_code = cget.perform(oauth_metadata);
-        if (status_code != 200) {
-            throw CurlException("Failed to retrieve metadata provider information for issuer.");
-        }
+    std::unique_ptr<AsyncStatus> status(new AsyncStatus());
+    status->m_oauth_metadata_url = oauth_metadata;
+    status->m_cget.reset(new internal::SimpleCurlGet(1024*1024, timeout));
+    auto cget_status = status->m_cget->perform_start(openid_metadata);
+    status->m_continue_fetch = true;
+    if (!cget_status.m_done) {
+        return std::move(status);
     }
-    char *buffer;
-    size_t len;
-    cget.get_data(buffer, len);
-    std::string metadata(buffer, len);
-    picojson::value json_obj;
-    auto err = picojson::parse(json_obj, metadata);
-    if (!err.empty()) {
-        throw JsonException(err);
-    }
-    if (!json_obj.is<picojson::object>()) {
-        throw JsonException("Metadata resource contains improperly-formatted JSON.");
-    }
-    auto top_obj = json_obj.get<picojson::object>();
-    auto iter = top_obj.find("jwks_uri");
-    if (iter == top_obj.end() || (!iter->second.is<std::string>())) {
-        throw JsonException("Metadata resource is missing 'jwks_uri' string value");
-    }
-    std::string jwks_uri = iter->second.get<std::string>();
-
-    status_code = cget.perform(jwks_uri);
-    if (status_code != 200) {
-        throw CurlException("Failed to retrieve the issuer's key set");
-    }
-
-    cget.get_data(buffer, len);
-    metadata = std::string(buffer, len);
-    err = picojson::parse(json_obj, metadata);
-    if (!err.empty()) {
-        throw JsonException(err);
-    }
-
-    auto now = std::time(NULL);
-    // TODO: take expiration time from the cache-control header in the response.
-
-    keys = json_obj;
-
-    int next_update_delta, expiry_delta;
-    get_default_expiry_time(next_update_delta, expiry_delta);
-    next_update = now + next_update_delta;
-    expires = now + expiry_delta;
+    return get_public_keys_from_web_continue(std::move(status));
 }
 
+
+std::unique_ptr<AsyncStatus>
+Validator::get_public_keys_from_web_continue(std::unique_ptr<AsyncStatus> status)
+{
+    char *buffer;
+    size_t len;
+
+    switch (status->m_state) {
+    
+    case AsyncStatus::DOWNLOAD_METADATA:
+    {
+        auto cget_status = status->m_cget->perform_continue();
+        if (!cget_status.m_done) {
+            return std::move(status);
+        }
+        if (cget_status.m_status_code != 200) {
+            if (status->m_oauth_fallback) {
+                throw CurlException("Failed to retrieve metadata provider information for issuer.");
+            } else {
+                status->m_oauth_fallback = true;
+                status->m_cget.reset(new internal::SimpleCurlGet());
+                cget_status = status->m_cget->perform_start(status->m_oauth_metadata_url);
+                if (!cget_status.m_done) {return status;}
+                return get_public_keys_from_web_continue(std::move(status));
+            }
+        }
+        status->m_cget->get_data(buffer, len);
+        std::string metadata(buffer, len);
+        picojson::value json_obj;
+        auto err = picojson::parse(json_obj, metadata);
+        if (!err.empty()) {
+            throw JsonException(err);
+        }
+        if (!json_obj.is<picojson::object>()) {
+            throw JsonException("Metadata resource contains improperly-formatted JSON.");
+        }
+        auto top_obj = json_obj.get<picojson::object>();
+        auto iter = top_obj.find("jwks_uri");
+        if (iter == top_obj.end() || (!iter->second.is<std::string>())) {
+            throw JsonException("Metadata resource is missing 'jwks_uri' string value");
+        }
+        auto jwks_uri = iter->second.get<std::string>();
+        status->m_has_metadata = true;
+        status->m_state = AsyncStatus::DOWNLOAD_PUBLIC_KEY;
+        status->m_cget.reset(new internal::SimpleCurlGet());
+        status->m_cget->perform_start(jwks_uri);
+        // This should also fall through the next state
+    }
+
+    case AsyncStatus::DOWNLOAD_PUBLIC_KEY:
+    {
+        auto cget_status = status->m_cget->perform_continue();
+        if (!cget_status.m_done) {
+            return std::move(status);
+        }
+        if (cget_status.m_status_code != 200) {
+            throw CurlException("Failed to retrieve the issuer's key set");
+        }
+
+        status->m_cget->get_data(buffer, len);
+        auto metadata = std::string(buffer, len);
+        picojson::value json_obj;
+        auto err = picojson::parse(json_obj, metadata);
+        status->m_cget.reset();
+        if (!err.empty()) {
+            throw JsonException(err);
+        }
+
+        auto now = std::time(NULL);
+        // TODO: take expiration time from the cache-control header in the response.
+        
+        int next_update_delta, expiry_delta;
+        get_default_expiry_time(next_update_delta, expiry_delta);
+        status->m_next_update = now + next_update_delta;
+        status->m_expires = now + expiry_delta;
+        status->m_keys = json_obj;
+        status->m_continue_fetch = false;
+        status->m_done = true;
+        status->m_state = AsyncStatus::DONE;
+    }
+    case AsyncStatus::DONE:
+        status->m_done = true;
+
+    } // Switch
+    return std::move(status);
+}
 
 std::string
 Validator::get_jwks(const std::string &issuer)
@@ -552,8 +700,11 @@ Validator::refresh_jwks(const std::string &issuer)
 {
     int64_t next_update, expires;
     picojson::value keys;
-    get_public_keys_from_web(issuer, SimpleCurlGet::default_timeout, keys, next_update, expires);
-    return store_public_keys(issuer, keys, next_update, expires);
+    std::unique_ptr<scitokens::AsyncStatus> status = get_public_keys_from_web(issuer, internal::SimpleCurlGet::extended_timeout);
+    while (!status->m_done) {
+        status = get_public_keys_from_web_continue(std::move(status));
+    }
+    return store_public_keys(issuer, status->m_keys, status->m_next_update, status->m_expires);
 }
 
 
@@ -572,27 +723,52 @@ Validator::store_jwks(const std::string &issuer, const std::string &jwks_str)
     return store_public_keys(issuer, jwks, next_update, expires);
 }
 
-void
+
+std::unique_ptr<AsyncStatus>
 Validator::get_public_key_pem(const std::string &issuer, const std::string &kid, std::string &public_pem, std::string &algorithm) {
 
-    picojson::value keys;
-    int64_t next_update, expires;
     auto now = std::time(NULL);
-    if (get_public_keys_from_db(issuer, now, keys, next_update)) {
-        if (now > next_update) {
+    std::unique_ptr<AsyncStatus> result(new AsyncStatus());
+
+    if (get_public_keys_from_db(issuer, now, result->m_keys, result->m_next_update)) {
+        if (now > result->m_next_update) {
             try {
-                get_public_keys_from_web(issuer, SimpleCurlGet::default_timeout, keys, next_update, expires);
-                store_public_keys(issuer, keys, next_update, expires);
+                result->m_ignore_error = true;
+                result = get_public_keys_from_web(issuer, internal::SimpleCurlGet::default_timeout);
             } catch (std::runtime_error &) {
-                // ignore the exception: we have a valid set of keys already/
+                result->m_do_store = false;
+                // ignore the exception: we have a valid set of keys already
             }
+        } else {
+            // Got the keys from the DB, and they are still valid.
+            result->m_continue_fetch = false;
+            result->m_do_store = false;
+            result->m_done = true;
         }
     } else {
-        get_public_keys_from_web(issuer, SimpleCurlGet::extended_timeout, keys, next_update, expires);
-        store_public_keys(issuer, keys, next_update, expires);
+        // No keys in the DB, or they are expired, so get them from the web.
+        result = get_public_keys_from_web(issuer, internal::SimpleCurlGet::default_timeout);
     }
+    result->m_issuer = issuer;
+    result->m_kid = kid;
 
-    auto key_obj = find_key_id(keys, kid);
+    // Always call the continue because it formats the public_pem and algorithm
+    return get_public_key_pem_continue(std::move(result), public_pem, algorithm);
+}
+
+std::unique_ptr<AsyncStatus>
+Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status, std::string &public_pem, std::string &algorithm) {
+
+    if (status->m_continue_fetch) {
+        status = get_public_keys_from_web_continue(std::move(status));
+        if (status->m_continue_fetch) {return std::move(status);}
+    }
+    if (status->m_do_store) {
+        store_public_keys(status->m_issuer, status->m_keys, status->m_next_update, status->m_expires);
+    }
+    status->m_done = true;
+
+    auto key_obj = find_key_id(status->m_keys, status->m_kid);
     
     auto iter = key_obj.find("alg");
     std::string alg;
@@ -656,6 +832,8 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
     
     public_pem = pem;
     algorithm = alg;
+
+    return std::move(status);
 }
 
 

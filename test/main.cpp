@@ -78,13 +78,13 @@ class KeycacheTest : public ::testing::Test
 
 
 TEST_F(KeycacheTest, RefreshTest) {
-    char *err_msg;
+    char *err_msg = nullptr;
     auto rv = keycache_refresh_jwks(demo_scitokens_url.c_str(), &err_msg);
-    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(rv == 0) << err_msg;
 
     char *output_jwks;
     rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &output_jwks, &err_msg);
-    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(rv == 0) << err_msg;
     ASSERT_TRUE(output_jwks != nullptr);
     std::string output_jwks_str(output_jwks);
     free(output_jwks);
@@ -267,7 +267,7 @@ TEST_F(SerializeTest, VerifyWLCGTest) {
     // Accepts only a WLCG token
     scitoken_set_deserialize_profile(m_read_token.get(), SciTokenProfile::WLCG_1_0);
     rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
-    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(rv == 0) << err_msg;
 
     // Accepts only SciToken 1.0; should fail.
     scitoken_set_deserialize_profile(m_read_token.get(), SciTokenProfile::SCITOKENS_1_0);
@@ -434,6 +434,77 @@ TEST_F(SerializeTest, EnforcerScopeTest) {
     ASSERT_TRUE(found_write);
 }
 
+}
+
+TEST_F(SerializeTest, DeserializeAsyncTest) {
+    char *err_msg = nullptr;
+
+    // Serialize as "compat" token.
+    char *token_value = nullptr;
+    scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::COMPAT);
+    auto rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    SciToken scitoken;
+    SciTokenStatus status;
+
+    // Accepts any profile.
+    rv = scitoken_deserialize_start(token_value, &scitoken, nullptr, &status, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    // Accepts only an at+jwt token, should fail with COMPAT token
+    while (rv == 0 && status) {
+        rv = scitoken_deserialize_continue(&scitoken, &status, &err_msg);
+        ASSERT_TRUE(rv == 0) << err_msg;
+    }
+    
+}
+
+TEST_F(SerializeTest, FailDeserializeAsyncTest) {
+    char *err_msg = nullptr;
+
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> mykey(
+        scitoken_key_create("1", "ES256", ec_public_2, ec_private_2, &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(mykey.get() != nullptr);
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)>
+        mytoken(scitoken_create(mykey.get()), scitoken_destroy);
+    ASSERT_TRUE(mytoken.get() != nullptr);
+
+    auto rv = scitoken_set_claim_string(mytoken.get(), "iss",
+        "https://demo.scitokens.org/gtest", &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    char *value;
+    rv = scitoken_serialize(mytoken.get(), &value, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    EXPECT_TRUE(value != nullptr);
+    std::unique_ptr<char, decltype(&free)> value_ptr(value, free);
+    EXPECT_TRUE(strlen(value) > 50);
+
+    char *token_value = nullptr;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    SciToken scitoken;
+    SciTokenStatus status;
+
+    // Accepts any profile.
+    rv = scitoken_deserialize_start(value, &scitoken, nullptr, &status, &err_msg);
+    EXPECT_FALSE(rv == 0) << err_msg;
+
+    // Accepts only an at+jwt token, should fail with COMPAT token
+    while (rv == 0 && status) {
+        rv = scitoken_deserialize_continue(&scitoken, &status, &err_msg);
+        EXPECT_FALSE(rv == 0) << err_msg;
+    }
+    
+}
+
+
+
+
 TEST_F(SerializeTest, ExplicitTime) {
     time_t now = time(NULL);
     char *err_msg;
@@ -472,8 +543,6 @@ TEST_F(SerializeTest, ExplicitTime) {
     ASSERT_FALSE(rv == 0);
 
     enforcer_destroy(enforcer);
-}
-
 }
 
 int main(int argc, char **argv) {
