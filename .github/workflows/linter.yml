@@ -41,6 +41,6 @@ jobs:
           commit: true 
           continue_on_error: false
           git_email: github.event.commits[0].author.name # Uses the author's git email instead of the default git email associated with the action ("lint-action@samuelmeuli.com")
-          #clang_format_args: # Any additional arguments for clang_format
+          clang_format_args: -style=file # Any additional arguments for clang_format
 
 
