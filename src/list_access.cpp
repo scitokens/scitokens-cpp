@@ -2,9 +2,10 @@
 
 #include "scitokens.h"
 
-int main(int argc, const char** argv) {
+int main(int argc, const char **argv) {
     if (argc < 4) {
-        std::cerr << "Usage: " << argv[0] << " (TOKEN) (ISSUER) (AUDIENCE)" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " (TOKEN) (ISSUER) (AUDIENCE)"
+                  << std::endl;
         return 1;
     }
     std::string token(argv[1]);
@@ -21,10 +22,12 @@ int main(int argc, const char** argv) {
         std::cout << "Failed to deserialize a token: " << err_msg << std::endl;
         return 1;
     }
-    std::cout << "Token deserialization successful.  Checking authorizations." << std::endl;
+    std::cout << "Token deserialization successful.  Checking authorizations."
+              << std::endl;
     Enforcer enf;
     if (!(enf = enforcer_create(issuer.c_str(), aud_list, &err_msg))) {
-        std::cout << "Failed to create a new enforcer object: " << err_msg << std::endl;
+        std::cout << "Failed to create a new enforcer object: " << err_msg
+                  << std::endl;
         return 1;
     }
     Acl *acls;
@@ -33,12 +36,12 @@ int main(int argc, const char** argv) {
         return 1;
     }
     std::cout << "Start of ACLs:" << std::endl;
-    for (int idx=0; acls[idx].authz && acls[idx].resource; idx++) {
-        std::cout << "ACL: " << acls[idx].authz << ":" << acls[idx].resource << std::endl;
+    for (int idx = 0; acls[idx].authz && acls[idx].resource; idx++) {
+        std::cout << "ACL: " << acls[idx].authz << ":" << acls[idx].resource
+                  << std::endl;
     }
     std::cout << "End of ACLs:" << std::endl;
 
     enforcer_destroy(enf);
     return 0;
 }
-

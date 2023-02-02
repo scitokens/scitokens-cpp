@@ -1,12 +1,12 @@
 
 #include <cstdint>
-#include <string>
 #include <memory>
+#include <string>
 
 #include <pwd.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #ifndef PICOJSON_USE_INT64
 #define PICOJSON_USE_INT64
@@ -18,8 +18,7 @@
 
 namespace {
 
-void
-initialize_cachedb(const std::string &keycache_file) {
+void initialize_cachedb(const std::string &keycache_file) {
 
     sqlite3 *db;
     int rc = sqlite3_open(keycache_file.c_str(), &db);
@@ -29,9 +28,10 @@ initialize_cachedb(const std::string &keycache_file) {
         return;
     }
     char *err_msg = nullptr;
-    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS keycache ("
-                          "issuer text UNIQUE PRIMARY KEY NOT NULL,"
-                          "keys text NOT NULL)",
+    rc = sqlite3_exec(db,
+                      "CREATE TABLE IF NOT EXISTS keycache ("
+                      "issuer text UNIQUE PRIMARY KEY NOT NULL,"
+                      "keys text NOT NULL)",
                       NULL, 0, &err_msg);
     if (rc) {
         std::cerr << "Sqlite table creation failed: " << err_msg << std::endl;
@@ -44,10 +44,10 @@ initialize_cachedb(const std::string &keycache_file) {
  * Get the Cache file location
  *
  *  1. $XDG_CACHE_HOME
- *  2. .cache subdirectory of home directory as returned by the password database
+ *  2. .cache subdirectory of home directory as returned by the password
+ * database
  */
-std::string
-get_cache_file() {
+std::string get_cache_file() {
 
     const char *xdg_cache_home = getenv("XDG_CACHE_HOME");
 
@@ -86,20 +86,22 @@ get_cache_file() {
     return keycache_file;
 }
 
+void remove_issuer_entry(sqlite3 *db, const std::string &issuer,
+                         bool new_transaction) {
 
-void
-remove_issuer_entry(sqlite3 *db, const std::string &issuer, bool new_transaction) {
-
-    if (new_transaction) sqlite3_exec(db, "BEGIN", 0, 0 , 0);
+    if (new_transaction)
+        sqlite3_exec(db, "BEGIN", 0, 0, 0);
 
     sqlite3_stmt *stmt;
-    int rc = sqlite3_prepare_v2(db, "DELETE FROM keycache WHERE issuer = ?", -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(db, "DELETE FROM keycache WHERE issuer = ?", -1,
+                                &stmt, NULL);
     if (rc != SQLITE_OK) {
         sqlite3_close(db);
         return;
     }
 
-    if (sqlite3_bind_text(stmt, 1, issuer.c_str(), issuer.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 1, issuer.c_str(), issuer.size(),
+                          SQLITE_STATIC) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return;
@@ -114,16 +116,20 @@ remove_issuer_entry(sqlite3 *db, const std::string &issuer, bool new_transaction
 
     sqlite3_finalize(stmt);
 
-    if (new_transaction) sqlite3_exec(db, "COMMIT", 0, 0 , 0);
+    if (new_transaction)
+        sqlite3_exec(db, "COMMIT", 0, 0, 0);
 }
 
-}
+} // namespace
 
-
-bool
-scitokens::Validator::get_public_keys_from_db(const std::string issuer, int64_t now, picojson::value &keys, int64_t &next_update) {
+bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
+                                                   int64_t now,
+                                                   picojson::value &keys,
+                                                   int64_t &next_update) {
     auto cache_fname = get_cache_file();
-    if (cache_fname.size() == 0) {return false;}
+    if (cache_fname.size() == 0) {
+        return false;
+    }
 
     sqlite3 *db;
     int rc = sqlite3_open(cache_fname.c_str(), &db);
@@ -133,13 +139,15 @@ scitokens::Validator::get_public_keys_from_db(const std::string issuer, int64_t 
     }
 
     sqlite3_stmt *stmt;
-    rc = sqlite3_prepare_v2(db, "SELECT keys from keycache where issuer = ?", -1, &stmt, NULL);
+    rc = sqlite3_prepare_v2(db, "SELECT keys from keycache where issuer = ?",
+                            -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         sqlite3_close(db);
         return false;
     }
 
-    if (sqlite3_bind_text(stmt, 1, issuer.c_str(), issuer.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 1, issuer.c_str(), issuer.size(),
+                          SQLITE_STATIC) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
@@ -147,7 +155,7 @@ scitokens::Validator::get_public_keys_from_db(const std::string issuer, int64_t 
 
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
-        const unsigned char * data = sqlite3_column_text(stmt, 0);
+        const unsigned char *data = sqlite3_column_text(stmt, 0);
         std::string metadata(reinterpret_cast<const char *>(data));
         sqlite3_finalize(stmt);
         picojson::value json_obj;
@@ -180,7 +188,7 @@ scitokens::Validator::get_public_keys_from_db(const std::string issuer, int64_t 
         sqlite3_close(db);
         iter = top_obj.find("next_update");
         if (iter == top_obj.end() || !iter->second.is<int64_t>()) {
-            next_update = expiry - 4*3600;
+            next_update = expiry - 4 * 3600;
         } else {
             next_update = iter->second.get<int64_t>();
         }
@@ -198,9 +206,10 @@ scitokens::Validator::get_public_keys_from_db(const std::string issuer, int64_t 
     }
 }
 
-
-bool
-scitokens::Validator::store_public_keys(const std::string &issuer, const picojson::value &keys, int64_t next_update, int64_t expires) {
+bool scitokens::Validator::store_public_keys(const std::string &issuer,
+                                             const picojson::value &keys,
+                                             int64_t next_update,
+                                             int64_t expires) {
     picojson::object top_obj;
     top_obj["jwks"] = keys;
     top_obj["next_update"] = picojson::value(next_update);
@@ -209,33 +218,38 @@ scitokens::Validator::store_public_keys(const std::string &issuer, const picojso
     std::string db_str = db_value.serialize();
 
     auto cache_fname = get_cache_file();
-    if (cache_fname.size() == 0) {return false;}
-        
+    if (cache_fname.size() == 0) {
+        return false;
+    }
+
     sqlite3 *db;
     int rc = sqlite3_open(cache_fname.c_str(), &db);
     if (rc) {
         sqlite3_close(db);
         return false;
-    }   
+    }
 
-    sqlite3_exec(db, "BEGIN", 0, 0 , 0);
+    sqlite3_exec(db, "BEGIN", 0, 0, 0);
 
     remove_issuer_entry(db, issuer, false);
 
     sqlite3_stmt *stmt;
-    rc = sqlite3_prepare_v2(db, "INSERT INTO keycache VALUES (?, ?)", -1, &stmt, NULL);
+    rc = sqlite3_prepare_v2(db, "INSERT INTO keycache VALUES (?, ?)", -1, &stmt,
+                            NULL);
     if (rc != SQLITE_OK) {
         sqlite3_close(db);
         return false;
     }
 
-    if (sqlite3_bind_text(stmt, 1, issuer.c_str(), issuer.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 1, issuer.c_str(), issuer.size(),
+                          SQLITE_STATIC) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
 
-    if (sqlite3_bind_text(stmt, 2, db_str.c_str(), db_str.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 2, db_str.c_str(), db_str.size(),
+                          SQLITE_STATIC) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
@@ -248,7 +262,7 @@ scitokens::Validator::store_public_keys(const std::string &issuer, const picojso
         return false;
     }
 
-    sqlite3_exec(db, "COMMIT", 0, 0 , 0);
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
     sqlite3_finalize(stmt);
     sqlite3_close(db);

@@ -1,42 +1,42 @@
 
 #include "scitokens.h"
 
-#include <stdlib.h>
 #include <getopt.h>
+#include <stdlib.h>
 
 #include <cstdio>
-#include <string>
-#include <vector>
 #include <fstream>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace {
 
-const char usage[] = \
-"\n"
-"Syntax: %s [--cred cred_file] [--key key_file] [--keyid kid]\n"
-"           [--claim key=val] ...\n"
-"\n"
-" Options\n"
-"    -h | --help                        Display usage\n"
-"    -c | --cred           <cred_file>  File containing signing credential.\n"
-"    -k | --key             <key_file>  File containing the signing private key.\n"
-"    -K | --keyid                <kid>  Name of the token key.\n"
-"    -i | --issuer            <issuer>  Issuer for the token.\n"
-"    -p | --profile          <profile>  Token profile (wlcg, scitokens1, scitokens2, atjwt).\n"
-"\n";
+const char usage[] =
+    "\n"
+    "Syntax: %s [--cred cred_file] [--key key_file] [--keyid kid]\n"
+    "           [--claim key=val] ...\n"
+    "\n"
+    " Options\n"
+    "    -h | --help                        Display usage\n"
+    "    -c | --cred           <cred_file>  File containing signing "
+    "credential.\n"
+    "    -k | --key             <key_file>  File containing the signing "
+    "private key.\n"
+    "    -K | --keyid                <kid>  Name of the token key.\n"
+    "    -i | --issuer            <issuer>  Issuer for the token.\n"
+    "    -p | --profile          <profile>  Token profile (wlcg, scitokens1, "
+    "scitokens2, atjwt).\n"
+    "\n";
 
-const struct option long_options[] =
-{
-    {"help",           no_argument, NULL, 'h'},
-    {"cred",     required_argument, NULL, 'c'},
-    {"key",      required_argument, NULL, 'k'},
-    {"keyid",    required_argument, NULL, 'K'},
-    {"issuer",   required_argument, NULL, 'i'},
-    {"claim",    required_argument, NULL, 'C'},
-    {"profile",  required_argument, NULL, 'p'},
-    {0, 0, 0, 0}
-};
+const struct option long_options[] = {{"help", no_argument, NULL, 'h'},
+                                      {"cred", required_argument, NULL, 'c'},
+                                      {"key", required_argument, NULL, 'k'},
+                                      {"keyid", required_argument, NULL, 'K'},
+                                      {"issuer", required_argument, NULL, 'i'},
+                                      {"claim", required_argument, NULL, 'C'},
+                                      {"profile", required_argument, NULL, 'p'},
+                                      {0, 0, 0, 0}};
 
 const char short_options[] = "hc:k:K:i:C:p:";
 
@@ -46,10 +46,9 @@ std::vector<std::string> g_claims;
 int init_arguments(int argc, char *argv[]) {
 
     int arg;
-    while((arg = getopt_long(argc, argv, short_options, long_options, nullptr)) != -1)
-    {
-        switch (arg)
-        {
+    while ((arg = getopt_long(argc, argv, short_options, long_options,
+                              nullptr)) != -1) {
+        switch (arg) {
         case 'h':
             printf(usage, argv[0]);
             exit(0);
@@ -112,7 +111,7 @@ int init_arguments(int argc, char *argv[]) {
     return 0;
 }
 
-}
+} // namespace
 
 int main(int argc, char *argv[]) {
 
@@ -122,33 +121,33 @@ int main(int argc, char *argv[]) {
     }
 
     std::ifstream priv_ifs(g_key);
-    std::string private_contents( (std::istreambuf_iterator<char>(priv_ifs)),
-                          (std::istreambuf_iterator<char>())
-                        );
+    std::string private_contents((std::istreambuf_iterator<char>(priv_ifs)),
+                                 (std::istreambuf_iterator<char>()));
     std::ifstream pub_ifs(g_cred);
-    std::string public_contents( (std::istreambuf_iterator<char>(pub_ifs)),
-                          (std::istreambuf_iterator<char>())
-                        );
+    std::string public_contents((std::istreambuf_iterator<char>(pub_ifs)),
+                                (std::istreambuf_iterator<char>()));
 
     char *err_msg;
-    auto key_raw = scitoken_key_create(g_kid.c_str(), "ES256", public_contents.c_str(),
-                                       private_contents.c_str(), &err_msg);
-    std::unique_ptr<void, decltype(&scitoken_key_destroy)>
-            key(key_raw, scitoken_key_destroy);
+    auto key_raw =
+        scitoken_key_create(g_kid.c_str(), "ES256", public_contents.c_str(),
+                            private_contents.c_str(), &err_msg);
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        key_raw, scitoken_key_destroy);
     if (key_raw == nullptr) {
         fprintf(stderr, "Failed to generate a key: %s\n", err_msg);
         free(err_msg);
         return 1;
     }
 
-    std::unique_ptr<void, decltype(&scitoken_destroy)>
-        token(scitoken_create(key_raw), scitoken_destroy);
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key_raw), scitoken_destroy);
     if (token.get() == nullptr) {
         fprintf(stderr, "Failed to generate a new token.\n");
         return 1;
     }
 
-    rv = scitoken_set_claim_string(token.get(), "iss", g_issuer.c_str(), &err_msg);
+    rv = scitoken_set_claim_string(token.get(), "iss", g_issuer.c_str(),
+                                   &err_msg);
     if (rv) {
         fprintf(stderr, "Failed to set issuer: %s\n", err_msg);
         free(err_msg);
@@ -158,15 +157,18 @@ int main(int argc, char *argv[]) {
     for (const auto &claim : g_claims) {
         auto pos = claim.find("=");
         if (pos == std::string::npos) {
-            fprintf(stderr, "Claim must contain a '=' character: %s\n", claim.c_str());
+            fprintf(stderr, "Claim must contain a '=' character: %s\n",
+                    claim.c_str());
             return 1;
         }
         auto key = claim.substr(0, pos);
         auto val = claim.substr(pos + 1);
 
-        rv = scitoken_set_claim_string(token.get(), key.c_str(), val.c_str(), &err_msg);
+        rv = scitoken_set_claim_string(token.get(), key.c_str(), val.c_str(),
+                                       &err_msg);
         if (rv) {
-            fprintf(stderr, "Failed to set claim (%s=%s): %s\n", key.c_str(), val.c_str(), err_msg);
+            fprintf(stderr, "Failed to set claim (%s=%s): %s\n", key.c_str(),
+                    val.c_str(), err_msg);
             free(err_msg);
             return 1;
         }
