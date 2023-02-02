@@ -2,9 +2,10 @@
 
 #include "scitokens.h"
 
-int main(int argc, const char** argv) {
+int main(int argc, const char **argv) {
     if (argc < 6) {
-        std::cerr << "Usage: " << argv[0] << " (TOKEN) (ISSUER) (AUDIENCE) (AUTHZ) (PATH)" << std::endl;
+        std::cerr << "Usage: " << argv[0]
+                  << " (TOKEN) (ISSUER) (AUDIENCE) (AUTHZ) (PATH)" << std::endl;
         return 1;
     }
     std::string token(argv[1]);
@@ -23,16 +24,21 @@ int main(int argc, const char** argv) {
         std::cout << "Failed to deserialize a token: " << err_msg << std::endl;
         return 1;
     }
-    std::cout << "Token deserialization successful.  Checking authorizations." << std::endl;
+    std::cout << "Token deserialization successful.  Checking authorizations."
+              << std::endl;
     Enforcer enf;
     if (!(enf = enforcer_create(issuer.c_str(), aud_list, &err_msg))) {
-        std::cout << "Failed to create a new enforcer object: " << err_msg << std::endl;
+        std::cout << "Failed to create a new enforcer object: " << err_msg
+                  << std::endl;
         return 1;
     }
-    const Acl acl {authz.c_str(), path.c_str()};
+    const Acl acl{authz.c_str(), path.c_str()};
     if (enforcer_test(enf, scitoken, &acl, &err_msg)) {
-        if (err_msg) {std::cout << "Access test failed: " << err_msg << std::endl;}
-        else {std::cout << "Access test failed." << std::endl;}
+        if (err_msg) {
+            std::cout << "Access test failed: " << err_msg << std::endl;
+        } else {
+            std::cout << "Access test failed." << std::endl;
+        }
         return 1;
     }
     std::cout << "Access test successful." << std::endl;
@@ -40,4 +46,3 @@ int main(int argc, const char** argv) {
     enforcer_destroy(enf);
     return 0;
 }
-
