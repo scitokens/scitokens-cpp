@@ -563,7 +563,7 @@ void SciToken::deserialize(const std::string &data,
     val.set_validate_profile(m_deserialize_profile);
     val.verify(*m_decoded);
 
-  std::cout << "SciToken::deserialize: " << data << std::endl;
+    std::cout << "SciToken::deserialize: " << data << std::endl;
 
     // Set all the claims
     m_claims = m_decoded->get_payload_claims();
