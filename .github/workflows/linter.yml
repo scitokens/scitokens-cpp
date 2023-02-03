@@ -49,11 +49,15 @@ jobs:
         with:
           github_token: ${{ secrets.github_token }} # For providing the commit authorization for the auto_fix feature
           clang_format: true
-          clang_format_auto_fix: false
-          auto_fix: false
+          clang_format_auto_fix: true
+          auto_fix: true
           commit: false
           continue_on_error: false
           git_email: github.event.commits[0].author.name # Uses the author's git email instead of the default git email associated with the action ("lint-action@samuelmeuli.com")
           clang_format_args: -style=file # Any additional arguments for clang_format
 
+      - name: suggester / lint
+        uses: reviewdog/action-suggester@v1
+        with:
+          tool_name: lint
 
