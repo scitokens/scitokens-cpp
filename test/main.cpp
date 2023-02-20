@@ -190,7 +190,7 @@ TEST_F(KeycacheTest, SetGetUpdateTest) {
 
 TEST_F(KeycacheTest, SetGetExpirationTest) {
     char *err_msg;
-    int new_expiration_interval = 2*24*3600;
+    int new_expiration_interval = 2 * 24 * 3600;
     std::string key = "keycache.expiration_interval_s";
     auto rv = config_set_int(key.c_str(), new_expiration_interval, &err_msg);
     ASSERT_TRUE(rv == 0);
@@ -209,14 +209,13 @@ TEST_F(KeycacheTest, SetInvalidUpdateTest) {
 
 TEST_F(KeycacheTest, SetInvalidExpirationTest) {
     char *err_msg;
-    int new_expiration_interval = -2*24*3600;
+    int new_expiration_interval = -2 * 24 * 3600;
     std::string key = "keycache.expiration_interval_s";
     auto rv = config_set_int(key.c_str(), new_expiration_interval, &err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
-TEST_F(KeycacheTest, RefreshExpiredTest)
-{
+TEST_F(KeycacheTest, RefreshExpiredTest) {
     char *err_msg, *jwks;
     int new_expiration_interval = 0;
     std::string key = "keycache.expiration_interval_s";

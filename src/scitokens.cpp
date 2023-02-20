@@ -9,7 +9,7 @@
 
 /**
  * GLOBALS
-*/
+ */
 std::atomic_int configurer::Configuration::m_next_update_delta{600};
 std::atomic_int configurer::Configuration::m_expiry_delta{4*24*3600};
 
@@ -950,27 +950,32 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg) {
     return 0;
 }
 
-
 int config_set_int(const char *key, int value, char **err_msg) {
     if (!key) {
-        if (err_msg) {*err_msg = strdup("A key must be provided.");}
+        if (err_msg) {
+            *err_msg = strdup("A key must be provided.");
+        }
         return -1;
     }
 
     std::string _key = key;
 
-    if (_key=="keycache.update_interval_s") {
-        if (value<0) {
-            if (err_msg) {*err_msg = strdup("Update interval must be positive.");}
+    if (_key == "keycache.update_interval_s") {
+        if (value < 0) {
+            if (err_msg) {
+                *err_msg = strdup("Update interval must be positive.");
+            }
             return -1;
         }
         configurer::Configuration::set_next_update_delta(value);
         return 0;
     }
 
-    if (_key=="keycache.expiration_interval_s") {
-        if (value<0) {
-            if (err_msg) {*err_msg = strdup("Expiry interval must be positive.");}
+    if (_key == "keycache.expiration_interval_s") {
+        if (value <0 ) {
+            if (err_msg) {
+                *err_msg = strdup("Expiry interval must be positive.");
+            }
             return -1;
         }
         configurer::Configuration::set_expiry_delta(value);
@@ -978,30 +983,35 @@ int config_set_int(const char *key, int value, char **err_msg) {
     }
 
     else {
-        if (err_msg) {*err_msg = strdup("Key not recognized.");}
+        if (err_msg) {
+            *err_msg = strdup("Key not recognized.");
+        }
         return -1;
     }
 }
 
-
 int config_get_int(const char *key, char **err_msg) {
     if (!key) {
-        if (err_msg) {*err_msg = strdup("A key must be provided.");}
+        if (err_msg) {
+            *err_msg = strdup("A key must be provided.");
+        }
         return -1;
     }
 
     std::string _key = key;
 
-    if (_key=="keycache.update_interval_s") {
+    if (_key == "keycache.update_interval_s") {
         return configurer::Configuration::get_next_update_delta();
     }
 
-    if (_key=="keycache.expiration_interval_s") {
+    if (_key == "keycache.expiration_interval_s") {
         return configurer::Configuration::get_expiry_delta();
     }
 
     else {
-        if (err_msg) {*err_msg = strdup("Key not recognized.");}
+        if (err_msg) {
+            *err_msg = strdup("Key not recognized.");
+        }
         return -1;
     }
 }

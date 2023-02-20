@@ -690,7 +690,8 @@ std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
         // TODO: take expiration time from the cache-control header in the
         // response.
 
-        int next_update_delta = configurer::Configuration::get_next_update_delta();
+        int next_update_delta =
+            configurer::Configuration::get_next_update_delta();
         int expiry_delta = configurer::Configuration::get_expiry_delta();
         status->m_next_update = now + next_update_delta;
         status->m_expires = now + expiry_delta;
