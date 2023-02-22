@@ -165,6 +165,77 @@ TEST_F(KeycacheTest, SetGetTest) {
     EXPECT_EQ(demo_scitokens2, jwks_str);
 }
 
+TEST_F(KeycacheTest, InvalidConfigKeyTest) {
+    char *err_msg;
+    int new_update_interval = 400;
+    std::string key = "invalid key";
+    auto rv = config_set_int(key.c_str(), new_update_interval, &err_msg);
+    ASSERT_FALSE(rv == 0);
+
+    const char *key2 = nullptr;
+    rv = config_set_int(key2, new_update_interval, &err_msg);
+    ASSERT_FALSE(rv == 0);
+}
+
+TEST_F(KeycacheTest, SetGetUpdateTest) {
+    char *err_msg;
+    int new_update_interval = 400;
+    std::string key = "keycache.update_interval_s";
+    auto rv = config_set_int(key.c_str(), new_update_interval, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    rv = config_get_int(key.c_str(), &err_msg);
+    EXPECT_EQ(rv, new_update_interval);
+}
+
+TEST_F(KeycacheTest, SetGetExpirationTest) {
+    char *err_msg;
+    int new_expiration_interval = 2 * 24 * 3600;
+    std::string key = "keycache.expiration_interval_s";
+    auto rv = config_set_int(key.c_str(), new_expiration_interval, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    rv = config_get_int(key.c_str(), &err_msg);
+    EXPECT_EQ(rv, new_expiration_interval);
+}
+
+TEST_F(KeycacheTest, SetInvalidUpdateTest) {
+    char *err_msg;
+    int new_update_interval = -1;
+    std::string key = "keycache.update_interval_s";
+    auto rv = config_set_int(key.c_str(), new_update_interval, &err_msg);
+    ASSERT_FALSE(rv == 0);
+}
+
+TEST_F(KeycacheTest, SetInvalidExpirationTest) {
+    char *err_msg;
+    int new_expiration_interval = -2 * 24 * 3600;
+    std::string key = "keycache.expiration_interval_s";
+    auto rv = config_set_int(key.c_str(), new_expiration_interval, &err_msg);
+    ASSERT_FALSE(rv == 0);
+}
+
+TEST_F(KeycacheTest, RefreshExpiredTest) {
+    char *err_msg, *jwks;
+    int new_expiration_interval = 0;
+    std::string key = "keycache.expiration_interval_s";
+    auto rv = config_set_int(key.c_str(), new_expiration_interval, &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    rv = keycache_refresh_jwks(demo_scitokens_url.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    sleep(1);
+
+    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    EXPECT_EQ(jwks_str, "{\"keys\": []}");
+}
+
 class SerializeTest : public ::testing::Test {
   protected:
     void SetUp() override {
