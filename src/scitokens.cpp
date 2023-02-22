@@ -1,8 +1,7 @@
-
-#include <exception>
-
-#include <string.h>
 #include <atomic>
+#include <exception>
+#include <string.h>
+
 
 #include "scitokens.h"
 #include "scitokens_internal.h"
@@ -11,7 +10,7 @@
  * GLOBALS
  */
 std::atomic_int configurer::Configuration::m_next_update_delta{600};
-std::atomic_int configurer::Configuration::m_expiry_delta{4*24*3600};
+std::atomic_int configurer::Configuration::m_expiry_delta{4 * 24 * 3600};
 
 SciTokenKey scitoken_key_create(const char *key_id, const char *alg,
                                 const char *public_contents,
@@ -972,7 +971,7 @@ int config_set_int(const char *key, int value, char **err_msg) {
     }
 
     if (_key == "keycache.expiration_interval_s") {
-        if (value <0 ) {
+        if (value < 0 ) {
             if (err_msg) {
                 *err_msg = strdup("Expiry interval must be positive.");
             }

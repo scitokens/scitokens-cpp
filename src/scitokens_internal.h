@@ -42,7 +42,6 @@ class Configuration {
         m_expiry_delta = _expiry_delta;
     }
     static int get_expiry_delta() { return m_expiry_delta; }
-    
   private:
     static std::atomic_int m_next_update_delta;
     static std::atomic_int m_expiry_delta;
