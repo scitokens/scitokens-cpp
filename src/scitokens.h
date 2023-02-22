@@ -19,6 +19,7 @@ typedef void *SciToken;
 typedef void *Validator;
 typedef void *Enforcer;
 typedef void *SciTokenStatus;
+typedef void *Configuration;
 
 typedef int (*StringValidatorFunction)(const char *value, char **err_msg);
 typedef struct Acl_s {
@@ -288,6 +289,26 @@ int keycache_get_cached_jwks(const char *issuer, char **jwks, char **err_msg);
  * - `jwks` is value that will be set in the cache.
  */
 int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
+
+/**
+ * API for managing scitokens configuration parameters.
+ */
+
+/**
+ * Update scitokens parameters.
+ * Takes in key/value pairs and assigns the input value to whatever
+ * configuration variable is indicated by the key.
+ * Returns 0 on success, and non-zero for invalid keys or values.
+ */
+int config_set_int(const char *key, int value, char **err_msg);
+
+/**
+ * Get current scitokens parameters.
+ * Returns the value associated with the supplied input key on success, and -1
+ * on failure This assumes there are no keys for which a negative return value
+ * is permissible.
+ */
+int config_get_int(const char *key, char **err_msg);
 
 #ifdef __cplusplus
 }
