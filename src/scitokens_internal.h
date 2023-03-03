@@ -448,7 +448,7 @@ class Validator {
         if (!jwt.has_payload_claim("iat")) {
             throw JWTVerificationException("'iat' claim is mandatory");
         }
-        if (m_profile != SciToken::Profile::AT_JWT) {
+        if (m_profile == SciToken::Profile::SCITOKENS_1_0 || m_profile == SciToken::Profile::SCITOKENS_2_0) {
             if (!jwt.has_payload_claim("nbf")) {
                 throw JWTVerificationException("'nbf' claim is mandatory");
             }
