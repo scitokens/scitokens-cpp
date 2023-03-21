@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 0.7.1
+Version: 1.0.0
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -66,6 +66,12 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+* Wed Jun 22 2022 Derek Weitzel <dweitzel@unl.edu> - 1.0.0-1
+- Add async API for parsing and verifying tokens
+- Add configuration API
+- Make nbf claim optional for non-scitokens tokens
+- Update to OpenSSL 3.0
+
 * Wed Jun 22 2022 Derek Weitzel <dweitzel@unl.edu> - 0.7.1-1
 - Add scitokens-* binaries to the package
 - Bug: close sqlite db handle on return
