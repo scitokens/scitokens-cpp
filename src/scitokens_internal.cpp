@@ -665,8 +665,8 @@ std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
         auto err = picojson::parse(json_obj, metadata);
         if (!err.empty()) {
             throw JsonException(
-                "JSON parse failure when downloading from the metadata URL "
-                + status->m_cget->get_url() + ": " + err);
+                "JSON parse failure when downloading from the metadata URL " +
+                status->m_cget->get_url() + ": " + err);
         }
         if (!json_obj.is<picojson::object>()) {
             throw JsonException(
