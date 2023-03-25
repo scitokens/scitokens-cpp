@@ -89,7 +89,9 @@ SimpleCurlGet::GetStatus SimpleCurlGet::perform_start(const std::string &url) {
 }
 
 std::string SimpleCurlGet::get_url() const {
-    if (!m_curl) {return "";}
+    if (!m_curl) {
+        return "";
+    }
 
     char *url = nullptr;
     auto rv = curl_easy_getinfo(m_curl.get(), CURLINFO_EFFECTIVE_URL, &url);
