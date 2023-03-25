@@ -95,7 +95,9 @@ std::string SimpleCurlGet::get_url() const {
 
     char *url = nullptr;
     auto rv = curl_easy_getinfo(m_curl.get(), CURLINFO_EFFECTIVE_URL, &url);
-    if (rv != CURLE_OK) {return "";}
+    if (rv != CURLE_OK) {
+        return "";
+    }
 
     return std::string(url);
 }
