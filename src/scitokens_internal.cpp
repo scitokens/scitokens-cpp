@@ -73,6 +73,10 @@ SimpleCurlGet::GetStatus SimpleCurlGet::perform_start(const std::string &url) {
     if (rv != CURLE_OK) {
         throw CurlException("Failed to set CURLOPT_TIMEOUT.");
     }
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_FOLLOWLOCATION.");
+    }
 
     {
         auto mres = curl_multi_add_handle(m_curl_multi.get(), m_curl.get());
@@ -82,6 +86,16 @@ SimpleCurlGet::GetStatus SimpleCurlGet::perform_start(const std::string &url) {
     }
 
     return perform_continue();
+}
+
+std::string SimpleCurlGet::get_url() const {
+    if (!m_curl) {return "";}
+
+    char *url = nullptr;
+    auto rv = curl_easy_getinfo(m_curl.get(), CURLINFO_EFFECTIVE_URL, &url);
+    if (rv != CURLE_OK) {return "";}
+
+    return std::string(url);
 }
 
 SimpleCurlGet::GetStatus SimpleCurlGet::perform_continue() {
@@ -648,17 +662,21 @@ std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
         picojson::value json_obj;
         auto err = picojson::parse(json_obj, metadata);
         if (!err.empty()) {
-            throw JsonException(err);
+            throw JsonException(
+                "JSON parse failure when downloading from the metadata URL "
+                + status->m_cget->get_url() + ": " + err);
         }
         if (!json_obj.is<picojson::object>()) {
             throw JsonException(
-                "Metadata resource contains improperly-formatted JSON.");
+                "Metadata resource " + status->m_cget->get_url() + " contains "
+                "improperly-formatted JSON.");
         }
         auto top_obj = json_obj.get<picojson::object>();
         auto iter = top_obj.find("jwks_uri");
         if (iter == top_obj.end() || (!iter->second.is<std::string>())) {
             throw JsonException(
-                "Metadata resource is missing 'jwks_uri' string value");
+                "Metadata resource " + status->m_cget->get_url() +
+                " is missing 'jwks_uri' string value");
         }
         auto jwks_uri = iter->second.get<std::string>();
         status->m_has_metadata = true;
@@ -683,7 +701,8 @@ std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
         auto err = picojson::parse(json_obj, metadata);
         status->m_cget.reset();
         if (!err.empty()) {
-            throw JsonException(err);
+            throw JsonException("JSON parse failure when downloading from the "
+               " public key URL " + status->m_cget->get_url() + ": " + err);
         }
 
         auto now = std::time(NULL);
