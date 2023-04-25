@@ -66,7 +66,7 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
-* Wed Jun 22 2022 Derek Weitzel <dweitzel@unl.edu> - 1.0.0-1
+* Tue Mar 21 2023 Derek Weitzel <dweitzel@unl.edu> - 1.0.0-1
 - Add async API for parsing and verifying tokens
 - Add configuration API
 - Make nbf claim optional for non-scitokens tokens
