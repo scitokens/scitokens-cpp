@@ -404,7 +404,7 @@ class Validator {
         auto result = verify_async(scitoken);
         while (!result->m_done) {
             auto timeout_val = result->get_timeout_val(expiry_time);
-            select(result->get_max_fd(), result->get_read_fd_set(),
+            select(result->get_max_fd()+1, result->get_read_fd_set(),
                    result->get_write_fd_set(), result->get_exc_fd_set(),
                    &timeout_val);
             if (time(NULL) >= expiry_time) {
