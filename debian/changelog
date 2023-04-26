@@ -1,3 +1,9 @@
+scitokens-cpp (1.0.1-1) stable; urgency=medium
+
+  * Fix bug in generate acls which would cause a timeout
+
+-- Derek Weitzel <dweitzel@unl.edu>  Wed, 26 Apr 2023 12:00:00 -0600
+
 scitokens-cpp (1.0.0-1) stable; urgency=medium
 
   * Add async API for parsing and verifying tokens
@@ -5,7 +11,7 @@ scitokens-cpp (1.0.0-1) stable; urgency=medium
   * Make nbf claim optional for non-scitokens tokens
   * Update to OpenSSL 3.0
 
--- Derek Weitzel <dweitzel@unl.edu>  Tue, 21 Mar 2021 12:00:00 -0600
+-- Derek Weitzel <dweitzel@unl.edu>  Tue, 21 Mar 2023 12:00:00 -0600
 
 scitokens-cpp (0.7.3-1) stable; urgency=medium
 
