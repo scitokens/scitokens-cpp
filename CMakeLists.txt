@@ -3,7 +3,7 @@ cmake_minimum_required( VERSION 3.10)
 
 project( scitokens-cpp 
 	DESCRIPTION "A C++ Library to interface to scitokens"
-	VERSION 0.7.0
+	VERSION 1.0.1
 	LANGUAGES CXX)
 
 option( SCITOKENS_BUILD_UNITTESTS "Build the scitokens-cpp unit tests" OFF )
