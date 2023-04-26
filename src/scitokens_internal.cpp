@@ -638,7 +638,7 @@ std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
                 cget_status =
                     status->m_cget->perform_start(status->m_oauth_metadata_url);
                 if (!cget_status.m_done) {
-                    return status;
+                    return std::move(status);
                 }
                 return get_public_keys_from_web_continue(std::move(status));
             }
