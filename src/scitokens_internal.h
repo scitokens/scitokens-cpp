@@ -51,7 +51,6 @@ class Configuration {
     static bool check_dir(const std::string dir_path);
     static bool mkdir_and_parents_if_needed(const std::string dir_path);
     static std::vector<std::string> path_split(const std::string dir_path);
-
 };
 } // namespace configurer
 

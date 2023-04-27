@@ -1068,6 +1068,3 @@ int config_get_str(const char *key, char **output, char **err_msg) {
     }
     return 0;
 }
-
-
-

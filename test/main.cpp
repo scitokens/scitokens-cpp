@@ -272,15 +272,6 @@ TEST_F(KeycacheTest, RefreshExpiredTest) {
     EXPECT_EQ(jwks_str, "{\"keys\": []}");
 }
 
-// TEST_F(KeycacheTest, SetGetCacheHomeTest) {
-//     char *err_msg, *jwks;
-//     std::string key = "keycache.cache_home";
-//     std::string cache_path = "/workspaces/scitokens-cpp/my_config";
-//     auto rv = config_set_str(key.c_str(), cache_path.c_str(), &err_msg);
-
-//     // Now create the cache there
-// }
-
 class SerializeTest : public ::testing::Test {
   protected:
     void SetUp() override {
