@@ -44,6 +44,7 @@ class Configuration {
     static int get_expiry_delta() { return m_expiry_delta; }
     static std::pair<bool, std::string> set_cache_home(const std::string cache_home);
     static std::string get_cache_home();
+    
   private:
     static std::atomic_int m_next_update_delta;
     static std::atomic_int m_expiry_delta;

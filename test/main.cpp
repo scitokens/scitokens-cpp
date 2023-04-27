@@ -176,8 +176,8 @@ TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
     auto rv = config_set_str(key.c_str(), cache_path, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
 
-    rv = keycache_set_jwks(demo_scitokens_url.c_str(),
-                                demo_scitokens2.c_str(), &err_msg);
+    rv = keycache_set_jwks(demo_scitokens_url.c_str(), demo_scitokens2.c_str(),
+                           &err_msg);
     ASSERT_TRUE(rv == 0);
 
     char *jwks;

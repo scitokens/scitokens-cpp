@@ -1067,8 +1067,10 @@ bool scitokens::Enforcer::scope_validator(const jwt::claim &claim,
 }
 
 // Configuration class functions
-std::pair<bool, std::string> configurer::Configuration::set_cache_home(const std::string dir_path) {
-    // If setting to "", then we should treat as though it is unsetting the config
+std::pair<bool, std::string> 
+configurer::Configuration::set_cache_home(const std::string dir_path) {
+    // If setting to "", then we should treat as though it is unsetting the
+    // config
     if (dir_path.length() == 0) { // User is configuring to empty string
         m_cache_home = dir_path;
         return std::make_pair(true, "");
@@ -1077,29 +1079,31 @@ std::pair<bool, std::string> configurer::Configuration::set_cache_home(const std
     // Check that the cache_home exists, and if not try to create it
     if (!check_dir(dir_path)) {
         if (!mkdir_and_parents_if_needed(dir_path)) {
-            return std::make_pair(false, "The provided cache home path did not exist and could not be created.");
+            return std::make_pair(false, "The provided cache home path did not "
+                                         "exist and could not be created.");
         }
     }
 
-    // Now it exists and we can write to it, set the value and let scitokens_cache handle the rest
+    // Now it exists and we can write to it, set the value and let 
+    // scitokens_cache handle the rest
     m_cache_home = dir_path;
     return std::make_pair(true, "");
 }
 
-std::string configurer::Configuration::get_cache_home() {
-    return m_cache_home;
-}
+std::string configurer::Configuration::get_cache_home() { return m_cache_home; }
 
 bool configurer::Configuration::check_dir(const std::string dir_path) {
     struct stat info;
     return stat(dir_path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR);
 }
 
-bool configurer::Configuration::mkdir_and_parents_if_needed(const std::string dir_path) {
+bool configurer::Configuration::mkdir_and_parents_if_needed(
+    const std::string dir_path) {
     // SciTokens-cpp already makes assumptions about using Linux file paths,
     // so making that assumption here as well.
 
-    // Using these perms because that's what the actual cache file uses in scitokens_cache
+    // Using these perms because that's what the actual cache file uses in 
+    // scitokens_cache
     mode_t mode = 0700; // Maybe these permissions should be configurable?
 
     int result;
@@ -1118,7 +1122,8 @@ bool configurer::Configuration::mkdir_and_parents_if_needed(const std::string di
     return result == 0;
 }
 
-std::vector<std::string> configurer::Configuration::path_split(std::string path) {
+std::vector<std::string> 
+configurer::Configuration::path_split(std::string path) {
     std::vector<std::string> pathComponents;
     std::stringstream ss(path);
     std::string component;
@@ -1130,6 +1135,5 @@ std::vector<std::string> configurer::Configuration::path_split(std::string path)
     if (pathComponents[0] == "") {
         pathComponents.erase(pathComponents.begin());
     }
-    
     return pathComponents;
 }

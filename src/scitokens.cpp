@@ -3,7 +3,6 @@
 #include <string.h>
 #include <sys/stat.h>
 
-
 #include "scitokens.h"
 #include "scitokens_internal.h"
 
@@ -976,7 +975,7 @@ int config_set_int(const char *key, int value, char **err_msg) {
     }
 
     else if (_key == "keycache.expiration_interval_s") {
-        if (value < 0 ) {
+        if (value < 0) {
             if (err_msg) {
                 *err_msg = strdup("Expiry interval must be positive.");
             }

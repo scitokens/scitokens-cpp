@@ -66,11 +66,11 @@ std::string get_cache_file() {
 
     // Figure out where to plop the cache based on priority
     std::string cache_dir;
-    std::string configured_cache_dir = configurer::Configuration::get_cache_home();
+    std::string configured_cache_dir = 
+        configurer::Configuration::get_cache_home();
     if (configured_cache_dir.length() > 0) { // The variable has been configured
         cache_dir = configured_cache_dir;
-    }
-    else {
+    } else {
         cache_dir = xdg_cache_home ? xdg_cache_home : home_dir.c_str();
     }
 
