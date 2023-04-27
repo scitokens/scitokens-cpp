@@ -42,9 +42,16 @@ class Configuration {
         m_expiry_delta = _expiry_delta;
     }
     static int get_expiry_delta() { return m_expiry_delta; }
+    static std::pair<bool, std::string> set_cache_home(const std::string cache_home);
+    static std::string get_cache_home();
   private:
     static std::atomic_int m_next_update_delta;
     static std::atomic_int m_expiry_delta;
+    static std::string m_cache_home;
+    static bool check_dir(const std::string dir_path);
+    static bool mkdir_and_parents_if_needed(const std::string dir_path);
+    static std::vector<std::string> path_split(const std::string dir_path);
+
 };
 } // namespace configurer
 

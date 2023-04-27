@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 #include <memory>
+#include <unistd.h>
 
 namespace {
 
@@ -165,6 +166,41 @@ TEST_F(KeycacheTest, SetGetTest) {
     EXPECT_EQ(demo_scitokens2, jwks_str);
 }
 
+TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
+    // Set cache home and jwks
+    char cache_path[FILENAME_MAX];
+    ASSERT_TRUE(getcwd(cache_path, sizeof(cache_path)) != nullptr); // Side effect gets cwd
+    char *err_msg;
+    std::string key = "keycache.cache_home";
+
+    auto rv = config_set_str(key.c_str(), cache_path, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    rv = keycache_set_jwks(demo_scitokens_url.c_str(),
+                                demo_scitokens2.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    char *jwks;
+    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    EXPECT_EQ(demo_scitokens2, jwks_str);
+
+    // Get cache home
+    char *output;
+    rv = config_get_str(key.c_str(), &output, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    EXPECT_EQ(*output, *cache_path);
+    free(output);
+
+    // Reset cache home to whatever it was before by setting empty cnfg
+    rv = config_set_str(key.c_str(), "", &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+}
+
 TEST_F(KeycacheTest, InvalidConfigKeyTest) {
     char *err_msg;
     int new_update_interval = 400;
@@ -235,6 +271,15 @@ TEST_F(KeycacheTest, RefreshExpiredTest) {
 
     EXPECT_EQ(jwks_str, "{\"keys\": []}");
 }
+
+// TEST_F(KeycacheTest, SetGetCacheHomeTest) {
+//     char *err_msg, *jwks;
+//     std::string key = "keycache.cache_home";
+//     std::string cache_path = "/workspaces/scitokens-cpp/my_config";
+//     auto rv = config_set_str(key.c_str(), cache_path.c_str(), &err_msg);
+
+//     // Now create the cache there
+// }
 
 class SerializeTest : public ::testing::Test {
   protected:
