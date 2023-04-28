@@ -1067,12 +1067,12 @@ bool scitokens::Enforcer::scope_validator(const jwt::claim &claim,
 }
 
 // Configuration class functions
-std::pair<bool, std::string> 
+std::pair<bool, std::string>
 configurer::Configuration::set_cache_home(const std::string dir_path) {
     // If setting to "", then we should treat as though it is unsetting the
     // config
     if (dir_path.length() == 0) { // User is configuring to empty string
-        m_cache_home = dir_path;
+        m_cache_home = std::make_shared<std::string>(dir_path);
         return std::make_pair(true, "");
     }
 
@@ -1084,13 +1084,13 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
         }
     }
 
-    // Now it exists and we can write to it, set the value and let 
+    // Now it exists and we can write to it, set the value and let
     // scitokens_cache handle the rest
-    m_cache_home = dir_path;
+    m_cache_home = std::make_shared<std::string>(dir_path);
     return std::make_pair(true, "");
 }
 
-std::string configurer::Configuration::get_cache_home() { return m_cache_home; }
+std::string configurer::Configuration::get_cache_home() { return *m_cache_home; }
 
 bool configurer::Configuration::check_dir(const std::string dir_path) {
     struct stat info;
@@ -1102,7 +1102,7 @@ bool configurer::Configuration::mkdir_and_parents_if_needed(
     // SciTokens-cpp already makes assumptions about using Linux file paths,
     // so making that assumption here as well.
 
-    // Using these perms because that's what the actual cache file uses in 
+    // Using these perms because that's what the actual cache file uses in
     // scitokens_cache
     mode_t mode = 0700; // Maybe these permissions should be configurable?
 
@@ -1122,7 +1122,7 @@ bool configurer::Configuration::mkdir_and_parents_if_needed(
     return result == 0;
 }
 
-std::vector<std::string> 
+std::vector<std::string>
 configurer::Configuration::path_split(std::string path) {
     std::vector<std::string> pathComponents;
     std::stringstream ss(path);

@@ -15,7 +15,7 @@ std::atomic_int configurer::Configuration::m_next_update_delta{600};
 std::atomic_int configurer::Configuration::m_expiry_delta{4 * 24 * 3600};
 
 // SciTokens cache home config
-std::string configurer::Configuration::m_cache_home{""};
+std::shared_ptr<std::string> configurer::Configuration::m_cache_home = std::make_shared<std::string>("");
 
 SciTokenKey scitoken_key_create(const char *key_id, const char *alg,
                                 const char *public_contents,
