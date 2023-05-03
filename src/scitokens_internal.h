@@ -49,8 +49,9 @@ class Configuration {
     static std::atomic_int m_next_update_delta;
     static std::atomic_int m_expiry_delta;
     static std::shared_ptr<std::string> m_cache_home;
-    //static bool check_dir(const std::string dir_path);
-    static std::pair<bool, std::string> mkdir_and_parents_if_needed(const std::string dir_path);
+    // static bool check_dir(const std::string dir_path);
+    static std::pair<bool, std::string>
+    mkdir_and_parents_if_needed(const std::string dir_path);
     static std::vector<std::string> path_split(const std::string dir_path);
 };
 } // namespace configurer

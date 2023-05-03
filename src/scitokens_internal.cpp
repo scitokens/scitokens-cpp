@@ -1103,7 +1103,8 @@ std::string configurer::Configuration::get_cache_home() { return *m_cache_home; 
 //     return stat(dir_path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR);
 // }
 
-std::pair<bool, std::string> configurer::Configuration::mkdir_and_parents_if_needed(
+std::pair<bool, std::string>
+configurer::Configuration::mkdir_and_parents_if_needed(
     const std::string dir_path) {
     // SciTokens-cpp already makes assumptions about using Linux file paths,
     // so making that assumption here as well.
@@ -1119,7 +1120,8 @@ std::pair<bool, std::string> configurer::Configuration::mkdir_and_parents_if_nee
         currentLevel += "/" + component;
         result = mkdir(currentLevel.c_str(), mode);
         if ((result < 0) && errno != EEXIST) {
-            std::string err_prefix{"There was an error while creating/checking the directory: mkdir error: "};
+            std::string err_prefix{"There was an error while creating/checking "
+                                   "the directory: mkdir error: "};
             return std::make_pair(false, err_prefix + strerror(errno));
         }
     }
