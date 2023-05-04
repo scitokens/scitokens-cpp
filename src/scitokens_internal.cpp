@@ -1076,19 +1076,22 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
         return std::make_pair(true, "");
     }
 
-    std::vector<std::string> path_components = path_split(dir_path); // cleans any extraneous /'s
+    std::vector<std::string> path_components =
+        path_split(dir_path); // cleans any extraneous /'s
     std::string cleaned_dir_path;
-    for (const auto &component : path_components) { // add the / back to the path components
+    for (const auto &component :
+         path_components) { // add the / back to the path components
         cleaned_dir_path += "/" + component;
     }
 
     // Check that the cache_home exists, and if not try to create it
-    auto rp = mkdir_and_parents_if_needed(cleaned_dir_path); // Structured bindings not introduced until cpp 17
-    if (!rp.first) { //
-        std::string err_prefix{"An issue was encountered with the provided cache home path: "};
+    auto rp = mkdir_and_parents_if_needed(
+        cleaned_dir_path); // Structured bindings not introduced until cpp 17
+    if (!rp.first) {       //
+        std::string err_prefix{
+            "An issue was encountered with the provided cache home path: "};
         return std::make_pair(false, err_prefix + rp.second);
     }
-
 
     // Now it exists and we can write to it, set the value and let
     // scitokens_cache handle the rest
@@ -1096,7 +1099,9 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
     return std::make_pair(true, "");
 }
 
-std::string configurer::Configuration::get_cache_home() { return *m_cache_home; }
+std::string configurer::Configuration::get_cache_home() {
+    return *m_cache_home;
+}
 
 // bool configurer::Configuration::check_dir(const std::string dir_path) {
 //     struct stat info;
