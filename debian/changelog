@@ -2,7 +2,7 @@ scitokens-cpp (1.0.1-1) stable; urgency=medium
 
   * Fix bug in generate acls which would cause a timeout
 
--- Derek Weitzel <dweitzel@unl.edu>  Wed, 26 Apr 2023 12:00:00 -0600
+ -- Derek Weitzel <dweitzel@unl.edu>  Wed, 26 Apr 2023 12:00:00 -0500
 
 scitokens-cpp (1.0.0-1) stable; urgency=medium
 
