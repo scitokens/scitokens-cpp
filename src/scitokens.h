@@ -302,6 +302,9 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
  */
 int config_set_int(const char *key, int value, char **err_msg);
 
+// Prefixed version of the same API to avoid potential symbol collisions
+int scitokens_config_set_int(const char *key, int value, char **err_msg);
+
 /**
  * Get current scitokens int parameters.
  * Returns the value associated with the supplied input key on success, and -1
@@ -310,11 +313,17 @@ int config_set_int(const char *key, int value, char **err_msg);
  */
 int config_get_int(const char *key, char **err_msg);
 
+// Prefixed version of the same API to avoid potential symbol collisions
+int scitokens_config_get_int(const char *key, char **err_msg);
+
 /**
  * Set current scitokens str parameters.
  * Returns 0 on success, nonzero on failure
  */
 int config_set_str(const char *key, const char *value, char **err_msg);
+
+// Prefixed version of the same API to avoid potential symbol collisions
+int scitokens_config_set_str(const char *key, const char *value, char **err_msg);
 
 /**
  * Get current scitokens str parameters.
@@ -322,6 +331,9 @@ int config_set_str(const char *key, const char *value, char **err_msg);
  * with the input key to output.
  */
 int config_get_str(const char *key, char **output, char **err_msg);
+
+// Prefixed version of the same API to avoid potential symbol collisions
+int scitokens_config_get_str(const char *key, char **output, char **err_msg);
 
 #ifdef __cplusplus
 }
