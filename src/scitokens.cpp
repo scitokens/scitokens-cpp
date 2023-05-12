@@ -1111,7 +1111,8 @@ int config_set_str(const char *key, const char *value, char **err_msg) {
     return 0;
 }
 
-int scitokens_config_set_str(const char *key, const char *value, char **err_msg) {
+int scitokens_config_set_str(const char *key, const char *value,
+                             char **err_msg) {
     if (!key) {
         if (err_msg) {
             *err_msg = strdup("A key must be provided.");

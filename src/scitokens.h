@@ -323,7 +323,8 @@ int scitokens_config_get_int(const char *key, char **err_msg);
 int config_set_str(const char *key, const char *value, char **err_msg);
 
 // Prefixed version of the same API to avoid potential symbol collisions
-int scitokens_config_set_str(const char *key, const char *value, char **err_msg);
+int scitokens_config_set_str(const char *key, const char *value,
+                             char **err_msg);
 
 /**
  * Get current scitokens str parameters.
