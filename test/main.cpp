@@ -173,7 +173,7 @@ TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
     char *err_msg;
     std::string key = "keycache.cache_home";
 
-    auto rv = config_set_str(key.c_str(), cache_path, &err_msg);
+    auto rv = scitoken_config_set_str(key.c_str(), cache_path, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
 
     // Set the jwks at the new cache home
@@ -193,13 +193,13 @@ TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
 
     // Check that cache home is still what was set
     char *output;
-    rv = config_get_str(key.c_str(), &output, &err_msg);
+    rv = scitoken_config_get_str(key.c_str(), &output, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
     EXPECT_EQ(*output, *cache_path);
     free(output);
 
     // Reset cache home to whatever it was before by setting empty config
-    rv = config_set_str(key.c_str(), "", &err_msg);
+    rv = scitoken_config_set_str(key.c_str(), "", &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
 }
 
@@ -207,11 +207,11 @@ TEST_F(KeycacheTest, InvalidConfigKeyTest) {
     char *err_msg;
     int new_update_interval = 400;
     std::string key = "invalid key";
-    auto rv = config_set_int(key.c_str(), new_update_interval, &err_msg);
+    auto rv = scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
     ASSERT_FALSE(rv == 0);
 
     const char *key2 = nullptr;
-    rv = config_set_int(key2, new_update_interval, &err_msg);
+    rv = scitoken_config_set_int(key2, new_update_interval, &err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
@@ -219,10 +219,10 @@ TEST_F(KeycacheTest, SetGetUpdateTest) {
     char *err_msg;
     int new_update_interval = 400;
     std::string key = "keycache.update_interval_s";
-    auto rv = config_set_int(key.c_str(), new_update_interval, &err_msg);
+    auto rv = scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
     ASSERT_TRUE(rv == 0);
 
-    rv = config_get_int(key.c_str(), &err_msg);
+    rv = scitoken_config_get_int(key.c_str(), &err_msg);
     EXPECT_EQ(rv, new_update_interval);
 }
 
@@ -230,10 +230,10 @@ TEST_F(KeycacheTest, SetGetExpirationTest) {
     char *err_msg;
     int new_expiration_interval = 2 * 24 * 3600;
     std::string key = "keycache.expiration_interval_s";
-    auto rv = config_set_int(key.c_str(), new_expiration_interval, &err_msg);
+    auto rv = scitoken_config_set_int(key.c_str(), new_expiration_interval, &err_msg);
     ASSERT_TRUE(rv == 0);
 
-    rv = config_get_int(key.c_str(), &err_msg);
+    rv = scitoken_config_get_int(key.c_str(), &err_msg);
     EXPECT_EQ(rv, new_expiration_interval);
 }
 
@@ -241,7 +241,7 @@ TEST_F(KeycacheTest, SetInvalidUpdateTest) {
     char *err_msg;
     int new_update_interval = -1;
     std::string key = "keycache.update_interval_s";
-    auto rv = config_set_int(key.c_str(), new_update_interval, &err_msg);
+    auto rv = scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
@@ -249,7 +249,7 @@ TEST_F(KeycacheTest, SetInvalidExpirationTest) {
     char *err_msg;
     int new_expiration_interval = -2 * 24 * 3600;
     std::string key = "keycache.expiration_interval_s";
-    auto rv = config_set_int(key.c_str(), new_expiration_interval, &err_msg);
+    auto rv = scitoken_config_set_int(key.c_str(), new_expiration_interval, &err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
@@ -257,7 +257,7 @@ TEST_F(KeycacheTest, RefreshExpiredTest) {
     char *err_msg, *jwks;
     int new_expiration_interval = 0;
     std::string key = "keycache.expiration_interval_s";
-    auto rv = config_set_int(key.c_str(), new_expiration_interval, &err_msg);
+    auto rv = scitoken_config_set_int(key.c_str(), new_expiration_interval, &err_msg);
     ASSERT_TRUE(rv == 0);
 
     rv = keycache_refresh_jwks(demo_scitokens_url.c_str(), &err_msg);

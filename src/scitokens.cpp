@@ -955,11 +955,7 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg) {
     return 0;
 }
 
-int config_set_int(const char *key, int value, char **err_msg) {
-    return scitokens_config_set_int(key, value, err_msg);
-}
-
-int scitokens_config_set_int(const char *key, int value, char **err_msg) {
+int scitoken_config_set_int(const char *key, int value, char **err_msg) {
     if (!key) {
         if (err_msg) {
             *err_msg = strdup("A key must be provided.");
@@ -998,11 +994,7 @@ int scitokens_config_set_int(const char *key, int value, char **err_msg) {
     }
 }
 
-int config_get_int(const char *key, char **err_msg) {
-    return scitokens_config_get_int(key, err_msg);
-}
-
-int scitokens_config_get_int(const char *key, char **err_msg) {
+int scitoken_config_get_int(const char *key, char **err_msg) {
     if (!key) {
         if (err_msg) {
             *err_msg = strdup("A key must be provided.");
@@ -1027,11 +1019,7 @@ int scitokens_config_get_int(const char *key, char **err_msg) {
     }
 }
 
-int config_set_str(const char *key, const char *value, char **err_msg) {
-    return scitokens_config_set_str(key, value, err_msg);
-}
-
-int scitokens_config_set_str(const char *key, const char *value,
+int scitoken_config_set_str(const char *key, const char *value,
                              char **err_msg) {
     if (!key) {
         if (err_msg) {
@@ -1060,11 +1048,7 @@ int scitokens_config_set_str(const char *key, const char *value,
     return 0;
 }
 
-int config_get_str(const char *key, char **output, char **err_msg) {
-    return scitokens_config_get_str(key, output, err_msg);
-}
-
-int scitokens_config_get_str(const char *key, char **output, char **err_msg) {
+int scitoken_config_get_str(const char *key, char **output, char **err_msg) {
     if (!key) {
         if (err_msg) {
             *err_msg = strdup("A key must be provided.");

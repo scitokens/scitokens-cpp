@@ -294,19 +294,13 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
  * APIs for managing scitokens configuration parameters.
  */
 
-// On its way to deprecation
-int config_set_int(const char *key, int value, char **err_msg);
-
 /**
  * Update scitokens int parameters.
  * Takes in key/value pairs and assigns the input value to whatever
  * configuration variable is indicated by the key.
  * Returns 0 on success, and non-zero for invalid keys or values.
  */
-int scitokens_config_set_int(const char *key, int value, char **err_msg);
-
-// On its way to deprecation
-int config_get_int(const char *key, char **err_msg);
+int scitoken_config_set_int(const char *key, int value, char **err_msg);
 
 /**
  * Get current scitokens int parameters.
@@ -314,27 +308,21 @@ int config_get_int(const char *key, char **err_msg);
  * on failure. This assumes there are no keys for which a negative return value
  * is permissible.
  */
-int scitokens_config_get_int(const char *key, char **err_msg);
-
-// On its way to deprecation
-int config_set_str(const char *key, const char *value, char **err_msg);
+int scitoken_config_get_int(const char *key, char **err_msg);
 
 /**
  * Set current scitokens str parameters.
  * Returns 0 on success, nonzero on failure
  */
-int scitokens_config_set_str(const char *key, const char *value,
+int scitoken_config_set_str(const char *key, const char *value,
                              char **err_msg);
-
-// On its way to deprecation
-int config_get_str(const char *key, char **output, char **err_msg);
 
 /**
  * Get current scitokens str parameters.
  * Returns 0 on success, nonzero on failure, and populates the value associated
  * with the input key to output.
  */
-int scitokens_config_get_str(const char *key, char **output, char **err_msg);
+int scitoken_config_get_str(const char *key, char **output, char **err_msg);
 
 #ifdef __cplusplus
 }
