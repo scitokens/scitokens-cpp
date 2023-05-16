@@ -294,6 +294,9 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
  * APIs for managing scitokens configuration parameters.
  */
 
+// On its way to deprecation
+int config_set_int(const char *key, int value, char **err_msg);
+
 /**
  * Update scitokens int parameters.
  * Takes in key/value pairs and assigns the input value to whatever
@@ -301,6 +304,9 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
  * Returns 0 on success, and non-zero for invalid keys or values.
  */
 int scitoken_config_set_int(const char *key, int value, char **err_msg);
+
+// on its way to deprecation
+int config_get_int(const char *key, char **err_msg);
 
 /**
  * Get current scitokens int parameters.

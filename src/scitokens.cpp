@@ -955,6 +955,10 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg) {
     return 0;
 }
 
+int config_set_int(const char *key, int value, char **err_msg) {
+    return scitoken_config_set_int(key, value, err_msg);
+}
+
 int scitoken_config_set_int(const char *key, int value, char **err_msg) {
     if (!key) {
         if (err_msg) {
@@ -992,6 +996,10 @@ int scitoken_config_set_int(const char *key, int value, char **err_msg) {
         }
         return -1;
     }
+}
+
+int config_get_int(const char *key, char **err_msg) {
+    return scitoken_config_get_int(key, err_msg);
 }
 
 int scitoken_config_get_int(const char *key, char **err_msg) {
