@@ -314,8 +314,7 @@ int scitoken_config_get_int(const char *key, char **err_msg);
  * Set current scitokens str parameters.
  * Returns 0 on success, nonzero on failure
  */
-int scitoken_config_set_str(const char *key, const char *value,
-                             char **err_msg);
+int scitoken_config_set_str(const char *key, const char *value, char **err_msg);
 
 /**
  * Get current scitokens str parameters.
