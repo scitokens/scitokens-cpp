@@ -1,7 +1,7 @@
 #include <atomic>
 #include <exception>
 #include <string.h>
-
+#include <sys/stat.h>
 
 #include "scitokens.h"
 #include "scitokens_internal.h"
@@ -9,8 +9,14 @@
 /**
  * GLOBALS
  */
+
+// Cache timeout config
 std::atomic_int configurer::Configuration::m_next_update_delta{600};
 std::atomic_int configurer::Configuration::m_expiry_delta{4 * 24 * 3600};
+
+// SciTokens cache home config
+std::shared_ptr<std::string> configurer::Configuration::m_cache_home =
+    std::make_shared<std::string>("");
 
 SciTokenKey scitoken_key_create(const char *key_id, const char *alg,
                                 const char *public_contents,
@@ -950,6 +956,10 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg) {
 }
 
 int config_set_int(const char *key, int value, char **err_msg) {
+    return scitoken_config_set_int(key, value, err_msg);
+}
+
+int scitoken_config_set_int(const char *key, int value, char **err_msg) {
     if (!key) {
         if (err_msg) {
             *err_msg = strdup("A key must be provided.");
@@ -958,7 +968,6 @@ int config_set_int(const char *key, int value, char **err_msg) {
     }
 
     std::string _key = key;
-
     if (_key == "keycache.update_interval_s") {
         if (value < 0) {
             if (err_msg) {
@@ -970,8 +979,8 @@ int config_set_int(const char *key, int value, char **err_msg) {
         return 0;
     }
 
-    if (_key == "keycache.expiration_interval_s") {
-        if (value < 0 ) {
+    else if (_key == "keycache.expiration_interval_s") {
+        if (value < 0) {
             if (err_msg) {
                 *err_msg = strdup("Expiry interval must be positive.");
             }
@@ -990,6 +999,10 @@ int config_set_int(const char *key, int value, char **err_msg) {
 }
 
 int config_get_int(const char *key, char **err_msg) {
+    return scitoken_config_get_int(key, err_msg);
+}
+
+int scitoken_config_get_int(const char *key, char **err_msg) {
     if (!key) {
         if (err_msg) {
             *err_msg = strdup("A key must be provided.");
@@ -998,12 +1011,11 @@ int config_get_int(const char *key, char **err_msg) {
     }
 
     std::string _key = key;
-
     if (_key == "keycache.update_interval_s") {
         return configurer::Configuration::get_next_update_delta();
     }
 
-    if (_key == "keycache.expiration_interval_s") {
+    else if (_key == "keycache.expiration_interval_s") {
         return configurer::Configuration::get_expiry_delta();
     }
 
@@ -1013,4 +1025,55 @@ int config_get_int(const char *key, char **err_msg) {
         }
         return -1;
     }
+}
+
+int scitoken_config_set_str(const char *key, const char *value,
+                            char **err_msg) {
+    if (!key) {
+        if (err_msg) {
+            *err_msg = strdup("A key must be provided.");
+        }
+        return -1;
+    }
+
+    std::string _key = key;
+    if (_key == "keycache.cache_home") {
+        auto rp = configurer::Configuration::set_cache_home(value);
+        if (!rp.first) { // There was an error, pass rp.second to err_msg
+            if (err_msg) {
+                *err_msg = strdup(rp.second.c_str());
+            }
+            return -1;
+        }
+    }
+
+    else {
+        if (err_msg) {
+            *err_msg = strdup("Key not recognized.");
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int scitoken_config_get_str(const char *key, char **output, char **err_msg) {
+    if (!key) {
+        if (err_msg) {
+            *err_msg = strdup("A key must be provided.");
+        }
+        return -1;
+    }
+
+    std::string _key = key;
+    if (_key == "keycache.cache_home") {
+        *output = strdup(configurer::Configuration::get_cache_home().c_str());
+    }
+
+    else {
+        if (err_msg) {
+            *err_msg = strdup("Key not recognized.");
+        }
+        return -1;
+    }
+    return 0;
 }
