@@ -671,16 +671,17 @@ std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
                 status->m_cget->get_url() + ": " + err);
         }
         if (!json_obj.is<picojson::object>()) {
-            throw JsonException(
-                "Metadata resource " + status->m_cget->get_url() + " contains "
-                "improperly-formatted JSON.");
+            throw JsonException("Metadata resource " +
+                                status->m_cget->get_url() +
+                                " contains "
+                                "improperly-formatted JSON.");
         }
         auto top_obj = json_obj.get<picojson::object>();
         auto iter = top_obj.find("jwks_uri");
         if (iter == top_obj.end() || (!iter->second.is<std::string>())) {
-            throw JsonException(
-                "Metadata resource " + status->m_cget->get_url() +
-                " is missing 'jwks_uri' string value");
+            throw JsonException("Metadata resource " +
+                                status->m_cget->get_url() +
+                                " is missing 'jwks_uri' string value");
         }
         auto jwks_uri = iter->second.get<std::string>();
         status->m_has_metadata = true;
@@ -706,7 +707,8 @@ std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
         status->m_cget.reset();
         if (!err.empty()) {
             throw JsonException("JSON parse failure when downloading from the "
-               " public key URL " + status->m_cget->get_url() + ": " + err);
+                                " public key URL " +
+                                status->m_cget->get_url() + ": " + err);
         }
 
         auto now = std::time(NULL);
