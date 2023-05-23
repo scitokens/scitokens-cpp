@@ -92,6 +92,7 @@ class SimpleCurlGet {
     GetStatus perform_continue();
     int perform(const std::string &url, time_t expiry_time);
     void get_data(char *&buffer, size_t &len);
+    std::string get_url() const;
 
     long get_timeout_ms() const { return m_timeout_ms; }
     int get_max_fd() const { return m_max_fd; }
