@@ -554,7 +554,7 @@ void enforcer_destroy(Enforcer enf) {
 
 void enforcer_acl_free(Acl *acls) {
     for (int idx = 0;
-         acls[idx].authz == nullptr && acls[idx].resource == nullptr; idx++) {
+         acls[idx].authz != nullptr || acls[idx].resource != nullptr; idx++) {
         free(const_cast<char *>(acls[idx].authz));
         free(const_cast<char *>(acls[idx].resource));
     }
