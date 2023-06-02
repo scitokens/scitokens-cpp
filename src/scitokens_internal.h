@@ -499,7 +499,7 @@ class Validator {
         std::string key_id;
         try {
             key_id = jwt.get_key_id();
-        } catch (const std::runtime_error &) {
+        } catch (const jwt::error::claim_not_present_exception &) {
             // Don't do anything, key_id is empty, as it should be.
         }
         auto status =
