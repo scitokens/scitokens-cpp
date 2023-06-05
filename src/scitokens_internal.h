@@ -497,10 +497,8 @@ class Validator {
         std::string algorithm;
         // Key id is optional in the RFC, set to blank if it doesn't exist
         std::string key_id;
-        try {
+        if (jwt.has_key_id()) {
             key_id = jwt.get_key_id();
-        } catch (const jwt::error::claim_not_present_exception &) {
-            // Don't do anything, key_id is empty, as it should be.
         }
         auto status =
             get_public_key_pem(jwt.get_issuer(), key_id, public_pem, algorithm);
