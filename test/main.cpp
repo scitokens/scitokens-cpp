@@ -701,9 +701,9 @@ class SerializeNoKidTest : public ::testing::Test {
   protected:
     void SetUp() override {
         char *err_msg;
-        m_key = KeyPtr(
-            scitoken_key_create("none", "ES256", ec_public, ec_private, &err_msg),
-            scitoken_key_destroy);
+        m_key = KeyPtr(scitoken_key_create("none", "ES256", ec_public,
+                                           ec_private, &err_msg),
+                       scitoken_key_destroy);
         ASSERT_TRUE(m_key.get() != nullptr);
 
         m_token = TokenPtr(scitoken_create(m_key.get()), scitoken_destroy);
