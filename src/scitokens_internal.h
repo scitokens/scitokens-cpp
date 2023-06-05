@@ -152,8 +152,9 @@ class SciTokenKey {
           m_private(private_contents) {}
 
     std::string serialize(jwt::builder<jwt::traits::kazuho_picojson> &builder) {
-        std::error_code ec;
-        builder.set_key_id(m_kid);
+        if (m_kid != "none") {
+            builder.set_key_id(m_kid);
+        }
         return builder.sign(*this);
     }
 
