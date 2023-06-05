@@ -152,8 +152,9 @@ class SciTokenKey {
           m_private(private_contents) {}
 
     std::string serialize(jwt::builder<jwt::traits::kazuho_picojson> &builder) {
-        std::error_code ec;
-        builder.set_key_id(m_kid);
+        if (m_kid != "none") {
+            builder.set_key_id(m_kid);
+        }
         return builder.sign(*this);
     }
 
@@ -496,10 +497,8 @@ class Validator {
         std::string algorithm;
         // Key id is optional in the RFC, set to blank if it doesn't exist
         std::string key_id;
-        try {
+        if (jwt.has_key_id()) {
             key_id = jwt.get_key_id();
-        } catch (const std::runtime_error &) {
-            // Don't do anything, key_id is empty, as it should be.
         }
         auto status =
             get_public_key_pem(jwt.get_issuer(), key_id, public_pem, algorithm);
