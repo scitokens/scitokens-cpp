@@ -697,6 +697,86 @@ TEST_F(SerializeTest, ExplicitTime) {
     enforcer_destroy(enforcer);
 }
 
+class SerializeNoKidTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        char *err_msg;
+        m_key = KeyPtr(
+            scitoken_key_create("none", "ES256", ec_public, ec_private, &err_msg),
+            scitoken_key_destroy);
+        ASSERT_TRUE(m_key.get() != nullptr);
+
+        m_token = TokenPtr(scitoken_create(m_key.get()), scitoken_destroy);
+        ASSERT_TRUE(m_token.get() != nullptr);
+
+        auto rv = scitoken_set_claim_string(
+            m_token.get(), "iss", "https://demo.scitokens.org/gtest", &err_msg);
+        ASSERT_TRUE(rv == 0);
+
+        rv = scitoken_store_public_ec_key("https://demo.scitokens.org/gtest",
+                                          "1", ec_public, &err_msg);
+        ASSERT_TRUE(rv == 0);
+
+        scitoken_set_lifetime(m_token.get(), 60);
+
+        m_audiences_array.push_back("https://demo.scitokens.org/");
+        m_audiences_array.push_back(nullptr);
+
+        const char *groups[3] = {nullptr, nullptr, nullptr};
+        const char group0[] = "group0";
+        const char group1[] = "group1";
+        groups[0] = group0;
+        groups[1] = group1;
+        rv = scitoken_set_claim_string_list(m_token.get(), "groups", groups,
+                                            &err_msg);
+        ASSERT_TRUE(rv == 0);
+
+        m_read_token.reset(scitoken_create(nullptr));
+        ASSERT_TRUE(m_read_token.get() != nullptr);
+    }
+
+    using KeyPtr = std::unique_ptr<void, decltype(&scitoken_key_destroy)>;
+    KeyPtr m_key{nullptr, scitoken_key_destroy};
+
+    using TokenPtr = std::unique_ptr<void, decltype(&scitoken_destroy)>;
+    TokenPtr m_token{nullptr, scitoken_destroy};
+
+    std::vector<const char *> m_audiences_array;
+
+    TokenPtr m_read_token{nullptr, scitoken_destroy};
+};
+
+TEST_F(SerializeNoKidTest, VerifyATJWTTest) {
+
+    char *err_msg = nullptr;
+
+    // Serialize as at+jwt token.
+    char *token_value = nullptr;
+    scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::AT_JWT);
+    auto rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0);
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Accepts any profile.
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    // Accepts only an at+jwt token, should work with at+jwt token
+    scitoken_set_deserialize_profile(m_read_token.get(),
+                                     SciTokenProfile::AT_JWT);
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_TRUE(rv == 0);
+
+    // Accepts only SciToken 2.0; should fail
+    scitoken_set_deserialize_profile(m_read_token.get(),
+                                     SciTokenProfile::SCITOKENS_2_0);
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_FALSE(rv == 0);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
