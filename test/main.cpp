@@ -439,7 +439,6 @@ TEST_F(SerializeTest, FailDeserializeAsyncTest) {
 }
 
 TEST_F(SerializeTest, ExplicitTime) {
-    time_t now = time(NULL);
     char *err_msg = nullptr;
 
     scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::WLCG_1_0);

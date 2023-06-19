@@ -670,7 +670,7 @@ class Validator {
         }
         std::unique_ptr<AsyncStatus> result(new AsyncStatus());
         result->m_done = true;
-        return std::move(result);
+        return result;
     }
 
     void add_critical_claims(const std::vector<std::string> &claims) {

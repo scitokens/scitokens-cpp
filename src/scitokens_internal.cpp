@@ -630,7 +630,7 @@ Validator::get_public_keys_from_web(const std::string &issuer,
     auto cget_status = status->m_cget->perform_start(openid_metadata);
     status->m_continue_fetch = true;
     if (!cget_status.m_done) {
-        return std::move(status);
+        return status;
     }
     return get_public_keys_from_web_continue(std::move(status));
 }
@@ -744,7 +744,6 @@ std::string Validator::get_jwks(const std::string &issuer) {
 }
 
 bool Validator::refresh_jwks(const std::string &issuer) {
-    int64_t next_update, expires;
     picojson::value keys;
     std::unique_ptr<scitokens::AsyncStatus> status = get_public_keys_from_web(
         issuer, internal::SimpleCurlGet::extended_timeout);
