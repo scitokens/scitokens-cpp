@@ -978,9 +978,9 @@ bool scitokens::Validator::store_public_ec_key(const std::string &issuer,
     auto x_num = BN_num_bytes(x_bignum.get());
     auto y_num = BN_num_bytes(y_bignum.get());
     std::vector<unsigned char> x_bin;
-    x_bin.reserve(x_num);
+    x_bin.resize(x_num);
     std::vector<unsigned char> y_bin;
-    y_bin.reserve(y_num);
+    y_bin.resize(y_num);
     BN_bn2bin(x_bignum.get(), &x_bin[0]);
     BN_bn2bin(y_bignum.get(), &y_bin[0]);
     std::string x_str(reinterpret_cast<char *>(&x_bin[0]), x_num);
