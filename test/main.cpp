@@ -63,223 +63,6 @@ TEST(SciTokenTest, SignToken) {
     ASSERT_TRUE(strlen(value) > 50);
 }
 
-class KeycacheTest : public ::testing::Test {
-  protected:
-    std::string demo_scitokens_url = "https://demo.scitokens.org";
-
-    void SetUp() override {
-        char *err_msg = nullptr;
-        auto rv = keycache_set_jwks(demo_scitokens_url.c_str(),
-                                    demo_scitokens.c_str(), &err_msg);
-        ASSERT_TRUE(rv == 0) << err_msg;
-    }
-
-    // Reference copy of the keys at https://demo.scitokens.org/oauth2/certs;
-    // may need to be updated periodically.
-    std::string demo_scitokens =
-        "{\"keys\":[{\"alg\":\"RS256\",\"e\":\"AQAB\",\"kid\":\"key-rs256\","
-        "\"kty\":\"RSA\",\"n\":\"uGDGTLXnqh3mfopjys6sFUBvFl3F4Qt6NEYphq_u_"
-        "aBhtN1X9NEyb78uB_"
-        "I1KjciJNGLIQU0ECsJiFx6qV1hR9xE1dPyrS3bU92AVtnBrvzUtTU-aUZAmZQiuAC_rC0-"
-        "z_"
-        "TOQr6qJkkUgZtxR9n9op55ZBpRfZD5dzhkW4Dm146vfTKt0D4cIMoMNJS5xQx9nibeB4E8"
-        "hryZDW_"
-        "fPeD0XZDcpByNyP0jFDYkxdUtQFvyRpz4WMZ4ejUfvW3gf4LRAfGZJtMnsZ7ZW4RfoQbhi"
-        "XKMfWeBEjQDiXh0r-KuZLykxhYJtpf7fTnPna753IzMgRMmW3F69iQn2LQN3LoSMw==\","
-        "\"use\":\"sig\"},{\"alg\":\"ES256\",\"kid\":\"key-es256\",\"kty\":"
-        "\"EC\",\"use\":\"sig\",\"x\":"
-        "\"ncSCrGTBTXXOhNiAOTwNdPjwRz1hVY4saDNiHQK9Bh4=\",\"y\":"
-        "\"sCsFXvx7FAAklwq3CzRCBcghqZOFPB2dKUayS6LY_Lo=\"}]}";
-    std::string demo_scitokens2 =
-        "{\"keys\":[{\"alg\":\"ES256\",\"kid\":\"key-es256\",\"kty\":\"EC\","
-        "\"use\":\"sig\",\"x\":\"ncSCrGTBTXXOhNiAOTwNdPjwRz1hVY4saDNiHQK9Bh4="
-        "\",\"y\":\"sCsFXvx7FAAklwq3CzRCBcghqZOFPB2dKUayS6LY_Lo=\"}]}";
-};
-
-TEST_F(KeycacheTest, RefreshTest) {
-    char *err_msg = nullptr;
-    auto rv = keycache_refresh_jwks(demo_scitokens_url.c_str(), &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-
-    char *output_jwks;
-    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &output_jwks,
-                                  &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-    ASSERT_TRUE(output_jwks != nullptr);
-    std::string output_jwks_str(output_jwks);
-    free(output_jwks);
-
-    EXPECT_EQ(demo_scitokens, output_jwks_str);
-}
-
-TEST_F(KeycacheTest, RefreshInvalid) {
-    char *err_msg = nullptr, *jwks;
-    auto rv =
-        keycache_refresh_jwks("https://demo.scitokens.org/invalid", &err_msg);
-    ASSERT_FALSE(rv == 0);
-
-    rv = keycache_get_cached_jwks("https://demo.scitokens.org/invalid", &jwks,
-                                  &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-    ASSERT_TRUE(jwks != nullptr);
-    std::string jwks_str(jwks);
-    free(jwks);
-
-    EXPECT_EQ(jwks_str, "{\"keys\": []}");
-}
-
-TEST_F(KeycacheTest, GetInvalid) {
-    char *err_msg = nullptr, *jwks;
-    auto rv = keycache_get_cached_jwks("https://demo.scitokens.org/unknown",
-                                       &jwks, &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-    ASSERT_TRUE(jwks != nullptr);
-    std::string jwks_str(jwks);
-    free(jwks);
-}
-
-TEST_F(KeycacheTest, GetTest) {
-    char *err_msg = nullptr, *jwks;
-    auto rv =
-        keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-    ASSERT_TRUE(jwks != nullptr);
-    std::string jwks_str(jwks);
-    free(jwks);
-
-    EXPECT_EQ(demo_scitokens, jwks_str);
-}
-
-TEST_F(KeycacheTest, SetGetTest) {
-    char *err_msg = nullptr;
-    auto rv = keycache_set_jwks(demo_scitokens_url.c_str(),
-                                demo_scitokens2.c_str(), &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-
-    char *jwks;
-    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-    ASSERT_TRUE(jwks != nullptr);
-    std::string jwks_str(jwks);
-    free(jwks);
-
-    EXPECT_EQ(demo_scitokens2, jwks_str);
-}
-
-TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
-    // Set cache home
-    char cache_path[FILENAME_MAX];
-    ASSERT_TRUE(getcwd(cache_path, sizeof(cache_path)) != nullptr); // Side effect gets cwd
-    char *err_msg = nullptr;
-    std::string key = "keycache.cache_home";
-
-    auto rv = scitoken_config_set_str(key.c_str(), cache_path, &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-
-    // Set the jwks at the new cache home
-    rv = keycache_set_jwks(demo_scitokens_url.c_str(), demo_scitokens2.c_str(),
-                           &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-
-    // Fetch the cached jwks from the new cache home
-    char *jwks;
-    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-    ASSERT_TRUE(jwks != nullptr);
-    std::string jwks_str(jwks);
-    free(jwks);
-
-    EXPECT_EQ(demo_scitokens2, jwks_str);
-
-    // Check that cache home is still what was set
-    char *output;
-    rv = scitoken_config_get_str(key.c_str(), &output, &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-    EXPECT_EQ(*output, *cache_path);
-    free(output);
-
-    // Reset cache home to whatever it was before by setting empty config
-    rv = scitoken_config_set_str(key.c_str(), "", &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-}
-
-TEST_F(KeycacheTest, InvalidConfigKeyTest) {
-    char *err_msg = nullptr;
-    int new_update_interval = 400;
-    std::string key = "invalid key";
-    auto rv =
-        scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
-    ASSERT_FALSE(rv == 0);
-
-    const char *key2 = nullptr;
-    rv = scitoken_config_set_int(key2, new_update_interval, &err_msg);
-    ASSERT_FALSE(rv == 0);
-}
-
-TEST_F(KeycacheTest, SetGetUpdateTest) {
-    char *err_msg = nullptr;
-    int new_update_interval = 400;
-    std::string key = "keycache.update_interval_s";
-    auto rv =
-        scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-
-    rv = scitoken_config_get_int(key.c_str(), &err_msg);
-    EXPECT_EQ(rv, new_update_interval) << err_msg;
-}
-
-TEST_F(KeycacheTest, SetGetExpirationTest) {
-    char *err_msg = nullptr;
-    int new_expiration_interval = 2 * 24 * 3600;
-    std::string key = "keycache.expiration_interval_s";
-    auto rv =
-        scitoken_config_set_int(key.c_str(), new_expiration_interval, &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-
-    rv = scitoken_config_get_int(key.c_str(), &err_msg);
-    EXPECT_EQ(rv, new_expiration_interval) << err_msg;
-}
-
-TEST_F(KeycacheTest, SetInvalidUpdateTest) {
-    char *err_msg = nullptr;
-    int new_update_interval = -1;
-    std::string key = "keycache.update_interval_s";
-    auto rv =
-        scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
-    ASSERT_FALSE(rv == 0);
-}
-
-TEST_F(KeycacheTest, SetInvalidExpirationTest) {
-    char *err_msg = nullptr;
-    int new_expiration_interval = -2 * 24 * 3600;
-    std::string key = "keycache.expiration_interval_s";
-    auto rv =
-        scitoken_config_set_int(key.c_str(), new_expiration_interval, &err_msg);
-    ASSERT_FALSE(rv == 0);
-}
-
-TEST_F(KeycacheTest, RefreshExpiredTest) {
-    char *err_msg = nullptr, *jwks;
-    int new_expiration_interval = 0;
-    std::string key = "keycache.expiration_interval_s";
-    auto rv =
-        scitoken_config_set_int(key.c_str(), new_expiration_interval, &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-
-    rv = keycache_refresh_jwks(demo_scitokens_url.c_str(), &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-
-    sleep(1);
-
-    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
-    ASSERT_TRUE(rv == 0) << err_msg;
-    ASSERT_TRUE(jwks != nullptr);
-    std::string jwks_str(jwks);
-    free(jwks);
-
-    EXPECT_EQ(jwks_str, "{\"keys\": []}");
-}
-
 class SerializeTest : public ::testing::Test {
   protected:
     void SetUp() override {
@@ -773,6 +556,223 @@ TEST_F(SerializeNoKidTest, VerifyATJWTTest) {
     rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
                                  &err_msg);
     ASSERT_FALSE(rv == 0);
+}
+
+class KeycacheTest : public ::testing::Test {
+  protected:
+    std::string demo_scitokens_url = "https://demo.scitokens.org";
+
+    void SetUp() override {
+        char *err_msg = nullptr;
+        auto rv = keycache_set_jwks(demo_scitokens_url.c_str(),
+                                    demo_scitokens.c_str(), &err_msg);
+        ASSERT_TRUE(rv == 0) << err_msg;
+    }
+
+    // Reference copy of the keys at https://demo.scitokens.org/oauth2/certs;
+    // may need to be updated periodically.
+    std::string demo_scitokens =
+        "{\"keys\":[{\"alg\":\"RS256\",\"e\":\"AQAB\",\"kid\":\"key-rs256\","
+        "\"kty\":\"RSA\",\"n\":\"uGDGTLXnqh3mfopjys6sFUBvFl3F4Qt6NEYphq_u_"
+        "aBhtN1X9NEyb78uB_"
+        "I1KjciJNGLIQU0ECsJiFx6qV1hR9xE1dPyrS3bU92AVtnBrvzUtTU-aUZAmZQiuAC_rC0-"
+        "z_"
+        "TOQr6qJkkUgZtxR9n9op55ZBpRfZD5dzhkW4Dm146vfTKt0D4cIMoMNJS5xQx9nibeB4E8"
+        "hryZDW_"
+        "fPeD0XZDcpByNyP0jFDYkxdUtQFvyRpz4WMZ4ejUfvW3gf4LRAfGZJtMnsZ7ZW4RfoQbhi"
+        "XKMfWeBEjQDiXh0r-KuZLykxhYJtpf7fTnPna753IzMgRMmW3F69iQn2LQN3LoSMw==\","
+        "\"use\":\"sig\"},{\"alg\":\"ES256\",\"kid\":\"key-es256\",\"kty\":"
+        "\"EC\",\"use\":\"sig\",\"x\":"
+        "\"ncSCrGTBTXXOhNiAOTwNdPjwRz1hVY4saDNiHQK9Bh4=\",\"y\":"
+        "\"sCsFXvx7FAAklwq3CzRCBcghqZOFPB2dKUayS6LY_Lo=\"}]}";
+    std::string demo_scitokens2 =
+        "{\"keys\":[{\"alg\":\"ES256\",\"kid\":\"key-es256\",\"kty\":\"EC\","
+        "\"use\":\"sig\",\"x\":\"ncSCrGTBTXXOhNiAOTwNdPjwRz1hVY4saDNiHQK9Bh4="
+        "\",\"y\":\"sCsFXvx7FAAklwq3CzRCBcghqZOFPB2dKUayS6LY_Lo=\"}]}";
+};
+
+TEST_F(KeycacheTest, RefreshTest) {
+    char *err_msg = nullptr;
+    auto rv = keycache_refresh_jwks(demo_scitokens_url.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *output_jwks;
+    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &output_jwks,
+                                  &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(output_jwks != nullptr);
+    std::string output_jwks_str(output_jwks);
+    free(output_jwks);
+
+    EXPECT_EQ(demo_scitokens, output_jwks_str);
+}
+
+TEST_F(KeycacheTest, RefreshInvalid) {
+    char *err_msg = nullptr, *jwks;
+    auto rv =
+        keycache_refresh_jwks("https://demo.scitokens.org/invalid", &err_msg);
+    ASSERT_FALSE(rv == 0);
+
+    rv = keycache_get_cached_jwks("https://demo.scitokens.org/invalid", &jwks,
+                                  &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    EXPECT_EQ(jwks_str, "{\"keys\": []}");
+}
+
+TEST_F(KeycacheTest, GetInvalid) {
+    char *err_msg = nullptr, *jwks;
+    auto rv = keycache_get_cached_jwks("https://demo.scitokens.org/unknown",
+                                       &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+}
+
+TEST_F(KeycacheTest, GetTest) {
+    char *err_msg = nullptr, *jwks;
+    auto rv =
+        keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    EXPECT_EQ(demo_scitokens, jwks_str);
+}
+
+TEST_F(KeycacheTest, SetGetTest) {
+    char *err_msg = nullptr;
+    auto rv = keycache_set_jwks(demo_scitokens_url.c_str(),
+                                demo_scitokens2.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *jwks;
+    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    EXPECT_EQ(demo_scitokens2, jwks_str);
+}
+
+TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
+    // Set cache home
+    char cache_path[FILENAME_MAX];
+    ASSERT_TRUE(getcwd(cache_path, sizeof(cache_path)) != nullptr); // Side effect gets cwd
+    char *err_msg = nullptr;
+    std::string key = "keycache.cache_home";
+
+    auto rv = scitoken_config_set_str(key.c_str(), cache_path, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    // Set the jwks at the new cache home
+    rv = keycache_set_jwks(demo_scitokens_url.c_str(), demo_scitokens2.c_str(),
+                           &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    // Fetch the cached jwks from the new cache home
+    char *jwks;
+    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    EXPECT_EQ(demo_scitokens2, jwks_str);
+
+    // Check that cache home is still what was set
+    char *output;
+    rv = scitoken_config_get_str(key.c_str(), &output, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    EXPECT_EQ(*output, *cache_path);
+    free(output);
+
+    // Reset cache home to whatever it was before by setting empty config
+    rv = scitoken_config_set_str(key.c_str(), "", &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+}
+
+TEST_F(KeycacheTest, InvalidConfigKeyTest) {
+    char *err_msg = nullptr;
+    int new_update_interval = 400;
+    std::string key = "invalid key";
+    auto rv =
+        scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
+    ASSERT_FALSE(rv == 0);
+
+    const char *key2 = nullptr;
+    rv = scitoken_config_set_int(key2, new_update_interval, &err_msg);
+    ASSERT_FALSE(rv == 0);
+}
+
+TEST_F(KeycacheTest, SetGetUpdateTest) {
+    char *err_msg = nullptr;
+    int new_update_interval = 400;
+    std::string key = "keycache.update_interval_s";
+    auto rv =
+        scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    rv = scitoken_config_get_int(key.c_str(), &err_msg);
+    EXPECT_EQ(rv, new_update_interval) << err_msg;
+}
+
+TEST_F(KeycacheTest, SetGetExpirationTest) {
+    char *err_msg = nullptr;
+    int new_expiration_interval = 2 * 24 * 3600;
+    std::string key = "keycache.expiration_interval_s";
+    auto rv =
+        scitoken_config_set_int(key.c_str(), new_expiration_interval, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    rv = scitoken_config_get_int(key.c_str(), &err_msg);
+    EXPECT_EQ(rv, new_expiration_interval) << err_msg;
+}
+
+TEST_F(KeycacheTest, SetInvalidUpdateTest) {
+    char *err_msg = nullptr;
+    int new_update_interval = -1;
+    std::string key = "keycache.update_interval_s";
+    auto rv =
+        scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
+    ASSERT_FALSE(rv == 0);
+}
+
+TEST_F(KeycacheTest, SetInvalidExpirationTest) {
+    char *err_msg = nullptr;
+    int new_expiration_interval = -2 * 24 * 3600;
+    std::string key = "keycache.expiration_interval_s";
+    auto rv =
+        scitoken_config_set_int(key.c_str(), new_expiration_interval, &err_msg);
+    ASSERT_FALSE(rv == 0);
+}
+
+TEST_F(KeycacheTest, RefreshExpiredTest) {
+    char *err_msg = nullptr, *jwks;
+    int new_expiration_interval = 0;
+    std::string key = "keycache.expiration_interval_s";
+    auto rv =
+        scitoken_config_set_int(key.c_str(), new_expiration_interval, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    rv = keycache_refresh_jwks(demo_scitokens_url.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    sleep(1);
+
+    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    EXPECT_EQ(jwks_str, "{\"keys\": []}");
 }
 
 int main(int argc, char **argv) {
