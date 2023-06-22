@@ -1,2 +1,2 @@
-debian/tmp/usr/lib/*/libSciTokens.so.*
-debian/tmp/usr/bin/scitokens-*
+/usr/lib/*/libSciTokens.so.*
+/usr/bin/scitokens-*

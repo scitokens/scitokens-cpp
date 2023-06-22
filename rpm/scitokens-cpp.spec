@@ -1,3 +1,6 @@
+%undefine __cmake_in_source_build
+%undefine __cmake3_in_source_build
+
 Name: scitokens-cpp
 Version: 1.0.2
 Release: 1%{?dist}
@@ -5,12 +8,6 @@ Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
 URL: https://github.com/scitokens/scitokens-cpp
 
-# Directions to generate a proper release:
-# VER=0.3.3 # for example
-# git archive --prefix "scitokens-cpp-$VER/" -o "scitokens-cpp-$VER.tar" v$VER
-# git submodule update --init
-# git submodule foreach --recursive "git archive --prefix=scitokens-cpp-$VER/\$path/ --output=\$sha1.tar HEAD && tar --concatenate --file=$(pwd)/scitokens-cpp-$VER.tar \$sha1.tar && rm \$sha1.tar"
-# gzip "scitokens-cpp-$VER.tar"
 Source0: https://github.com/scitokens/scitokens-cpp/releases/download/v%{version}/%{name}-%{version}.tar.gz
 
 # Scitokens-cpp bundles jwt-cpp, a header only dependency
@@ -25,6 +22,7 @@ BuildRequires: sqlite-devel
 BuildRequires: openssl-devel
 BuildRequires: libcurl-devel
 BuildRequires: libuuid-devel
+
 %if 0%{?el7}
 # needed for ldconfig_scriptlets
 BuildRequires: epel-rpm-macros
