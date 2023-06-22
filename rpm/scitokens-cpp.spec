@@ -22,6 +22,7 @@ BuildRequires: sqlite-devel
 BuildRequires: openssl-devel
 BuildRequires: libcurl-devel
 BuildRequires: libuuid-devel
+BuildRequires: gtest-devel
 
 %if 0%{?el7}
 # needed for ldconfig_scriptlets
@@ -43,11 +44,17 @@ Requires: %{name}%{?_isa} = %{version}
 %setup -q
 
 %build
-%cmake3
+%cmake3 -DSCITOKENS_BUILD_UNITTESTS:BOOL=ON \
+        -DSCITOKENS_EXTERNAL_GTEST:BOOL=ON
 %cmake3_build
 
 %install
 %cmake3_install
+
+%check
+# Filter out tests that require network connection
+export GTEST_FILTER=-KeycacheTest.RefreshTest:KeycacheTest.RefreshExpiredTest
+%ctest3
 
 # Run the ldconfig
 %ldconfig_scriptlets

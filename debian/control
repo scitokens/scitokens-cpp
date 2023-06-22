@@ -9,7 +9,8 @@ Build-Depends:
     libsqlite3-dev,
     libssl-dev,
     pkg-config,
-    uuid-dev
+    uuid-dev,
+    libgtest-dev
 Standards-Version: 3.9.8
 Homepage: https://github.com/scitokens/scitokens-cpp
 
