@@ -378,7 +378,7 @@ int scitoken_deserialize_continue(SciToken *token, SciTokenStatus *status,
     }
 
     scitokens::SciToken *real_token =
-        reinterpret_cast<scitokens::SciToken *>(token);
+        reinterpret_cast<scitokens::SciToken *>(*token);
     std::unique_ptr<scitokens::SciTokenAsyncStatus> real_status(
         reinterpret_cast<scitokens::SciTokenAsyncStatus *>(*status));
 
