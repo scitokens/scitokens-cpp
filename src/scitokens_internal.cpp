@@ -613,7 +613,7 @@ SciToken::deserialize_continue(std::unique_ptr<SciTokenAsyncStatus> status) {
     } else {
         status->m_status = status->m_validator->verify_async_continue(
             std::move(status->m_status));
-        if(status->m_status->m_done) {
+        if (status->m_status->m_done) {
             // Set all the claims
             m_claims = m_decoded->get_payload_claims();
 
