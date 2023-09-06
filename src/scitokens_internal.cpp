@@ -604,7 +604,7 @@ std::unique_ptr<SciTokenAsyncStatus>
 SciToken::deserialize_continue(std::unique_ptr<SciTokenAsyncStatus> status) {
 
     // Check if the status is completed (verification is complete)
-    if (status->m_status) {
+    if (status->m_status->m_done) {
         // Set all the claims
         m_claims = m_decoded->get_payload_claims();
 
