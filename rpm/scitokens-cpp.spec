@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 1.0.1
+Version: 1.0.2
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -66,6 +66,11 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+* Thu Jun 15 2023 Derek Weitzel <dweitzel@unl.edu> - 1.0.2-1
+- Add support for API-configurable cache home
+- Fix enforcer_acl_free logic
+- scitokens_internal: catch matching exception type after jwt-cpp update
+
 * Wed Apr 26 2023 Derek Weitzel <dweitzel@unl.edu> - 1.0.1-1
 - Fix bug in generate acls which would cause a timeout
 
