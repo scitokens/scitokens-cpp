@@ -378,7 +378,7 @@ int scitoken_deserialize_continue(SciToken *token, SciTokenStatus *status,
     }
 
     scitokens::SciToken *real_token =
-        reinterpret_cast<scitokens::SciToken *>(token);
+        reinterpret_cast<scitokens::SciToken *>(*token);
     std::unique_ptr<scitokens::SciTokenAsyncStatus> real_status(
         reinterpret_cast<scitokens::SciTokenAsyncStatus *>(*status));
 
@@ -792,8 +792,10 @@ int scitoken_status_get_timeout_val(const SciTokenStatus *status,
         return -1;
     }
 
-    auto real_status = reinterpret_cast<const scitokens::AsyncStatus *>(status);
-    struct timeval timeout_internal = real_status->get_timeout_val(expiry_time);
+    auto real_status =
+        reinterpret_cast<const scitokens::SciTokenAsyncStatus *>(*status);
+    struct timeval timeout_internal =
+        real_status->m_status->get_timeout_val(expiry_time);
     timeout->tv_sec = timeout_internal.tv_sec;
     timeout->tv_usec = timeout_internal.tv_usec;
     return 0;
@@ -814,8 +816,9 @@ int scitoken_status_get_read_fd_set(SciTokenStatus *status,
         return -1;
     }
 
-    auto real_status = reinterpret_cast<scitokens::AsyncStatus *>(status);
-    *read_fd_set = real_status->get_read_fd_set();
+    auto real_status =
+        reinterpret_cast<const scitokens::SciTokenAsyncStatus *>(*status);
+    *read_fd_set = real_status->m_status->get_read_fd_set();
     return 0;
 }
 
@@ -834,8 +837,9 @@ int scitoken_status_get_write_fd_set(SciTokenStatus *status,
         return -1;
     }
 
-    auto real_status = reinterpret_cast<scitokens::AsyncStatus *>(status);
-    *write_fd_set = real_status->get_write_fd_set();
+    auto real_status =
+        reinterpret_cast<const scitokens::SciTokenAsyncStatus *>(*status);
+    *write_fd_set = real_status->m_status->get_write_fd_set();
     return 0;
 }
 
@@ -854,8 +858,9 @@ int scitoken_status_get_exc_fd_set(SciTokenStatus *status, fd_set **exc_fd_set,
         return -1;
     }
 
-    auto real_status = reinterpret_cast<scitokens::AsyncStatus *>(status);
-    *exc_fd_set = real_status->get_exc_fd_set();
+    auto real_status =
+        reinterpret_cast<const scitokens::SciTokenAsyncStatus *>(*status);
+    *exc_fd_set = real_status->m_status->get_exc_fd_set();
     return 0;
 }
 
@@ -874,8 +879,9 @@ int scitoken_status_get_max_fd(const SciTokenStatus *status, int *max_fd,
         return -1;
     }
 
-    auto real_status = reinterpret_cast<const scitokens::AsyncStatus *>(status);
-    *max_fd = real_status->get_max_fd();
+    auto real_status =
+        reinterpret_cast<const scitokens::SciTokenAsyncStatus *>(*status);
+    *max_fd = real_status->m_status->get_max_fd();
     return 0;
 }
 
