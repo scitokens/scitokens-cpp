@@ -19,3 +19,18 @@ add_test(
   COMMAND
     ${CMAKE_CURRENT_BINARY_DIR}/scitokens-gtest
   )
+
+
+#
+# Simple, interactive test of the asynchronous interface.  Requires
+# network access to do anything meaningful.
+#
+add_executable(        scitokens-asynch-test asynch.cc )
+target_link_libraries( scitokens-asynch-test SciTokens )
+
+add_test(
+  NAME
+    asynch
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/scitokens-asynch-test
+)
