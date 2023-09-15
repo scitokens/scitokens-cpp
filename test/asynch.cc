@@ -128,6 +128,6 @@ int main(int argc, char **argv) {
     // print_claim(token, "nbf");
     print_claim(token, "jti");
 
-    scitoken_destroy( token );
+    scitoken_destroy(token);
     return 0;
 }
