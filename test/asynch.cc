@@ -96,13 +96,16 @@ main( int argc, char ** argv) {
             exit(-2);
         }
 
-        struct timeval time_out{1, 0};
-        int s = select( max_fds + 1, read_fds, write_fds, except_fds, & time_out );
-        if( s == -1 ) {
-            fprintf( stderr, "select() failed: %s (%d)\n", strerror(errno), errno );
-            exit( -4 );
-        } else if( s == 0 ) {
-            fprintf( stderr, "select() timed out, checking for progress.\n" );
+        struct timeval time_out {
+            1, 0
+        };
+        int s = select(max_fds + 1, read_fds, write_fds, except_fds, &time_out);
+        if (s == -1) {
+            fprintf(stderr, "select() failed: %s (%d)\n", strerror(errno),
+                    errno);
+            exit(-4);
+        } else if (s == 0) {
+            fprintf(stderr, "select() timed out, checking for progress.\n");
         }
 
         fprintf( stderr, "Calling scitoken_deserialize_continue()...\n" );
