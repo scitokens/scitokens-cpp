@@ -21,15 +21,13 @@ demo_payload = {
 demo_token = get_demo_token(demo_payload)
 
 try:
-    scitokens_cache = os.path.expanduser('~/.cache/scitokens/scitokens_cpp.sqllite')
+    scitokens_cache = f"{os.getcwd()}/scitokens/scitokens_cpp.sqllite"
     os.unlink(scitokens_cache)
-except OSError:
-    pass
 except FileNotFoundError:
     pass
 
 rv = subprocess.run(
-    ['test/scitokens-asynch-test', demo_token],
+    ['./scitokens-asynch-test', demo_token],
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT,
     timeout=5,

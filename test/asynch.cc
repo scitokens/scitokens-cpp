@@ -37,20 +37,21 @@ main( int argc, char ** argv) {
     char * error;
     SciToken token;
 
-/*
-    // Synchronous.
-    rv = scitoken_deserialize( encoded, & token, NULL, & error );
-    if( rv != 0 ) {
-        fprintf( stderr, "scitoken_deserialize() failed: %s\n", error );
-        exit( -2 );
-    }
-    // scitoken_destroy( token );
-*/
 
-    // The asynchronous API doesn't work like the synchronous API, and
-    // requires that deserialization profile be set before it starts
-    // working.  This is probably a bug, but there's another bug where
-    // the default value for the profile causes a throw.  *sigh*
+    // Set the cache to the CWD while testing.
+    char cache_path[FILENAME_MAX];
+    if( getcwd(cache_path, sizeof(cache_path)) == NULL ) {
+        fprintf( stderr, "Failed to determine cwd, aborting.\n" );
+        exit( -5 );
+    }
+
+    const char * key = "keycache.cache_home";
+    rv = scitoken_config_set_str( key, cache_path, & error );
+    if( rv != 0 ) {
+        fprintf( stderr, "Failed to set %s: %s, aborting.\n", key, cache_path );
+        exit( -5 );
+    }
+
 
     // Asynchronous API.
     SciTokenStatus status;
@@ -117,12 +118,6 @@ main( int argc, char ** argv) {
     print_claim(token, "ver");
     print_claim(token, "aud");
     print_claim(token, "iss");
-    // Not a string.
-    // print_claim(token, "exp");
-    // Not a string.
-    // print_claim(token, "iat");
-    // Not a string.
-    // print_claim(token, "nbf");
     print_claim(token, "jti");
 
     scitoken_destroy( token );
