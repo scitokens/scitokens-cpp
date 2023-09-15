@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/select.h>
+#include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
