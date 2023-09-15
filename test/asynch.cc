@@ -14,15 +14,13 @@ void usage(const char *self) {
     fprintf(stderr, "usage: %s encoded-scitoken\n", self);
 
 void
-print_claim( SciToken & token, const char * claim ) {
-    char * value;
-    char * error;
-    int rv = scitoken_get_claim_string(
-        token, claim, & value, & error
-    );
-    if( rv != 0 ) {
-        fprintf( stderr, "scitoken_get_claim_string('%s') failed: %s\n", claim, error );
-        // exit( -2 );
+void print_claim(SciToken &token, const char *claim) {
+    char *value;
+    char *error;
+    int rv = scitoken_get_claim_string(token, claim, &value, &error);
+    if (rv != 0) {
+        fprintf(stderr, "scitoken_get_claim_string('%s') failed: %s\n", claim,
+                error);
         return;
     }
     fprintf( stdout, "%s = %s\n", claim, value );
