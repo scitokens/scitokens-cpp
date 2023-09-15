@@ -89,10 +89,11 @@ main( int argc, char ** argv) {
         }
 
         int max_fds;
-        rv = scitoken_status_get_max_fd( & status, & max_fds, & error );
-        if( rv != 0 ) {
-            fprintf( stderr, "scitoken_status_get_max_fds() failed: %s\n", error );
-            exit( -2 );
+        rv = scitoken_status_get_max_fd(&status, &max_fds, &error);
+        if (rv != 0) {
+            fprintf(stderr, "scitoken_status_get_max_fds() failed: %s\n",
+                    error);
+            exit(-2);
         }
 
         struct timeval time_out{1, 0};
