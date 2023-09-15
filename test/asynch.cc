@@ -115,8 +115,7 @@ int main(int argc, char **argv) {
             fprintf( stderr, "scitoken_deserialize_continue() failed: %s\n", error );
             exit( -3 );
         }
-    } while( status != NULL );
-
+    } while (status != NULL);
 
     print_claim(token, "ver");
     print_claim(token, "aud");
