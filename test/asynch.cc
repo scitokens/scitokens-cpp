@@ -10,9 +10,8 @@
 #include "../src/scitokens.h"
 
 void
-usage( const char * self ) {
-    fprintf( stderr, "usage: %s encoded-scitoken\n", self );
-}
+void usage(const char *self) {
+    fprintf(stderr, "usage: %s encoded-scitoken\n", self);
 
 void
 print_claim( SciToken & token, const char * claim ) {
