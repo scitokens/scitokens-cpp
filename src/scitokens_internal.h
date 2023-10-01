@@ -42,13 +42,17 @@ class Configuration {
         m_expiry_delta = _expiry_delta;
     }
     static int get_expiry_delta() { return m_expiry_delta; }
-    static std::pair<bool, std::string> set_cache_home(const std::string cache_home);
+    static std::pair<bool, std::string>
+    set_cache_home(const std::string cache_home);
     static std::string get_cache_home();
+    static void set_tls_ca_file(const std::string ca_file);
+    static std::string get_tls_ca_file();
 
   private:
     static std::atomic_int m_next_update_delta;
     static std::atomic_int m_expiry_delta;
     static std::shared_ptr<std::string> m_cache_home;
+    static std::shared_ptr<std::string> m_tls_ca_file;
     // static bool check_dir(const std::string dir_path);
     static std::pair<bool, std::string>
     mkdir_and_parents_if_needed(const std::string dir_path);

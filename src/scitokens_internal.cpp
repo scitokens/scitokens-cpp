@@ -79,6 +79,14 @@ SimpleCurlGet::GetStatus SimpleCurlGet::perform_start(const std::string &url) {
         throw CurlException("Failed to set CURLOPT_FOLLOWLOCATION.");
     }
 
+    auto ca_file = configurer::Configuration::get_tls_ca_file();
+    if (!ca_file.empty()) {
+        rv = curl_easy_setopt(m_curl.get(), CURLOPT_CAINFO, ca_file.c_str());
+        if (rv != CURLE_OK) {
+            throw CurlException("Failed to set CURLOPT_CAINFO.");
+        }
+    }
+
     {
         auto mres = curl_multi_add_handle(m_curl_multi.get(), m_curl.get());
         if (mres) {
@@ -1131,8 +1139,16 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
     return std::make_pair(true, "");
 }
 
+void configurer::Configuration::set_tls_ca_file(const std::string ca_file) {
+    m_tls_ca_file = std::make_shared<std::string>(ca_file);
+}
+
 std::string configurer::Configuration::get_cache_home() {
     return *m_cache_home;
+}
+
+std::string configurer::Configuration::get_tls_ca_file() {
+    return *m_tls_ca_file;
 }
 
 // bool configurer::Configuration::check_dir(const std::string dir_path) {
