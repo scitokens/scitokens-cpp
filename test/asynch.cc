@@ -1,10 +1,10 @@
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <sys/select.h>
+#include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#include <string.h>
-
 #include "../src/scitokens.h"
 
 void
@@ -13,26 +13,25 @@ usage( const char * self ) {
 }
 
 void
-print_claim( SciToken & token, const char * claim ) {
-    char * value;
-    char * error;
-    int rv = scitoken_get_claim_string(
-        token, claim, & value, & error
-    );
-    if( rv != 0 ) {
-        fprintf( stderr, "scitoken_get_claim_string('%s') failed: %s\n", claim, error );
-        // exit( -2 );
+void print_claim(SciToken &token, const char *claim) {
+    char *value;
+    char *error;
+    int rv = scitoken_get_claim_string(token, claim, &value, &error);
+    if (rv != 0) {
+        fprintf(stderr, "scitoken_get_claim_string('%s') failed: %s\n", claim,
+                error);
         return;
     }
     fprintf( stdout, "%s = %s\n", claim, value );
 }
 
 
-int
-main( int argc, char ** argv) {
-    if( argc < 2 ) { usage(argv[0]); exit(-1); }
-    const char * encoded = argv[1];
-
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        usage(argv[0]);
+        exit(-1);
+    }
+    const char *encoded = argv[1];
     int rv;
     char * error;
     SciToken token;
