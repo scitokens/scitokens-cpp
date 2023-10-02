@@ -17,6 +17,8 @@ std::atomic_int configurer::Configuration::m_expiry_delta{4 * 24 * 3600};
 // SciTokens cache home config
 std::shared_ptr<std::string> configurer::Configuration::m_cache_home =
     std::make_shared<std::string>("");
+std::shared_ptr<std::string> configurer::Configuration::m_tls_ca_file =
+    std::make_shared<std::string>("");
 
 SciTokenKey scitoken_key_create(const char *key_id, const char *alg,
                                 const char *public_contents,
@@ -1051,8 +1053,9 @@ int scitoken_config_set_str(const char *key, const char *value,
             }
             return -1;
         }
+    } else if (_key == "tls.ca_file") {
+       configurer::Configuration::set_tls_ca_file(value ? std::string(value) : "");
     }
-
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
@@ -1073,6 +1076,8 @@ int scitoken_config_get_str(const char *key, char **output, char **err_msg) {
     std::string _key = key;
     if (_key == "keycache.cache_home") {
         *output = strdup(configurer::Configuration::get_cache_home().c_str());
+    } else if (_key == "tls.ca_file") {
+        *output = strdup(configurer::Configuration::get_tls_ca_file().c_str());
     }
 
     else {
