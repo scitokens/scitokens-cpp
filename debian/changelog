@@ -1,3 +1,11 @@
+scitokens-cpp (1.1.0-1) stable; urgency=medium
+
+  * Allow the scitokens library user to setup a custom CA file
+  * Fix typecast errors in scitoken_status_get_*() that caused async queries to fail
+  * Fix logic error in deserialize_continue() that caused async deserialization to fail
+
+ -- Tim Theisen <tim@cs.wisc.edu>  Tue, 07 Nov 2023 15:46:00 -0600
+
 scitokens-cpp (1.0.2-1) stable; urgency=medium
 
   * Add support for API-configurable cache home
