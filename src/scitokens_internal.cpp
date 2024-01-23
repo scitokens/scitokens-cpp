@@ -645,7 +645,7 @@ Validator::get_public_keys_from_web(const std::string &issuer,
     auto cget_status = status->m_cget->perform_start(openid_metadata);
     status->m_continue_fetch = true;
     if (!cget_status.m_done) {
-        return std::move(status);
+        return status;
     }
     return get_public_keys_from_web_continue(std::move(status));
 }
@@ -759,7 +759,6 @@ std::string Validator::get_jwks(const std::string &issuer) {
 }
 
 bool Validator::refresh_jwks(const std::string &issuer) {
-    int64_t next_update, expires;
     picojson::value keys;
     std::unique_ptr<scitokens::AsyncStatus> status = get_public_keys_from_web(
         issuer, internal::SimpleCurlGet::extended_timeout);
@@ -993,9 +992,9 @@ bool scitokens::Validator::store_public_ec_key(const std::string &issuer,
     auto x_num = BN_num_bytes(x_bignum.get());
     auto y_num = BN_num_bytes(y_bignum.get());
     std::vector<unsigned char> x_bin;
-    x_bin.reserve(x_num);
+    x_bin.resize(x_num);
     std::vector<unsigned char> y_bin;
-    y_bin.reserve(y_num);
+    y_bin.resize(y_num);
     BN_bn2bin(x_bignum.get(), &x_bin[0]);
     BN_bn2bin(y_bignum.get(), &y_bin[0]);
     std::string x_str(reinterpret_cast<char *>(&x_bin[0]), x_num);
