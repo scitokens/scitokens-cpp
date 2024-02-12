@@ -112,7 +112,7 @@ int remove_issuer_entry(sqlite3 *db, const std::string &issuer,
 
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, "DELETE FROM keycache WHERE issuer = ?", -1,
-                                &stmt, NULL);
+                            &stmt, NULL);
     if (rc != SQLITE_OK) {
         sqlite3_close(db);
         return -1;
