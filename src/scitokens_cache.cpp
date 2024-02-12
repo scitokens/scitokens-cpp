@@ -100,7 +100,7 @@ std::string get_cache_file() {
 // If a failure occurs, then this function returns nonzero and closes
 // the database handle.
 int remove_issuer_entry(sqlite3 *db, const std::string &issuer,
-                         bool new_transaction) {
+                        bool new_transaction) {
 
     int rc;
     if (new_transaction) {
