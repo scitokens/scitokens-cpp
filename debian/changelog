@@ -1,3 +1,10 @@
+scitokens-cpp (1.1.1-1) stable; urgency=medium
+
+  * Improve error handling around the sqlite3 library
+  * Fix test failures and compiler warnings
+
+ -- Derek Weitzel <dweitzel@unl.edu>  Wed, 28 Feb 2024 12:00:00 -0600
+
 scitokens-cpp (1.1.0-1) stable; urgency=medium
 
   * Allow the scitokens library user to setup a custom CA file

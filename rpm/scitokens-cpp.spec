@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 1.1.0
+Version: 1.1.1
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -66,6 +66,10 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+* Wed Feb 28 2024 Derek Weitzel <dweitzel@unl.edu> - 1.1.1-1
+- Improve error handling around the sqlite3 library
+- Fix test failures and compiler warnings
+
 * Tue Nov 07 2023 Derek Weitzel <dweitzel@unl.edu> - 1.1.0-1
 - Allow the scitokens library user to setup a custom CA file
 - Fix typecast errors in scitoken_status_get_*() that caused async queries to fail
