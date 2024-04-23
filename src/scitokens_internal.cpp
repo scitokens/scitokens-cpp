@@ -31,6 +31,8 @@ struct CurlRaii {
 
 CurlRaii myCurl;
 
+std::mutex key_refresh_mutex;
+
 } // namespace
 
 namespace scitokens {
@@ -792,11 +794,15 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
 
     if (get_public_keys_from_db(issuer, now, result->m_keys,
                                 result->m_next_update)) {
-        if (now > result->m_next_update) {
+        std::unique_lock<std::mutex> lock(key_refresh_mutex, std::defer_lock);
+        // If refresh is due *and* the key refresh mutex is free, try to update
+        if (now > result->m_next_update && lock.try_lock()) {
             try {
                 result->m_ignore_error = true;
                 result = get_public_keys_from_web(
                     issuer, internal::SimpleCurlGet::default_timeout);
+                // Hold refresh mutex in the new result
+                result->m_refresh_lock = std::move(lock);
             } catch (std::runtime_error &) {
                 result->m_do_store = false;
                 // ignore the exception: we have a valid set of keys already
