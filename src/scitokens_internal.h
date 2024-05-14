@@ -1,5 +1,6 @@
 
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <unordered_map>
 
@@ -212,6 +213,7 @@ class AsyncStatus {
     bool m_has_metadata{false};
     bool m_oauth_fallback{false};
     AsyncState m_state{DOWNLOAD_METADATA};
+    std::unique_lock<std::mutex> m_refresh_lock;
 
     int64_t m_next_update{-1};
     int64_t m_expires{-1};
