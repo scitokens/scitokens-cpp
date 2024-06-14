@@ -19,3 +19,22 @@ add_test(
   COMMAND
     ${CMAKE_CURRENT_BINARY_DIR}/scitokens-gtest
   )
+
+
+#
+# Simple, interactive test of the asynchronous interface.  Requires
+# network access to do anything meaningful.
+#
+add_executable(        scitokens-asynch-test asynch.cc )
+target_link_libraries( scitokens-asynch-test SciTokens )
+
+# This can't be the right to do specify this, and it also doesn't
+# handle aysnch.py being updated correctly.
+file(COPY asynch.py DESTINATION ${CMAKE_BINARY_DIR}/test)
+
+add_test(
+  NAME
+    asynch
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/asynch.py
+)
