@@ -1,2 +1,2 @@
-debian/tmp/usr/include/scitokens usr/include/
-debian/tmp/usr/lib/*/libSciTokens.so
+/usr/include/scitokens/scitokens.h
+/usr/lib/*/libSciTokens.so
