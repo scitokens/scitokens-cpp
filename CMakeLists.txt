@@ -13,6 +13,8 @@ set( CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}" )
 
 set( CMAKE_BUILD_TYPE RelWithDebInfo) # -g -O2
 
+set( CMAKE_UNITY_BUILD False)
+
 include(GNUInstallDirs)
 
 find_package( jwt-cpp REQUIRED )
