@@ -40,7 +40,7 @@ endif()
 
 add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp)
 target_compile_features(SciTokens PUBLIC cxx_std_11) # Use at least C++11 for building and when linking to scitokens
-target_include_directories(SciTokens PUBLIC ${JWT_CPP_INCLUDES} "${PROJECT_SOURCE_DIR}/src" PRIVATE ${CURL_INCLUDES} ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS})
+target_include_directories(SciTokens PUBLIC ${JWT_CPP_INCLUDES} "${PROJECT_SOURCE_DIR}/src" PRIVATE ${CURL_INCLUDE_DIRS} ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS})
 
 target_link_libraries(SciTokens PUBLIC ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES})
 if (UNIX)
@@ -54,7 +54,6 @@ set_target_properties(SciTokens PROPERTIES LINK_FLAGS "-Wl,--version-script=${PR
 endif()
 
 add_executable(scitokens-test src/test.cpp)
-#target_include_directories(scitokens-test PRIVATE "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${CURL_INCLUDES} ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS})
 target_include_directories(scitokens-test PRIVATE "${PROJECT_SOURCE_DIR}" ${JWT_CPP_INCLUDES} ${LIBCRYPTO_INCLUDE_DIRS})
 target_link_libraries(scitokens-test SciTokens)
 
