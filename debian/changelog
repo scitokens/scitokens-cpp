@@ -1,3 +1,10 @@
+scitokens-cpp (1.1.2-1) stable; urgency=medium
+
+  * Turn off CMAKE unity builds
+  * Add a mutex around requesting public keys to stop overloading issuers
+
+ -- Derek Weitzel <dweitzel@unl.edu>  Wed, 30 Oct 2024 12:00:00 -0600
+
 scitokens-cpp (1.1.1-1) stable; urgency=medium
 
   * Improve error handling around the sqlite3 library
