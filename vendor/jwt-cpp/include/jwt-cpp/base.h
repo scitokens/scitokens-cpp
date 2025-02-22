@@ -2,6 +2,7 @@
 #define JWT_CPP_BASE_H
 
 #include <array>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 
