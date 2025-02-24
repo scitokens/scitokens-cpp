@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 1.1.2
+Version: 1.1.3
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -66,6 +66,9 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+* Mon Feb 24 2025 Derek Weitzel <dweitzel@unl.edu> - 1.1.3-1
+- Include cstdint import for jwt library to support newer compilers
+
 * Wed Oct 30 2024 Derek Weitzel <dweitzel@unl.edu> - 1.1.2-1
 - Turn off CMAKE unity builds
 - Add a mutex around requesting public keys to stop overloading issuers
