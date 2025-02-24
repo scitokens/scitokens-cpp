@@ -3,6 +3,7 @@
 
 #include <array>
 #include <stdexcept>
+#include <cstdint>
 #include <string>
 
 #ifdef __has_cpp_attribute

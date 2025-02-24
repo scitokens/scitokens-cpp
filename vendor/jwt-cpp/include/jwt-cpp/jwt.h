@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <iterator>
 #include <locale>
