@@ -156,7 +156,7 @@ class SciTokenKey {
         : m_kid(key_id), m_name(algorithm), m_public(public_contents),
           m_private(private_contents) {}
 
-    std::string serialize(jwt::builder<jwt::traits::kazuho_picojson> &builder) {
+    std::string serialize(jwt::builder<jwt::default_clock, jwt::traits::kazuho_picojson> &builder) {
         if (m_kid != "none") {
             builder.set_key_id(m_kid);
         }
@@ -327,7 +327,7 @@ class SciToken {
     void set_lifetime(int lifetime) { m_lifetime = lifetime; }
 
     std::string serialize() {
-        jwt::builder<jwt::traits::kazuho_picojson> builder(jwt::create());
+        auto builder(jwt::create());
 
         if (!m_issuer_set) {
             throw MissingIssuerException();
@@ -614,7 +614,7 @@ class Validator {
             must_verify_everything = m_validate_all_claims;
         }
 
-        auto claims = jwt.get_payload_claims();
+        auto claims = jwt.get_payload_json();
         for (const auto &claim_pair : claims) {
             if (claim_pair.first == "iat" || claim_pair.first == "nbf" ||
                 claim_pair.first == "exp" || claim_pair.first == "ver") {

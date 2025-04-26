@@ -25,9 +25,12 @@ namespace jwt {
 	}
 
 	/**
-	 * Return a builder instance to create a new token
+	 * Create a builder using the default clock
+	 * \return builder instance to create a new token
 	 */
-	inline builder<traits::nlohmann_json> create() { return builder<traits::nlohmann_json>(); }
+	inline builder<default_clock, traits::nlohmann_json> create() {
+		return builder<default_clock, traits::nlohmann_json>(default_clock{});
+	}
 
 #ifndef JWT_DISABLE_BASE64
 	/**
@@ -44,7 +47,7 @@ namespace jwt {
 
 	/**
 	 * Decode a token
-	 * \tparam Decode is callabled, taking a string_type and returns a string_type.
+	 * \tparam Decode is callable, taking a string_type and returns a string_type.
 	 * It should ensure the padding of the input and then base64url decode and
 	 * return the results.
 	 * \param token Token to decode
@@ -77,6 +80,12 @@ namespace jwt {
 	inline jwks<traits::nlohmann_json> parse_jwks(const traits::nlohmann_json::string_type& token) {
 		return jwks<traits::nlohmann_json>(token);
 	}
+
+	/**
+	 * This type is the specialization of the \ref verify_ops::verify_context class which
+	 * uses the standard template types.
+	 */
+	using verify_context = verify_ops::verify_context<traits::nlohmann_json>;
 } // namespace jwt
 
 #endif // JWT_CPP_NLOHMANN_JSON_DEFAULTS_H

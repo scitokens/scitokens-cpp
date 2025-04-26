@@ -16,8 +16,8 @@ int main(int argc, const char **argv) {
 
     auto decoded = jwt::decode(token);
 
-    for (auto &e : decoded.get_payload_claims())
-        std::cout << e.first << " = " << e.second.to_json() << std::endl;
+    for (auto &e : decoded.get_payload_json())
+        std::cout << e.first << " = " << e.second << std::endl;
 
     std::ifstream priv_ifs("test.pem");
     std::string private_contents((std::istreambuf_iterator<char>(priv_ifs)),
@@ -57,8 +57,8 @@ int main(int argc, const char **argv) {
     std::cout << "SciToken: " << value << std::endl;
     auto decoded2 = jwt::decode(value);
 
-    for (auto &e : decoded2.get_payload_claims())
-        std::cout << e.first << " = " << e.second.to_json() << std::endl;
+    for (auto &e : decoded2.get_payload_json())
+        std::cout << e.first << " = " << e.second << std::endl;
 
     scitoken_destroy(scitoken);
     scitoken_key_destroy(key);

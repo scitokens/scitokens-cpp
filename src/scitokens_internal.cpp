@@ -576,6 +576,14 @@ std::string normalize_absolute_path(const std::string &path) {
 }
 
 } // namespace
+  //
+static std::unordered_map<std::string, jwt::claim> json_to_claim_map(const picojson::object &json) {
+    std::unordered_map<std::string, jwt::claim> m;
+    for (const auto &[name, value]: json) {
+        m.emplace(name, jwt::claim(value));
+    }
+    return m; //nvro
+}
 
 void SciToken::deserialize(const std::string &data,
                            const std::vector<std::string> allowed_issuers) {
@@ -588,7 +596,7 @@ void SciToken::deserialize(const std::string &data,
     val.verify(*m_decoded);
 
     // Set all the claims
-    m_claims = m_decoded->get_payload_claims();
+    m_claims = json_to_claim_map(m_decoded->get_payload_json());
 
     // Copy over the profile
     m_profile = val.get_profile();
@@ -616,7 +624,7 @@ SciToken::deserialize_continue(std::unique_ptr<SciTokenAsyncStatus> status) {
     // Check if the status is completed (verification is complete)
     if (status->m_status->m_done) {
         // Set all the claims
-        m_claims = m_decoded->get_payload_claims();
+        m_claims = json_to_claim_map(m_decoded->get_payload_json());
 
         // Copy over the profile
         m_profile = status->m_validator->get_profile();
@@ -625,7 +633,7 @@ SciToken::deserialize_continue(std::unique_ptr<SciTokenAsyncStatus> status) {
             std::move(status->m_status));
         if (status->m_status->m_done) {
             // Set all the claims
-            m_claims = m_decoded->get_payload_claims();
+            m_claims = json_to_claim_map(m_decoded->get_payload_json());
 
             // Copy over the profile
             m_profile = status->m_validator->get_profile();

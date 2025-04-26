@@ -226,7 +226,7 @@ int scitoken_get_expiration(const SciToken token, long long *expiry,
 
     long long result;
     try {
-        result = real_token->get_claim("exp").as_int();
+        result = real_token->get_claim("exp").to_json().get<int64_t>();
     } catch (std::exception &exc) {
         if (err_msg) {
             *err_msg = strdup(exc.what());
