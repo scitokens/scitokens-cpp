@@ -6,14 +6,20 @@ project( scitokens-cpp
 	VERSION 1.0.2
 	LANGUAGES CXX)
 
-option( SCITOKENS_BUILD_UNITTESTS "Build the scitokens-cpp unit tests" OFF )
-option( SCITOKENS_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF )
+option( SCITOKENS_BUILD_UNITTESTS "Build the scitokens-cpp unit tests" ON )
+option( SCITOKENS_EXTERNAL_GTEST " Use an external/pre-installed copy of GTest" OFF )
+option( SCITOKENS_WITH_ASAN       "Build with the address santizier" OFF )
 
 set( CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}" )
 
 set( CMAKE_BUILD_TYPE RelWithDebInfo) # -g -O2
 
 set( CMAKE_UNITY_BUILD False)
+
+if( SCITOKENS_WITH_ASAN )
+  add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address)
+endif()
 
 include(GNUInstallDirs)
 
