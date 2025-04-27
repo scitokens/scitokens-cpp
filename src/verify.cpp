@@ -123,6 +123,7 @@ int main(int argc, char *const *argv) {
         std::cout << "Failed to deserialize a token: " << err_msg << std::endl;
         return 1;
     }
+    scitoken_destroy(scitoken);
     std::cout << "Token deserialization successful." << std::endl;
 
     return 0;
