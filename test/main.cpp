@@ -131,10 +131,11 @@ TEST_F(SerializeTest, VerifyTest) {
     ASSERT_TRUE(rv == 0) << err_msg;
     std::unique_ptr<char, decltype(&free)> value_ptr(value, free);
     EXPECT_STREQ(value, "https://demo.scitokens.org/gtest");
-
     value_ptr.reset();
+
     rv = scitoken_get_claim_string(m_read_token.get(), "doesnotexist", &value,
                                    &err_msg);
+    free(err_msg);
     EXPECT_FALSE(rv == 0);
 }
 
@@ -154,6 +155,7 @@ TEST_F(SerializeTest, TestStringList) {
     EXPECT_STREQ(value[1], "group1");
 
     EXPECT_TRUE(value[2] == nullptr);
+    scitoken_free_string_list(value);
 }
 
 TEST_F(SerializeTest, VerifyWLCGTest) {
@@ -181,6 +183,8 @@ TEST_F(SerializeTest, VerifyWLCGTest) {
 
     value_ptr.reset();
     rv = scitoken_get_claim_string(m_read_token.get(), "ver", &value, &err_msg);
+    free(err_msg);
+    err_msg = nullptr;
     EXPECT_FALSE(rv == 0);
 
     // Accepts only a WLCG token
@@ -195,6 +199,7 @@ TEST_F(SerializeTest, VerifyWLCGTest) {
                                      SciTokenProfile::SCITOKENS_1_0);
     rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
                                  &err_msg);
+    free(err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
@@ -223,6 +228,7 @@ TEST_F(SerializeTest, FailVerifyToken) {
 
     // Should fail; we signed it with the wrong public key.
     rv = scitoken_deserialize_v2(value, m_read_token.get(), nullptr, &err_msg);
+    free(err_msg);
     EXPECT_FALSE(rv == 0);
 }
 
@@ -254,6 +260,7 @@ TEST_F(SerializeTest, VerifyATJWTTest) {
                                      SciTokenProfile::SCITOKENS_2_0);
     rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
                                  &err_msg);
+    free(err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
@@ -278,6 +285,7 @@ TEST_F(SerializeTest, FailVerifyATJWTTest) {
                                      SciTokenProfile::AT_JWT);
     rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
                                  &err_msg);
+    free(err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
@@ -315,12 +323,15 @@ TEST_F(SerializeTest, EnforcerTest) {
     rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
                                  &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
+    free(err_msg);
 
     rv = enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
     ASSERT_STREQ(
         err_msg,
         "token verification failed: 'scope' claim verification failed.");
     ASSERT_TRUE(rv == -1) << err_msg;
+    free(err_msg);
+	enforcer_destroy(enforcer);
 }
 
 TEST_F(SerializeTest, EnforcerScopeTest) {
@@ -347,6 +358,7 @@ TEST_F(SerializeTest, EnforcerScopeTest) {
 
     rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
                                  &err_msg);
+    free(token_value);
     ASSERT_TRUE(rv == 0) << err_msg;
 
     Acl *acls;
@@ -366,6 +378,8 @@ TEST_F(SerializeTest, EnforcerScopeTest) {
             ASSERT_STREQ(resource, "/");
         }
     }
+    enforcer_acl_free(acls);
+	enforcer_destroy(enforcer);
     ASSERT_TRUE(found_read);
     ASSERT_TRUE(found_write);
 }
@@ -395,6 +409,7 @@ TEST_F(SerializeTest, DeserializeAsyncTest) {
         rv = scitoken_deserialize_continue(&scitoken, &status, &err_msg);
         ASSERT_TRUE(rv == 0) << err_msg;
     }
+    scitoken_destroy(scitoken);
 }
 
 TEST_F(SerializeTest, FailDeserializeAsyncTest) {
@@ -430,11 +445,15 @@ TEST_F(SerializeTest, FailDeserializeAsyncTest) {
     rv = scitoken_deserialize_start(value, &scitoken, nullptr, &status,
                                     &err_msg);
     EXPECT_FALSE(rv == 0) << err_msg;
+    free(err_msg);
+    err_msg = nullptr;
 
     // Accepts only an at+jwt token, should fail with COMPAT token
     while (rv == 0 && status) {
         rv = scitoken_deserialize_continue(&scitoken, &status, &err_msg);
         EXPECT_FALSE(rv == 0) << err_msg;
+        free(err_msg);
+        err_msg = nullptr;
     }
 }
 
@@ -452,6 +471,7 @@ TEST_F(SerializeTest, ExplicitTime) {
 
     rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
                                  &err_msg);
+    free(token_value);
     ASSERT_TRUE(rv == 0) << err_msg;
 
     auto enforcer = enforcer_create("https://demo.scitokens.org/gtest",
@@ -461,18 +481,23 @@ TEST_F(SerializeTest, ExplicitTime) {
     rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
     ASSERT_TRUE(acls != nullptr);
+    enforcer_acl_free(acls);
 
     enforcer_set_time(enforcer, time(NULL), &err_msg);
     rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
 
     enforcer_set_time(enforcer, time(NULL) + 100, &err_msg);
+    enforcer_acl_free(acls);
     rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    free(err_msg);
+    err_msg = nullptr;
     ASSERT_FALSE(rv == 0);
 
     enforcer_set_time(enforcer, time(NULL) - 100, &err_msg);
     rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
     ASSERT_FALSE(rv == 0);
+	free(err_msg);
 
     enforcer_destroy(enforcer);
 }
@@ -554,6 +579,7 @@ TEST_F(SerializeNoKidTest, VerifyATJWTTest) {
                                      SciTokenProfile::SCITOKENS_2_0);
     rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
                                  &err_msg);
+    free(err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
@@ -611,6 +637,7 @@ TEST_F(KeycacheTest, RefreshInvalid) {
     auto rv =
         keycache_refresh_jwks("https://demo.scitokens.org/invalid", &err_msg);
     ASSERT_FALSE(rv == 0);
+    free(err_msg);
 
     rv = keycache_get_cached_jwks("https://demo.scitokens.org/invalid", &jwks,
                                   &err_msg);
@@ -703,10 +730,13 @@ TEST_F(KeycacheTest, InvalidConfigKeyTest) {
     std::string key = "invalid key";
     auto rv =
         scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
+    free(err_msg);
+    err_msg = nullptr;
     ASSERT_FALSE(rv == 0);
 
     const char *key2 = nullptr;
     rv = scitoken_config_set_int(key2, new_update_interval, &err_msg);
+    free(err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
@@ -740,6 +770,7 @@ TEST_F(KeycacheTest, SetInvalidUpdateTest) {
     std::string key = "keycache.update_interval_s";
     auto rv =
         scitoken_config_set_int(key.c_str(), new_update_interval, &err_msg);
+    free(err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
@@ -749,6 +780,7 @@ TEST_F(KeycacheTest, SetInvalidExpirationTest) {
     std::string key = "keycache.expiration_interval_s";
     auto rv =
         scitoken_config_set_int(key.c_str(), new_expiration_interval, &err_msg);
+    free(err_msg);
     ASSERT_FALSE(rv == 0);
 }
 
