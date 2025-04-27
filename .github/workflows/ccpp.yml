@@ -19,6 +19,7 @@ jobs:
       matrix:
         external-gtest: [ YES, NO ]
         os: [ ubuntu-latest, ubuntu-22.04 ]
+        asan: [ YES, NO ]
 
     runs-on: ${{ matrix.os }}
     name: Build with external_gtest=${{ matrix.external-gtest }} on ${{ matrix.os }}
@@ -44,7 +45,7 @@ jobs:
       # Note the current convention is to use the -S and -B options here to specify source 
       # and build directories, but this is only available with CMake 3.13 and higher.  
       # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
-      run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSCITOKENS_BUILD_UNITTESTS=yes -DSCITOKENS_EXTERNAL_GTEST=${{ matrix.external-gtest }}
+      run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSCITOKENS_BUILD_UNITTESTS=yes -DSCITOKENS_EXTERNAL_GTEST=${{ matrix.external-gtest }} -DSCITOKENS_WITH_ASAN=${{ matrix.asan }} 
 
     - name: Build
       working-directory: ${{runner.workspace}}/build
