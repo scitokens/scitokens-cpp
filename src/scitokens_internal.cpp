@@ -527,8 +527,6 @@ std::string rs256_from_coords(const std::string &e_str,
         throw UnsupportedKeyException("Failed to serialize RSA public key");
     }
 #endif
-    e_bignum.release();
-    n_bignum.release();
 
     char *mem_data;
     size_t mem_len = BIO_get_mem_data(pubkey_bio.get(), &mem_data);
