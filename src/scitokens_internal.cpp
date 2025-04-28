@@ -577,12 +577,13 @@ std::string normalize_absolute_path(const std::string &path) {
 
 } // namespace
   //
-static std::unordered_map<std::string, jwt::claim> json_to_claim_map(const picojson::object &json) {
+static std::unordered_map<std::string, jwt::claim>
+json_to_claim_map(const picojson::object &json) {
     std::unordered_map<std::string, jwt::claim> m;
-    for (const auto &[name, value]: json) {
+    for (const auto &[name, value] : json) {
         m.emplace(name, jwt::claim(value));
     }
-    return m; //nvro
+    return m; // nvro
 }
 
 void SciToken::deserialize(const std::string &data,

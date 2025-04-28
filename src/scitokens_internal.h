@@ -156,7 +156,8 @@ class SciTokenKey {
         : m_kid(key_id), m_name(algorithm), m_public(public_contents),
           m_private(private_contents) {}
 
-    std::string serialize(jwt::builder<jwt::default_clock, jwt::traits::kazuho_picojson> &builder) {
+    std::string serialize(jwt::builder<jwt::default_clock,
+                                       jwt::traits::kazuho_picojson> &builder) {
         if (m_kid != "none") {
             builder.set_key_id(m_kid);
         }
