@@ -527,8 +527,6 @@ std::string rs256_from_coords(const std::string &e_str,
         throw UnsupportedKeyException("Failed to serialize RSA public key");
     }
 #endif
-    e_bignum.release();
-    n_bignum.release();
 
     char *mem_data;
     size_t mem_len = BIO_get_mem_data(pubkey_bio.get(), &mem_data);
@@ -960,12 +958,12 @@ bool scitokens::Validator::store_public_ec_key(const std::string &issuer,
             "Unable to get OpenSSL public key parameters");
     }
 
-    void *buf = NULL;
-    size_t buf_len, max_len = 256;
+    const void *buf = NULL;
+    size_t buf_len;
     OSSL_PARAM *p = OSSL_PARAM_locate(params, "pub");
-    if (!p || !OSSL_PARAM_get_octet_string(p, &buf, max_len, &buf_len) ||
+    if (!p || !OSSL_PARAM_get_octet_string_ptr(p, &buf, &buf_len) ||
         !EC_POINT_oct2point(ec_group.get(), q_point.get(),
-                            static_cast<unsigned char *>(buf), buf_len,
+                            static_cast<const unsigned char *>(buf), buf_len,
                             nullptr)) {
         throw UnsupportedKeyException(
             "Failed to to set OpenSSL EC point with public key information");
