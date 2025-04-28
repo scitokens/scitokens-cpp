@@ -8,7 +8,11 @@
 #include <sstream>
 
 namespace jwt {
+	/**
+	 * \brief Namespace containing all the json_trait implementations for a jwt::basic_claim.
+	*/
 	namespace traits {
+		/// basic_claim's JSON trait implementation for jsoncons.
 		struct danielaparker_jsoncons {
 			// Needs at least https://github.com/danielaparker/jsoncons/commit/28c56b90ec7337f98a5b8942574590111a5e5831
 			static_assert(jsoncons::version().minor >= 167, "A higher version of jsoncons is required!");
@@ -57,7 +61,13 @@ namespace jwt {
 					return 0;
 				}
 			};
-			using array_type = json::array;
+			class array_type : public json::array {
+			public:
+				using json::array::array;
+				explicit array_type(const json::array& a) : json::array(a) {}
+				explicit array_type(json::array&& a) : json::array(a) {}
+				value_type const& front() const { return this->operator[](0U); }
+			};
 			using string_type = std::string; // current limitation of traits implementation
 			using number_type = double;
 			using integer_type = int64_t;
@@ -85,7 +95,7 @@ namespace jwt {
 
 			static array_type as_array(const json& val) {
 				if (val.type() != jsoncons::json_type::array_value) throw std::bad_cast();
-				return val.array_value();
+				return array_type(val.array_value());
 			}
 
 			static string_type as_string(const json& val) {
@@ -98,12 +108,12 @@ namespace jwt {
 				return val.as_double();
 			}
 
-			static integer_type as_int(const json& val) {
+			static integer_type as_integer(const json& val) {
 				if (get_type(val) != jwt::json::type::integer) throw std::bad_cast();
 				return val.as<integer_type>();
 			}
 
-			static boolean_type as_bool(const json& val) {
+			static boolean_type as_boolean(const json& val) {
 				if (val.type() != jsoncons::json_type::bool_value) throw std::bad_cast();
 				return val.as_bool();
 			}
