@@ -22,7 +22,7 @@ jobs:
         asan: [ YES, NO ]
 
     runs-on: ${{ matrix.os }}
-    name: Build with external_gtest=${{ matrix.external-gtest }} on ${{ matrix.os }}
+    name: Build with external_gtest=${{ matrix.external-gtest }} on ${{ matrix.os }} and asan=${{ matrix.asan }}
 
     steps:
     - uses: actions/checkout@v1
