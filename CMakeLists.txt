@@ -6,9 +6,9 @@ project( scitokens-cpp
 	VERSION 1.0.2
 	LANGUAGES CXX)
 
-option( SCITOKENS_BUILD_UNITTESTS "Build the scitokens-cpp unit tests" ON )
-option( SCITOKENS_EXTERNAL_GTEST " Use an external/pre-installed copy of GTest" OFF )
-option( SCITOKENS_WITH_ASAN       "Build with the address santizier" OFF )
+option( SCITOKENS_BUILD_UNITTESTS "Build the scitokens-cpp unit tests" OFF )
+option( SCITOKENS_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF )
+option( SCITOKENS_WITH_ASAN       "Build with the address sanitizer" OFF )
 
 set( CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}" )
 
