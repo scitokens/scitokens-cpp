@@ -80,6 +80,12 @@ SimpleCurlGet::GetStatus SimpleCurlGet::perform_start(const std::string &url) {
     if (rv != CURLE_OK) {
         throw CurlException("Failed to set CURLOPT_FOLLOWLOCATION.");
     }
+    // Disable signal handling to avoid issues in multi-threaded contexts.
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_NOSIGNAL, 1L);
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_NOSIGNAL.");
+    }
+    
 
     auto ca_file = configurer::Configuration::get_tls_ca_file();
     if (!ca_file.empty()) {
