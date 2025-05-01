@@ -85,7 +85,6 @@ SimpleCurlGet::GetStatus SimpleCurlGet::perform_start(const std::string &url) {
     if (rv != CURLE_OK) {
         throw CurlException("Failed to set CURLOPT_NOSIGNAL.");
     }
-    
 
     auto ca_file = configurer::Configuration::get_tls_ca_file();
     if (!ca_file.empty()) {
