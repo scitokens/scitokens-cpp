@@ -1,15 +1,15 @@
-
 #include "scitokens.h"
 
 #include <fstream>
 #include <getopt.h>
 #include <iostream>
+#include <string>
 
 namespace {
 
 const char usage[] =
     "\n"
-    "Syntax: %s [--cred cred_file] TOKEN\n"
+    "Syntax: %s [--cred cred_file] < TOKEN\n"
     "\n"
     " Options\n"
     "    -h | --help                  Display usage\n"
@@ -18,7 +18,8 @@ const char usage[] =
     "    -K | --keyid          <kid>  Name of the token key.\n"
     "    -p | --profile    <profile>  Profile to enforce (wlcg, scitokens1, "
     "scitokens2, atjwt).\n"
-    "\n";
+    "\n"
+    "    The token to verify must be provided via standard input (stdin).\n";
 
 const struct option long_options[] = {{"help", no_argument, NULL, 'h'},
                                       {"cred", required_argument, NULL, 'c'},
@@ -65,12 +66,6 @@ int init_arguments(int argc, char *const argv[]) {
         exit(1);
     }
 
-    if (optind == argc) {
-        fprintf(stderr, "%s: Must provide a token as a requirement\n", argv[0]);
-        fprintf(stderr, usage, argv[0]);
-        exit(1);
-    }
-
     if ((!g_cred.empty() || !g_issuer.empty() || !g_keyid.empty()) &&
         (g_cred.empty() || g_issuer.empty() || g_keyid.empty())) {
         fprintf(stderr,
@@ -87,18 +82,28 @@ int init_arguments(int argc, char *const argv[]) {
 } // namespace
 
 int main(int argc, char *const *argv) {
-    if (argc < 2) {
-        fprintf(stderr,
-                "%s: Insufficient arguments; must at least provide a token.\n",
-                argv[0]);
-        fprintf(stderr, usage, argv[0]);
-        return 1;
-    }
+
     if (init_arguments(argc, argv)) {
         return 1;
     }
 
-    std::string token(argv[argc - 1]);
+    std::string token;
+    // If a positional argument is present, treat it as the token (with warning)
+    if (optind < argc) {
+        fprintf(stderr,
+                "%s: Warning: Providing the token on the command line is "
+                "insecure. Please use stdin instead.\n",
+                argv[0]);
+        token = argv[optind];
+    } else {
+        // Read token from stdin
+        std::getline(std::cin, token);
+    }
+    if (token.empty()) {
+        fprintf(stderr, "%s: No token provided on stdin or command line.\n", argv[0]);
+        fprintf(stderr, usage, argv[0]);
+        return 1;
+    }
 
     if (!g_issuer.empty()) {
         char *err_msg;
