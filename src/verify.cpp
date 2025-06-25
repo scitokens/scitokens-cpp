@@ -1,7 +1,9 @@
 #include "scitokens.h"
 
+#include <fstream>
 #include <getopt.h>
 #include <iostream>
+#include <string>
 
 namespace {
 
