@@ -105,6 +105,7 @@ int main(int argc, char *const *argv) {
     }
     if (token.empty()) {
         fprintf(stderr, "%s: No token provided on stdin or command line.\n", argv[0]);
+        fprintf(stderr, usage, argv[0]);
         return 1;
     }
 
