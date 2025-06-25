@@ -66,12 +66,6 @@ int init_arguments(int argc, char *const argv[]) {
         exit(1);
     }
 
-    if (optind == argc) {
-        fprintf(stderr, "%s: Must provide a token as a requirement\n", argv[0]);
-        fprintf(stderr, usage, argv[0]);
-        exit(1);
-    }
-
     if ((!g_cred.empty() || !g_issuer.empty() || !g_keyid.empty()) &&
         (g_cred.empty() || g_issuer.empty() || g_keyid.empty())) {
         fprintf(stderr,
