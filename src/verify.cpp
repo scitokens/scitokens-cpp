@@ -9,7 +9,7 @@ namespace {
 
 const char usage[] =
     "\n"
-    "Syntax: %s [--cred cred_file] < TOKEN\n"
+    "Syntax: %s [--cred cred_file] < TOKENFILE\n"
     "\n"
     " Options\n"
     "    -h | --help                  Display usage\n"
