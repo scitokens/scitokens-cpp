@@ -95,7 +95,10 @@ int main(int argc, char *const *argv) {
     std::string token;
     // If a positional argument is present, treat it as the token (with warning)
     if (optind < argc) {
-        fprintf(stderr, "%s: Warning: Providing the token on the command line is insecure. Please use stdin instead.\n", argv[0]);
+        fprintf(stderr,
+                "%s: Warning: Providing the token on the command line is "
+                "insecure. Please use stdin instead.\n",
+                argv[0]);
         token = argv[optind];
     } else {
         // Read token from stdin
