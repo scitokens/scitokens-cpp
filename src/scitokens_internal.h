@@ -487,7 +487,9 @@ class Validator {
                 }
             }
             if (!permitted) {
-                throw JWTVerificationException("Token issuer '" + issuer + "' is not in list of allowed issuers.");
+                throw JWTVerificationException(
+                    "Token issuer '" + issuer +
+                    "' is not in list of allowed issuers.");
             }
         }
 
