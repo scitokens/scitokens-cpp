@@ -244,7 +244,9 @@ int scitoken_get_expiration(const SciToken token, long long *expiry,
             result = claim_value.get<int64_t>();
         } else if (claim_value.is<double>()) {
             // Float value - convert to integer (truncate)
-            result = static_cast<long long>(claim_value.get<double>());
+            // Float value - convert to integer using std::floor().
+            // This ensures expiration is not extended by fractional seconds.
+            result = static_cast<long long>(std::floor(claim_value.get<double>()));
         } else {
             if (err_msg) {
                 *err_msg = strdup("'exp' claim must be a number (integer or float)");
