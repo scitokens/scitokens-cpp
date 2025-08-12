@@ -251,11 +251,6 @@ int scitoken_get_expiration(const SciToken token, long long *expiry,
             }
             return -1;
         }
-    } catch (std::bad_cast &exc) {
-        if (err_msg) {
-            *err_msg = strdup("'exp' claim has invalid format - expected a number (integer or float)");
-        }
-        return -1;
     } catch (std::exception &exc) {
         if (err_msg) {
             *err_msg = strdup(exc.what());
