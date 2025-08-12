@@ -487,9 +487,10 @@ class Validator {
                 }
             }
             if (!permitted) {
+                std::string safe_issuer = format_issuer_for_error(jwt);
                 throw JWTVerificationException(
-                    "Token issuer '" + issuer +
-                    "' is not in list of allowed issuers.");
+                    "Token issuer " + safe_issuer +
+                    " is not in list of allowed issuers.");
             }
         }
 
@@ -773,6 +774,35 @@ class Validator {
     static bool store_public_keys(const std::string &issuer,
                                   const picojson::value &keys,
                                   int64_t next_update, int64_t expires);
+
+    /**
+     * Safely format an issuer for error messages.
+     * Serializes the issuer claim back to JSON format and limits the size
+     * to prevent malicious issuers from causing problems in error output.
+     */
+    static std::string format_issuer_for_error(
+        const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
+        try {
+            if (!jwt.has_payload_claim("iss")) {
+                return "<missing issuer>";
+            }
+            
+            // Get the raw claim and serialize it back to JSON
+            const auto &claim = jwt.get_payload_claim("iss");
+            std::string serialized = claim.to_json().serialize();
+            
+            // Limit the size to prevent abuse
+            const size_t max_issuer_length = 256;
+            if (serialized.length() > max_issuer_length) {
+                serialized = serialized.substr(0, max_issuer_length - 3) + "...";
+            }
+            
+            return serialized;
+        } catch (...) {
+            // If anything goes wrong, return a safe fallback
+            return "<invalid issuer>";
+        }
+    }
 
     bool m_validate_all_claims{true};
     SciToken::Profile m_profile{SciToken::Profile::COMPAT};

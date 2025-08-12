@@ -806,6 +806,106 @@ TEST_F(KeycacheTest, RefreshExpiredTest) {
     EXPECT_EQ(jwks_str, "{\"keys\": []}");
 }
 
+class IssuerSecurityTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        char *err_msg = nullptr;
+        m_key = KeyPtr(
+            scitoken_key_create("1", "ES256", ec_public, ec_private, &err_msg),
+            scitoken_key_destroy);
+        ASSERT_TRUE(m_key.get() != nullptr) << err_msg;
+
+        m_token = TokenPtr(scitoken_create(m_key.get()), scitoken_destroy);
+        ASSERT_TRUE(m_token.get() != nullptr);
+
+        // Store public key for verification
+        auto rv = scitoken_store_public_ec_key("https://demo.scitokens.org/gtest",
+                                              "1", ec_public, &err_msg);
+        ASSERT_TRUE(rv == 0) << err_msg;
+
+        scitoken_set_lifetime(m_token.get(), 60);
+
+        m_read_token.reset(scitoken_create(nullptr));
+        ASSERT_TRUE(m_read_token.get() != nullptr);
+    }
+
+    using KeyPtr = std::unique_ptr<void, decltype(&scitoken_key_destroy)>;
+    KeyPtr m_key{nullptr, scitoken_key_destroy};
+
+    using TokenPtr = std::unique_ptr<void, decltype(&scitoken_destroy)>;
+    TokenPtr m_token{nullptr, scitoken_destroy};
+
+    TokenPtr m_read_token{nullptr, scitoken_destroy};
+};
+
+TEST_F(IssuerSecurityTest, LongIssuerTruncation) {
+    char *err_msg = nullptr;
+
+    // Create a very long issuer (1000 characters)
+    std::string very_long_issuer(1000, 'A');
+    auto rv = scitoken_set_claim_string(m_token.get(), "iss", very_long_issuer.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Try to verify with a restricted issuer list to trigger error
+    const char* allowed_issuers[] = {"https://good.issuer.com", nullptr};
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), allowed_issuers, &err_msg);
+    
+    // Should fail
+    ASSERT_FALSE(rv == 0);
+    ASSERT_TRUE(err_msg != nullptr);
+    
+    std::string error_message(err_msg);
+    std::unique_ptr<char, decltype(&free)> err_msg_ptr(err_msg, free);
+    
+    // Error message should be reasonable length (< 400 chars)
+    EXPECT_LT(error_message.length(), 400);
+    
+    // Should contain expected error text
+    EXPECT_NE(error_message.find("is not in list of allowed issuers"), std::string::npos);
+    
+    // Should contain truncated issuer with ellipsis
+    EXPECT_NE(error_message.find("..."), std::string::npos);
+}
+
+TEST_F(IssuerSecurityTest, SpecialCharacterIssuer) {
+    char *err_msg = nullptr;
+
+    // Create an issuer with special characters and control chars
+    std::string special_issuer = "https://bad.com/\"\n\t\r\x01\x1f";
+    auto rv = scitoken_set_claim_string(m_token.get(), "iss", special_issuer.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Try to verify with a restricted issuer list to trigger error
+    const char* allowed_issuers[] = {"https://good.issuer.com", nullptr};
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), allowed_issuers, &err_msg);
+    
+    // Should fail
+    ASSERT_FALSE(rv == 0);
+    ASSERT_TRUE(err_msg != nullptr);
+    
+    std::string error_message(err_msg);
+    std::unique_ptr<char, decltype(&free)> err_msg_ptr(err_msg, free);
+    
+    // Error message should be reasonable length
+    EXPECT_LT(error_message.length(), 300);
+    
+    // Should contain expected error text
+    EXPECT_NE(error_message.find("is not in list of allowed issuers"), std::string::npos);
+    
+    // Should contain properly escaped JSON (with quotes)
+    EXPECT_NE(error_message.find("\""), std::string::npos);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
