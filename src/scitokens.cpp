@@ -217,6 +217,18 @@ void scitoken_free_string_list(char **value) {
 
 int scitoken_get_expiration(const SciToken token, long long *expiry,
                             char **err_msg) {
+    if (!token) {
+        if (err_msg) {
+            *err_msg = strdup("Token cannot be NULL");
+        }
+        return -1;
+    }
+    if (!expiry) {
+        if (err_msg) {
+            *err_msg = strdup("Expiry output parameter cannot be NULL");
+        }
+        return -1;
+    }
     scitokens::SciToken *real_token =
         reinterpret_cast<scitokens::SciToken *>(token);
     if (!real_token->has_claim("exp")) {
@@ -226,7 +238,21 @@ int scitoken_get_expiration(const SciToken token, long long *expiry,
 
     long long result;
     try {
-        result = real_token->get_claim("exp").to_json().get<int64_t>();
+        auto claim_value = real_token->get_claim("exp").to_json();
+        if (claim_value.is<int64_t>()) {
+            // Integer value
+            result = claim_value.get<int64_t>();
+        } else if (claim_value.is<double>()) {
+            // Float value - convert to integer (truncate)
+            // Float value - convert to integer using std::floor().
+            // This ensures expiration is not extended by fractional seconds.
+            result = static_cast<long long>(std::floor(claim_value.get<double>()));
+        } else {
+            if (err_msg) {
+                *err_msg = strdup("'exp' claim must be a number (integer or float)");
+            }
+            return -1;
+        }
     } catch (std::exception &exc) {
         if (err_msg) {
             *err_msg = strdup(exc.what());

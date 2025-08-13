@@ -502,6 +502,41 @@ TEST_F(SerializeTest, ExplicitTime) {
     enforcer_destroy(enforcer);
 }
 
+TEST_F(SerializeTest, GetExpirationErrorHandling) {
+    char *err_msg = nullptr;
+    
+    // Test NULL token handling
+    long long expiry;
+    auto rv = scitoken_get_expiration(nullptr, &expiry, &err_msg);
+    ASSERT_FALSE(rv == 0);
+    ASSERT_TRUE(err_msg != nullptr);
+    EXPECT_STREQ(err_msg, "Token cannot be NULL");
+    free(err_msg);
+    err_msg = nullptr;
+    
+    // Test NULL expiry parameter handling  
+    rv = scitoken_get_expiration(m_token.get(), nullptr, &err_msg);
+    ASSERT_FALSE(rv == 0);
+    ASSERT_TRUE(err_msg != nullptr);
+    EXPECT_STREQ(err_msg, "Expiry output parameter cannot be NULL");
+    free(err_msg);
+    err_msg = nullptr;
+    
+    // Test normal operation works
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    
+    rv = scitoken_get_expiration(m_read_token.get(), &expiry, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(expiry > 0);
+    
+    free(token_value);
+}
+
 class SerializeNoKidTest : public ::testing::Test {
   protected:
     void SetUp() override {
