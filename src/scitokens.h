@@ -291,6 +291,15 @@ int keycache_get_cached_jwks(const char *issuer, char **jwks, char **err_msg);
 int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
 
 /**
+ * Replace any existing key cache entry with one provided by the user.
+ * Allows explicit setting of expiration time for offline usage.
+ * - `jwks` is value that will be set in the cache.
+ * - `expires_at` is the expiration time as Unix timestamp (seconds since epoch).
+ */
+int keycache_set_jwks_with_expiry(const char *issuer, const char *jwks, 
+                                  int64_t expires_at, char **err_msg);
+
+/**
  * APIs for managing scitokens configuration parameters.
  */
 

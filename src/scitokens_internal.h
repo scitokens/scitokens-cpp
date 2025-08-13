@@ -746,6 +746,13 @@ class Validator {
     static bool store_jwks(const std::string &issuer, const std::string &jwks);
 
     /**
+     * Store the contents of a JWKS for a given issuer with explicit expiry time.
+     */
+    static bool store_jwks_with_expiry(const std::string &issuer,
+                                       const std::string &jwks_str,
+                                       int64_t expires_at);
+
+    /**
      * Trigger a refresh of the JWKS or a given issuer.
      */
     static bool refresh_jwks(const std::string &issuer);

@@ -42,12 +42,21 @@ void initialize_cachedb(const std::string &keycache_file) {
 
 /**
  * Get the Cache file location
- *  1. User-defined through config api
- *  2. $XDG_CACHE_HOME
- *  3. .cache subdirectory of home directory as returned by the password
+ *  1. SCITOKENS_KEYCACHE_FILE environment variable (for offline use)
+ *  2. User-defined through config api
+ *  3. $XDG_CACHE_HOME
+ *  4. .cache subdirectory of home directory as returned by the password
  * database
  */
 std::string get_cache_file() {
+
+    // Check for direct cache file location first (offline support)
+    const char *direct_cache_file = getenv("SCITOKENS_KEYCACHE_FILE");
+    if (direct_cache_file && strlen(direct_cache_file) > 0) {
+        std::string keycache_file(direct_cache_file);
+        initialize_cachedb(keycache_file);
+        return keycache_file;
+    }
 
     const char *xdg_cache_home = getenv("XDG_CACHE_HOME");
 

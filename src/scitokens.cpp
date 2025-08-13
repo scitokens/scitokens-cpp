@@ -989,6 +989,36 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg) {
     return 0;
 }
 
+int keycache_set_jwks_with_expiry(const char *issuer, const char *jwks, 
+                                  int64_t expires_at, char **err_msg) {
+    if (!issuer) {
+        if (err_msg) {
+            *err_msg = strdup("Issuer may not be a null pointer");
+        }
+        return -1;
+    }
+    if (!jwks) {
+        if (err_msg) {
+            *err_msg = strdup("JWKS pointer may not be null.");
+        }
+        return -1;
+    }
+    try {
+        if (!scitokens::Validator::store_jwks_with_expiry(issuer, jwks, expires_at)) {
+            if (err_msg) {
+                *err_msg = strdup("Failed to set the JWKS cache for issuer.");
+            }
+            return -1;
+        }
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
 int config_set_int(const char *key, int value, char **err_msg) {
     return scitoken_config_set_int(key, value, err_msg);
 }
