@@ -6,6 +6,7 @@
 
 #include <sys/select.h>
 #include <time.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 #include <ctime>
