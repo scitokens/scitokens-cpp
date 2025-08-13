@@ -786,17 +786,15 @@ class Validator {
             if (!jwt.has_payload_claim("iss")) {
                 return "<missing issuer>";
             }
-            
             // Get the raw claim and serialize it back to JSON
             const auto &claim = jwt.get_payload_claim("iss");
             std::string serialized = claim.to_json().serialize();
-            
             // Limit the size to prevent abuse
             const size_t max_issuer_length = 256;
             if (serialized.length() > max_issuer_length) {
-                serialized = serialized.substr(0, max_issuer_length - 3) + "...";
+                serialized =
+                    serialized.substr(0, max_issuer_length - 3) + "...";
             }
-            
             return serialized;
         } catch (...) {
             // If anything goes wrong, return a safe fallback

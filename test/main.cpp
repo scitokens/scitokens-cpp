@@ -819,8 +819,8 @@ class IssuerSecurityTest : public ::testing::Test {
         ASSERT_TRUE(m_token.get() != nullptr);
 
         // Store public key for verification
-        auto rv = scitoken_store_public_ec_key("https://demo.scitokens.org/gtest",
-                                              "1", ec_public, &err_msg);
+        auto rv = scitoken_store_public_ec_key(
+            "https://demo.scitokens.org/gtest", "1", ec_public, &err_msg);
         ASSERT_TRUE(rv == 0) << err_msg;
 
         scitoken_set_lifetime(m_token.get(), 60);
@@ -843,7 +843,8 @@ TEST_F(IssuerSecurityTest, LongIssuerTruncation) {
 
     // Create a very long issuer (1000 characters)
     std::string very_long_issuer(1000, 'A');
-    auto rv = scitoken_set_claim_string(m_token.get(), "iss", very_long_issuer.c_str(), &err_msg);
+    auto rv = scitoken_set_claim_string(m_token.get(), "iss",
+                                        very_long_issuer.c_str(), &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
 
     char *token_value = nullptr;
@@ -852,22 +853,21 @@ TEST_F(IssuerSecurityTest, LongIssuerTruncation) {
     std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
 
     // Try to verify with a restricted issuer list to trigger error
-    const char* allowed_issuers[] = {"https://good.issuer.com", nullptr};
-    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), allowed_issuers, &err_msg);
-    
+    const char *allowed_issuers[] = {"https://good.issuer.com", nullptr};
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(),
+                                 allowed_issuers, &err_msg);
+
     // Should fail
     ASSERT_FALSE(rv == 0);
     ASSERT_TRUE(err_msg != nullptr);
-    
     std::string error_message(err_msg);
     std::unique_ptr<char, decltype(&free)> err_msg_ptr(err_msg, free);
-    
     // Error message should be reasonable length (< 400 chars)
     EXPECT_LT(error_message.length(), 400);
-    
     // Should contain expected error text
-    EXPECT_NE(error_message.find("is not in list of allowed issuers"), std::string::npos);
-    
+    EXPECT_NE(error_message.find("is not in list of allowed issuers"),
+              std::string::npos);
+
     // Should contain truncated issuer with ellipsis
     EXPECT_NE(error_message.find("..."), std::string::npos);
 }
@@ -877,7 +877,8 @@ TEST_F(IssuerSecurityTest, SpecialCharacterIssuer) {
 
     // Create an issuer with special characters and control chars
     std::string special_issuer = "https://bad.com/\"\n\t\r\x01\x1f";
-    auto rv = scitoken_set_claim_string(m_token.get(), "iss", special_issuer.c_str(), &err_msg);
+    auto rv = scitoken_set_claim_string(m_token.get(), "iss",
+                                        special_issuer.c_str(), &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
 
     char *token_value = nullptr;
@@ -886,22 +887,21 @@ TEST_F(IssuerSecurityTest, SpecialCharacterIssuer) {
     std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
 
     // Try to verify with a restricted issuer list to trigger error
-    const char* allowed_issuers[] = {"https://good.issuer.com", nullptr};
-    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), allowed_issuers, &err_msg);
-    
+    const char *allowed_issuers[] = {"https://good.issuer.com", nullptr};
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(),
+                                 allowed_issuers, &err_msg);
+
     // Should fail
     ASSERT_FALSE(rv == 0);
     ASSERT_TRUE(err_msg != nullptr);
-    
     std::string error_message(err_msg);
     std::unique_ptr<char, decltype(&free)> err_msg_ptr(err_msg, free);
-    
     // Error message should be reasonable length
     EXPECT_LT(error_message.length(), 300);
-    
     // Should contain expected error text
-    EXPECT_NE(error_message.find("is not in list of allowed issuers"), std::string::npos);
-    
+    EXPECT_NE(error_message.find("is not in list of allowed issuers"),
+              std::string::npos);
+
     // Should contain properly escaped JSON (with quotes)
     EXPECT_NE(error_message.find("\""), std::string::npos);
 }
