@@ -40,16 +40,60 @@ void initialize_cachedb(const std::string &keycache_file) {
     sqlite3_close(db);
 }
 
-/**
- * Get the Cache file location
- *  1. SCITOKENS_KEYCACHE_FILE environment variable (for offline use)
- *  2. User-defined through config api
- *  3. $XDG_CACHE_HOME
- *  4. .cache subdirectory of home directory as returned by the password
- * database
- */
-std::string get_cache_file() {
+// Remove issuer_entry function and other namespace functions remain here
+// Remove a given issuer from the database.  Starts a new transaction
+// if `new_transaction` is true.
+// If a failure occurs, then this function returns nonzero and closes
+// the database handle.
+int remove_issuer_entry(sqlite3 *db, const std::string &issuer,
+                        bool new_transaction) {
 
+    int rc;
+    if (new_transaction) {
+        if ((rc = sqlite3_exec(db, "BEGIN", 0, 0, 0)) != SQLITE_OK) {
+            sqlite3_close(db);
+            return -1;
+        }
+    }
+
+    sqlite3_stmt *stmt;
+    rc = sqlite3_prepare_v2(db, "DELETE FROM keycache WHERE issuer = ?", -1,
+                            &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+
+    if (sqlite3_bind_text(stmt, 1, issuer.c_str(), issuer.size(),
+                          SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -1;
+    }
+
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return -1;
+    }
+
+    sqlite3_finalize(stmt);
+
+    if (new_transaction) {
+        if ((rc = sqlite3_exec(db, "COMMIT", 0, 0, 0)) != SQLITE_OK) {
+            sqlite3_close(db);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+} // namespace
+
+// Expose get_cache_file function for use by scitokens-keycache tool
+std::string get_cache_file() {
     // Check for direct cache file location first (offline support)
     const char *direct_cache_file = getenv("SCITOKENS_KEYCACHE_FILE");
     if (direct_cache_file && strlen(direct_cache_file) > 0) {
@@ -103,57 +147,6 @@ std::string get_cache_file() {
 
     return keycache_file;
 }
-
-// Remove a given issuer from the database.  Starts a new transaction
-// if `new_transaction` is true.
-// If a failure occurs, then this function returns nonzero and closes
-// the database handle.
-int remove_issuer_entry(sqlite3 *db, const std::string &issuer,
-                        bool new_transaction) {
-
-    int rc;
-    if (new_transaction) {
-        if ((rc = sqlite3_exec(db, "BEGIN", 0, 0, 0)) != SQLITE_OK) {
-            sqlite3_close(db);
-            return -1;
-        }
-    }
-
-    sqlite3_stmt *stmt;
-    rc = sqlite3_prepare_v2(db, "DELETE FROM keycache WHERE issuer = ?", -1,
-                            &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        sqlite3_close(db);
-        return -1;
-    }
-
-    if (sqlite3_bind_text(stmt, 1, issuer.c_str(), issuer.size(),
-                          SQLITE_STATIC) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return -1;
-    }
-
-    rc = sqlite3_step(stmt);
-    if (rc != SQLITE_DONE) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return -1;
-    }
-
-    sqlite3_finalize(stmt);
-
-    if (new_transaction) {
-        if ((rc = sqlite3_exec(db, "COMMIT", 0, 0, 0)) != SQLITE_OK) {
-            sqlite3_close(db);
-            return -1;
-        }
-    }
-
-    return 0;
-}
-
-} // namespace
 
 bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
                                                    int64_t now,

@@ -339,6 +339,11 @@ int scitoken_config_set_str(const char *key, const char *value, char **err_msg);
  */
 int scitoken_config_get_str(const char *key, char **output, char **err_msg);
 
+/**
+ * Get the cache file location following scitokens cache rules
+ */
+const char* scitokens_get_cache_file_location();
+
 #ifdef __cplusplus
 }
 #endif
