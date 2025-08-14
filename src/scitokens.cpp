@@ -1145,10 +1145,7 @@ int scitoken_config_get_str(const char *key, char **output, char **err_msg) {
     return 0;
 }
 
-// Forward declaration of get_cache_file from scitokens_cache.cpp
-extern std::string get_cache_file();
-
 const char* scitokens_get_cache_file_location() {
-    static std::string cache_location = get_cache_file();
+    static std::string cache_location = scitokens::get_cache_file();
     return cache_location.c_str();
 }

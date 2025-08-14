@@ -92,8 +92,23 @@ int remove_issuer_entry(sqlite3 *db, const std::string &issuer,
 
 } // namespace
 
-// Expose get_cache_file function for use by scitokens-keycache tool
-std::string get_cache_file() {
+/**
+ * @brief Determines the location of the SciTokens key cache file.
+ *
+ * This function checks environment variables and configuration settings to find
+ * the appropriate directory for the key cache file. It prioritizes the following:
+ *   1. SCITOKENS_KEYCACHE_FILE environment variable (direct file path).
+ *   2. Configured cache directory via Configuration::get_cache_home().
+ *   3. XDG_CACHE_HOME environment variable.
+ *   4. Default to $HOME/.cache if none of the above are set.
+ *
+ * The function ensures the cache directory exists, creates it if necessary,
+ * initializes the SQLite database if needed, and returns the full path to the
+ * cache file. Returns an empty string on failure.
+ *
+ * @return std::string Full path to the key cache file, or empty string on error.
+ */
+std::string scitokens::get_cache_file() {
     // Check for direct cache file location first (offline support)
     const char *direct_cache_file = getenv("SCITOKENS_KEYCACHE_FILE");
     if (direct_cache_file && strlen(direct_cache_file) > 0) {
