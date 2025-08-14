@@ -112,6 +112,24 @@ class SimpleCurlGet {
 
 } // namespace internal
 
+/**
+ * @brief Determines the location of the SciTokens key cache file.
+ *
+ * This function checks environment variables and configuration settings to find
+ * the appropriate directory for the key cache file. It prioritizes the following:
+ *   1. SCITOKENS_KEYCACHE_FILE environment variable (direct file path).
+ *   2. Configured cache directory via Configuration::get_cache_home().
+ *   3. XDG_CACHE_HOME environment variable.
+ *   4. Default to $HOME/.cache if none of the above are set.
+ *
+ * The function ensures the cache directory exists, creates it if necessary,
+ * initializes the SQLite database if needed, and returns the full path to the
+ * cache file. Returns an empty string on failure.
+ *
+ * @return std::string Full path to the key cache file, or empty string on error.
+ */
+std::string get_cache_file();
+
 class UnsupportedKeyException : public std::runtime_error {
   public:
     explicit UnsupportedKeyException(const std::string &msg)
@@ -744,6 +762,13 @@ class Validator {
      * Store the contents of a JWKS for a given issuer.
      */
     static bool store_jwks(const std::string &issuer, const std::string &jwks);
+
+    /**
+     * Store the contents of a JWKS for a given issuer with explicit expiry time.
+     */
+    static bool store_jwks_with_expiry(const std::string &issuer,
+                                       const std::string &jwks_str,
+                                       int64_t expires_at);
 
     /**
      * Trigger a refresh of the JWKS or a given issuer.

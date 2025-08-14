@@ -6,6 +6,7 @@
 
 #include <sys/select.h>
 #include <time.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 #include <ctime>
@@ -291,6 +292,15 @@ int keycache_get_cached_jwks(const char *issuer, char **jwks, char **err_msg);
 int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
 
 /**
+ * Replace any existing key cache entry with one provided by the user.
+ * Allows explicit setting of expiration time for offline usage.
+ * - `jwks` is value that will be set in the cache.
+ * - `expires_at` is the expiration time as Unix timestamp (seconds since epoch).
+ */
+int keycache_set_jwks_with_expiry(const char *issuer, const char *jwks, 
+                                  int64_t expires_at, char **err_msg);
+
+/**
  * APIs for managing scitokens configuration parameters.
  */
 
@@ -328,6 +338,11 @@ int scitoken_config_set_str(const char *key, const char *value, char **err_msg);
  * with the input key to output.
  */
 int scitoken_config_get_str(const char *key, char **output, char **err_msg);
+
+/**
+ * Get the cache file location following scitokens cache rules
+ */
+const char* scitokens_get_cache_file_location();
 
 #ifdef __cplusplus
 }

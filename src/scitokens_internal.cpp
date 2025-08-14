@@ -797,6 +797,20 @@ bool Validator::store_jwks(const std::string &issuer,
     return store_public_keys(issuer, jwks, next_update, expires);
 }
 
+bool Validator::store_jwks_with_expiry(const std::string &issuer,
+                                       const std::string &jwks_str,
+                                       int64_t expires_at) {
+    picojson::value jwks;
+    std::string err = picojson::parse(jwks, jwks_str);
+    auto now = std::time(NULL);
+    int next_update_delta = configurer::Configuration::get_next_update_delta();
+    int64_t next_update = now + next_update_delta;
+    if (!err.empty()) {
+        throw JsonException(err);
+    }
+    return store_public_keys(issuer, jwks, next_update, expires_at);
+}
+
 std::unique_ptr<AsyncStatus>
 Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
                               std::string &public_pem, std::string &algorithm) {
