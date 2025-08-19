@@ -1,12 +1,11 @@
 name: Documentation Build Test
 
 on:
-  pull_request:
-    branches: 
-      - master
+  release:
+    types: [published]
   push:
-    branches: 
-      - master
+    tags:
+      - '*'
 
 jobs:
   build-docs:
@@ -37,21 +36,23 @@ jobs:
       run: |
         make html
 
-    - name: Check for warnings and errors
-      working-directory: docs
-      run: |
-        if [ -f _build/html/index.html ]; then
-          echo "Documentation built successfully"
-          echo "Generated files:"
-          ls -la _build/html/
-        else
-          echo "Documentation build failed - index.html not found"
-          exit 1
-        fi
-
-    - name: Upload documentation artifacts
-      uses: actions/upload-artifact@v3
+    - name: Upload artifact for GitHub Pages
+      uses: actions/upload-pages-artifact@v3
       with:
-        name: documentation
-        path: docs/_build/html/
-        retention-days: 7
+        path: docs/_build/html
+
+  deploy-docs:
+    needs: build-docs
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
