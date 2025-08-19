@@ -37,8 +37,8 @@ typedef int (*StringValidatorFunction)(const char *value, char **err_msg);
 
 /** @brief Access Control List entry containing authorization and resource */
 typedef struct Acl_s {
-    const char *authz;     /**< Authorization type (e.g., "read", "write") */
-    const char *resource;  /**< Resource path or pattern */
+    const char *authz;    /**< Authorization type (e.g., "read", "write") */
+    const char *resource; /**< Resource path or pattern */
 } Acl;
 
 /**
@@ -61,9 +61,9 @@ typedef enum _profile {
 
 /**
  * @brief Create a cryptographic key for signing tokens
- * 
+ *
  * @param key_id Identifier for the key (used in 'kid' header)
- * @param algorithm Signing algorithm (e.g., "ES256", "RS256")  
+ * @param algorithm Signing algorithm (e.g., "ES256", "RS256")
  * @param public_contents PEM-encoded public key
  * @param private_contents PEM-encoded private key
  * @param err_msg Output parameter for error messages (caller must free)
@@ -75,14 +75,14 @@ SciTokenKey scitoken_key_create(const char *key_id, const char *algorithm,
 
 /**
  * @brief Destroy a key object and free associated memory
- * 
+ *
  * @param private_key Key handle to destroy
  */
 void scitoken_key_destroy(SciTokenKey private_key);
 
 /**
  * @brief Create a new SciToken
- * 
+ *
  * @param private_key Key to use for signing, or NULL for unsigned token
  * @return SciToken handle on success, NULL on failure
  */
@@ -90,14 +90,14 @@ SciToken scitoken_create(SciTokenKey private_key);
 
 /**
  * @brief Destroy a token object and free associated memory
- * 
+ *
  * @param token Token handle to destroy
  */
 void scitoken_destroy(SciToken token);
 
 /**
  * @brief Set a string claim in the token
- * 
+ *
  * @param token Token to modify
  * @param key Claim name (e.g., "iss", "aud", "scope")
  * @param value Claim value
@@ -109,7 +109,7 @@ int scitoken_set_claim_string(SciToken token, const char *key,
 
 /**
  * @brief Get a string claim from the token
- * 
+ *
  * @param token Token to query
  * @param key Claim name to retrieve
  * @param value Output parameter for claim value (caller must free)
@@ -143,7 +143,7 @@ int scitoken_set_claim_string_list(const SciToken token, const char *key,
 
 /**
  * @brief Get the expiration time of the token
- * 
+ *
  * @param token Token to query
  * @param value Output parameter for expiration time (Unix timestamp)
  * @param err_msg Output parameter for error messages (caller must free)
@@ -154,7 +154,7 @@ int scitoken_get_expiration(const SciToken token, long long *value,
 
 /**
  * @brief Set the lifetime of the token in seconds
- * 
+ *
  * @param token Token to modify
  * @param lifetime Lifetime in seconds from creation
  */
@@ -162,10 +162,10 @@ void scitoken_set_lifetime(SciToken token, int lifetime);
 
 /**
  * @brief Serialize the token to a JWT string
- * 
+ *
  * @param token Token to serialize
  * @param value Output parameter for JWT string (caller must free)
- * @param err_msg Output parameter for error messages (caller must free) 
+ * @param err_msg Output parameter for error messages (caller must free)
  * @return 0 on success, non-zero on failure
  */
 int scitoken_serialize(const SciToken token, char **value, char **err_msg);
@@ -182,10 +182,11 @@ void scitoken_set_deserialize_profile(SciToken token, SciTokenProfile profile);
 
 /**
  * @brief Deserialize a JWT string into a SciToken
- * 
+ *
  * @param value JWT string to parse
  * @param token Output parameter for created token (caller must destroy)
- * @param allowed_issuers NULL-terminated array of allowed issuer URLs, or NULL for any
+ * @param allowed_issuers NULL-terminated array of allowed issuer URLs, or NULL
+ * for any
  * @param err_msg Output parameter for error messages (caller must free)
  * @return 0 on success, non-zero on failure
  */
@@ -230,7 +231,7 @@ int scitoken_deserialize_v2(const char *value, SciToken token,
 
 /**
  * @brief Store a public EC key for token verification
- * 
+ *
  * @param issuer Issuer URL that will use this key
  * @param keyid Key identifier
  * @param value PEM-encoded public key
@@ -242,7 +243,7 @@ int scitoken_store_public_ec_key(const char *issuer, const char *keyid,
 
 /**
  * @brief Create a new token validator
- * 
+ *
  * @return Validator handle on success, NULL on failure
  */
 Validator validator_create();
@@ -267,7 +268,7 @@ int validator_add_critical_claims(Validator validator, const char **claims,
 
 /**
  * @brief Validate a SciToken using the configured validator
- * 
+ *
  * @param validator Validator to use
  * @param scitoken Token to validate
  * @param err_msg Output parameter for error messages (caller must free)
@@ -277,14 +278,14 @@ int validator_validate(Validator validator, SciToken scitoken, char **err_msg);
 
 /**
  * @brief Destroy a validator object and free associated memory
- * 
+ *
  * @param validator Validator handle to destroy
  */
 void validator_destroy(Validator validator);
 
 /**
  * @brief Create a new token enforcer
- * 
+ *
  * @param issuer Required issuer URL for tokens
  * @param audience NULL-terminated array of acceptable audience values
  * @param err_msg Output parameter for error messages (caller must free)
@@ -295,7 +296,7 @@ Enforcer enforcer_create(const char *issuer, const char **audience,
 
 /**
  * @brief Destroy an enforcer object and free associated memory
- * 
+ *
  * @param enforcer Enforcer handle to destroy
  */
 void enforcer_destroy(Enforcer enforcer);
@@ -315,10 +316,11 @@ int enforcer_set_time(Enforcer enf, time_t now, char **err_msg);
 
 /**
  * @brief Generate Access Control Lists from a token
- * 
+ *
  * @param enf Enforcer to use
  * @param scitokens Token to process
- * @param acls Output parameter for ACL array (caller must free with enforcer_acl_free)
+ * @param acls Output parameter for ACL array (caller must free with
+ * enforcer_acl_free)
  * @param err_msg Output parameter for error messages (caller must free)
  * @return 0 on success, non-zero on failure
  */
@@ -336,14 +338,14 @@ int enforcer_generate_acls_continue(const Enforcer enf, SciTokenStatus *status,
 
 /**
  * @brief Free an array of ACLs returned by enforcer_generate_acls
- * 
+ *
  * @param acls ACL array to free
  */
 void enforcer_acl_free(Acl *acls);
 
 /**
  * @brief Test if a token grants access for a specific ACL
- * 
+ *
  * @param enf Enforcer to use
  * @param sci Token to test
  * @param acl ACL to test against
