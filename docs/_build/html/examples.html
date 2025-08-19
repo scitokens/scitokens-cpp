@@ -1,0 +1,389 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Examples &mdash; SciTokens C++ 1.0.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=1ed6394b"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="API Reference" href="api.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            SciTokens C++
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Examples</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#simple-token-creation">Simple Token Creation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#creating-and-signing-a-token">Creating and Signing a Token</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#token-validation-with-enforcer">Token Validation with Enforcer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#complete-example-create-sign-and-validate">Complete Example: Create, Sign, and Validate</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">SciTokens C++</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Examples</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/examples.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="examples">
+<h1>Examples<a class="headerlink" href="#examples" title="Link to this heading"></a></h1>
+<p>This page provides practical examples of using the SciTokens C++ library for common tasks.</p>
+<section id="simple-token-creation">
+<h2>Simple Token Creation<a class="headerlink" href="#simple-token-creation" title="Link to this heading"></a></h2>
+<p>This example shows how to create a basic SciToken without signing:</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;scitokens.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdio.h&gt;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Create a token without a key (for testing)</span>
+<span class="w">    </span><span class="n">SciToken</span><span class="w"> </span><span class="n">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_create</span><span class="p">(</span><span class="nb">NULL</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">token</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to create token</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Clean up</span>
+<span class="w">    </span><span class="n">scitoken_destroy</span><span class="p">(</span><span class="n">token</span><span class="p">);</span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Token created successfully</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="creating-and-signing-a-token">
+<h2>Creating and Signing a Token<a class="headerlink" href="#creating-and-signing-a-token" title="Link to this heading"></a></h2>
+<p>This example demonstrates how to create a key pair and sign a token:</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;scitokens.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdio.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdlib.h&gt;</span>
+
+<span class="c1">// Example EC private key</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">ec_private</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="s">&quot;-----BEGIN EC PRIVATE KEY-----</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">    </span><span class="s">&quot;MHcCAQEEIESSMxT7PLTR9A/aqd+CM0/6vv6fQWqDm0mNx8uE9EbpoAoGCCqGSM49</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">    </span><span class="s">&quot;AwEHoUQDQgAE1i+ImZ//iQhOPh0OMfZzdbmPH+3G1ouWezolCugQYWIRqNmwq3zR</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">    </span><span class="s">&quot;EnTbe4EmymTpJ1MJTPP/tCEUP3G/QqQuhA==</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">    </span><span class="s">&quot;-----END EC PRIVATE KEY-----</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">;</span>
+
+<span class="c1">// Example EC public key</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">ec_public</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="s">&quot;-----BEGIN PUBLIC KEY-----</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">    </span><span class="s">&quot;MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE1i+ImZ//iQhOPh0OMfZzdbmPH+3G</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">    </span><span class="s">&quot;1ouWezolCugQYWIRqNmwq3zREnTbe4EmymTpJ1MJTPP/tCEUP3G/QqQuhA==</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">    </span><span class="s">&quot;-----END PUBLIC KEY-----</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">err_msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// Create a key for signing</span>
+<span class="w">    </span><span class="n">SciTokenKey</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_key_create</span><span class="p">(</span><span class="s">&quot;test-key&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ES256&quot;</span><span class="p">,</span>
+<span class="w">                                         </span><span class="n">ec_public</span><span class="p">,</span><span class="w"> </span><span class="n">ec_private</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">key</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to create key: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="n">free</span><span class="p">(</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Create a token with the key</span>
+<span class="w">    </span><span class="n">SciToken</span><span class="w"> </span><span class="n">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_create</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">token</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to create token</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">scitoken_key_destroy</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Set issuer claim</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">rv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_set_claim_string</span><span class="p">(</span><span class="n">token</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;iss&quot;</span><span class="p">,</span>
+<span class="w">                                      </span><span class="s">&quot;https://example.org&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rv</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to set issuer: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="n">free</span><span class="p">(</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="n">scitoken_destroy</span><span class="p">(</span><span class="n">token</span><span class="p">);</span>
+<span class="w">        </span><span class="n">scitoken_key_destroy</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Serialize the token</span>
+<span class="w">    </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">serialized_token</span><span class="p">;</span>
+<span class="w">    </span><span class="n">rv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_serialize</span><span class="p">(</span><span class="n">token</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">serialized_token</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rv</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to serialize: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="n">free</span><span class="p">(</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Serialized token: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">serialized_token</span><span class="p">);</span>
+<span class="w">        </span><span class="n">free</span><span class="p">(</span><span class="n">serialized_token</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Clean up</span>
+<span class="w">    </span><span class="n">scitoken_destroy</span><span class="p">(</span><span class="n">token</span><span class="p">);</span>
+<span class="w">    </span><span class="n">scitoken_key_destroy</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="token-validation-with-enforcer">
+<h2>Token Validation with Enforcer<a class="headerlink" href="#token-validation-with-enforcer" title="Link to this heading"></a></h2>
+<p>This example shows how to use an Enforcer to generate ACLs from a token:</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;scitokens.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdio.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdlib.h&gt;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">err_msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// First, create and serialize a token (see previous example)</span>
+<span class="w">    </span><span class="c1">// For this example, we&#39;ll assume we have a token</span>
+
+<span class="w">    </span><span class="c1">// Create an enforcer</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">audiences</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="s">&quot;https://example.org/&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">};</span>
+<span class="w">    </span><span class="n">Enforcer</span><span class="w"> </span><span class="n">enforcer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">enforcer_create</span><span class="p">(</span><span class="s">&quot;https://example.org&quot;</span><span class="p">,</span>
+<span class="w">                                       </span><span class="n">audiences</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">enforcer</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">NULL</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to create enforcer: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="n">free</span><span class="p">(</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Assuming we have a valid token from previous steps</span>
+<span class="w">    </span><span class="n">SciToken</span><span class="w"> </span><span class="n">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span><span class="w"> </span><span class="c1">// This would be your deserialized token</span>
+
+<span class="w">    </span><span class="c1">// Generate ACLs from the token</span>
+<span class="w">    </span><span class="n">Acl</span><span class="w"> </span><span class="o">*</span><span class="n">acls</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">rv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">enforcer_generate_acls</span><span class="p">(</span><span class="n">enforcer</span><span class="p">,</span><span class="w"> </span><span class="n">token</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">acls</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rv</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to generate ACLs: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="n">free</span><span class="p">(</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Print the ACLs</span>
+<span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">authz</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">NULL</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">resource</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;ACL %d: %s on %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">i</span><span class="p">,</span>
+<span class="w">                   </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">authz</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">authz</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="s">&quot;(null)&quot;</span><span class="p">,</span>
+<span class="w">                   </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">resource</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">resource</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="s">&quot;(null)&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="c1">// Free the ACLs</span>
+<span class="w">        </span><span class="n">enforcer_acl_free</span><span class="p">(</span><span class="n">acls</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Clean up</span>
+<span class="w">    </span><span class="n">enforcer_destroy</span><span class="p">(</span><span class="n">enforcer</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">token</span><span class="p">)</span><span class="w"> </span><span class="n">scitoken_destroy</span><span class="p">(</span><span class="n">token</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="complete-example-create-sign-and-validate">
+<h2>Complete Example: Create, Sign, and Validate<a class="headerlink" href="#complete-example-create-sign-and-validate" title="Link to this heading"></a></h2>
+<p>This comprehensive example demonstrates the full workflow:</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;scitokens.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdio.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdlib.h&gt;</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">err_msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">NULL</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">rv</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// Keys for this example</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">ec_private</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;-----BEGIN EC PRIVATE KEY-----</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">        </span><span class="s">&quot;MHcCAQEEIESSMxT7PLTR9A/aqd+CM0/6vv6fQWqDm0mNx8uE9EbpoAoGCCqGSM49</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">        </span><span class="s">&quot;AwEHoUQDQgAE1i+ImZ//iQhOPh0OMfZzdbmPH+3G1ouWezolCugQYWIRqNmwq3zR</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">        </span><span class="s">&quot;EnTbe4EmymTpJ1MJTPP/tCEUP3G/QqQuhA==</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">        </span><span class="s">&quot;-----END EC PRIVATE KEY-----</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">;</span>
+
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">ec_public</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;-----BEGIN PUBLIC KEY-----</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">        </span><span class="s">&quot;MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE1i+ImZ//iQhOPh0OMfZzdbmPH+3G</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">        </span><span class="s">&quot;1ouWezolCugQYWIRqNmwq3zREnTbe4EmymTpJ1MJTPP/tCEUP3G/QqQuhA==</span><span class="se">\n</span><span class="s">&quot;</span>
+<span class="w">        </span><span class="s">&quot;-----END PUBLIC KEY-----</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// Step 1: Create signing key</span>
+<span class="w">    </span><span class="n">SciTokenKey</span><span class="w"> </span><span class="n">key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_key_create</span><span class="p">(</span><span class="s">&quot;1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ES256&quot;</span><span class="p">,</span>
+<span class="w">                                         </span><span class="n">ec_public</span><span class="p">,</span><span class="w"> </span><span class="n">ec_private</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">key</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to create key: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="n">free</span><span class="p">(</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Step 2: Create and configure token</span>
+<span class="w">    </span><span class="n">SciToken</span><span class="w"> </span><span class="n">token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_create</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">token</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to create token</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="n">scitoken_key_destroy</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Set token claims</span>
+<span class="w">    </span><span class="n">rv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_set_claim_string</span><span class="p">(</span><span class="n">token</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;iss&quot;</span><span class="p">,</span>
+<span class="w">                                  </span><span class="s">&quot;https://demo.scitokens.org/gtest&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rv</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to set issuer: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="k">goto</span><span class="w"> </span><span class="n">cleanup</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">rv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_set_claim_string</span><span class="p">(</span><span class="n">token</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;aud&quot;</span><span class="p">,</span>
+<span class="w">                                  </span><span class="s">&quot;https://demo.scitokens.org/&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rv</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to set audience: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="k">goto</span><span class="w"> </span><span class="n">cleanup</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">rv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_set_claim_string</span><span class="p">(</span><span class="n">token</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;scope&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;read:/data&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rv</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to set scope: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="k">goto</span><span class="w"> </span><span class="n">cleanup</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Step 3: Serialize token</span>
+<span class="w">    </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">serialized</span><span class="p">;</span>
+<span class="w">    </span><span class="n">rv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_serialize</span><span class="p">(</span><span class="n">token</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">serialized</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rv</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to serialize: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="k">goto</span><span class="w"> </span><span class="n">cleanup</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Created token: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">serialized</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// Step 4: Store public key for validation</span>
+<span class="w">    </span><span class="n">rv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_store_public_ec_key</span><span class="p">(</span><span class="s">&quot;https://demo.scitokens.org/gtest&quot;</span><span class="p">,</span>
+<span class="w">                                     </span><span class="s">&quot;1&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">ec_public</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rv</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to store public key: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="n">free</span><span class="p">(</span><span class="n">serialized</span><span class="p">);</span>
+<span class="w">        </span><span class="k">goto</span><span class="w"> </span><span class="n">cleanup</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// Step 5: Deserialize and validate</span>
+<span class="w">    </span><span class="n">SciToken</span><span class="w"> </span><span class="n">parsed_token</span><span class="p">;</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">allowed_issuers</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="s">&quot;https://demo.scitokens.org/gtest&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">};</span>
+<span class="w">    </span><span class="n">rv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scitoken_deserialize</span><span class="p">(</span><span class="n">serialized</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">parsed_token</span><span class="p">,</span>
+<span class="w">                             </span><span class="n">allowed_issuers</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="n">free</span><span class="p">(</span><span class="n">serialized</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rv</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to deserialize: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="k">goto</span><span class="w"> </span><span class="n">cleanup</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Token validation successful!</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// Step 6: Create enforcer and generate ACLs</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">audiences</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="s">&quot;https://demo.scitokens.org/&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">};</span>
+<span class="w">    </span><span class="n">Enforcer</span><span class="w"> </span><span class="n">enforcer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">enforcer_create</span><span class="p">(</span><span class="s">&quot;https://demo.scitokens.org/gtest&quot;</span><span class="p">,</span>
+<span class="w">                                       </span><span class="n">audiences</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">enforcer</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Acl</span><span class="w"> </span><span class="o">*</span><span class="n">acls</span><span class="p">;</span>
+<span class="w">        </span><span class="n">rv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">enforcer_generate_acls</span><span class="p">(</span><span class="n">enforcer</span><span class="p">,</span><span class="w"> </span><span class="n">parsed_token</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">acls</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rv</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Generated ACLs:</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">authz</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">resource</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;  %s: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
+<span class="w">                       </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">authz</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">authz</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="s">&quot;(null)&quot;</span><span class="p">,</span>
+<span class="w">                       </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">resource</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">acls</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">resource</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="s">&quot;(null)&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">            </span><span class="n">enforcer_acl_free</span><span class="p">(</span><span class="n">acls</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="n">enforcer_destroy</span><span class="p">(</span><span class="n">enforcer</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">scitoken_destroy</span><span class="p">(</span><span class="n">parsed_token</span><span class="p">);</span>
+
+<span class="nl">cleanup</span><span class="p">:</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err_msg</span><span class="p">)</span><span class="w"> </span><span class="n">free</span><span class="p">(</span><span class="n">err_msg</span><span class="p">);</span>
+<span class="w">    </span><span class="n">scitoken_destroy</span><span class="p">(</span><span class="n">token</span><span class="p">);</span>
+<span class="w">    </span><span class="n">scitoken_key_destroy</span><span class="p">(</span><span class="n">key</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">rv</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="api.html" class="btn btn-neutral float-left" title="API Reference" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, SciTokens Team.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

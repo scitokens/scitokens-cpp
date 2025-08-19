@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<doxygen xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="compound.xsd" version="1.9.8" xml:lang="en-US">
+  <compounddef id="structAcl__s" kind="struct" language="C++" prot="public">
+    <compoundname>Acl_s</compoundname>
+    <includes refid="scitokens_8h" local="no">scitokens.h</includes>
+    <sectiondef kind="public-attrib">
+      <memberdef kind="variable" id="structAcl__s_1aa3e239ffe81f17c522e3a107fb22d680" prot="public" static="no" mutable="no">
+        <type>const char *</type>
+        <definition>const char* Acl_s::authz</definition>
+        <argsstring></argsstring>
+        <name>authz</name>
+        <qualifiedname>Acl_s::authz</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Authorization type (e.g., &quot;read&quot;, &quot;write&quot;) </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="src/scitokens.h" line="40" column="16" bodyfile="src/scitokens.h" bodystart="40" bodyend="-1"/>
+      </memberdef>
+      <memberdef kind="variable" id="structAcl__s_1accb77910576632f970d8663b93294b06" prot="public" static="no" mutable="no">
+        <type>const char *</type>
+        <definition>const char* Acl_s::resource</definition>
+        <argsstring></argsstring>
+        <name>resource</name>
+        <qualifiedname>Acl_s::resource</qualifiedname>
+        <briefdescription>
+        </briefdescription>
+        <detaileddescription>
+<para>Resource path or pattern </para>
+        </detaileddescription>
+        <inbodydescription>
+        </inbodydescription>
+        <location file="src/scitokens.h" line="41" column="16" bodyfile="src/scitokens.h" bodystart="41" bodyend="-1"/>
+      </memberdef>
+    </sectiondef>
+    <briefdescription>
+<para>Access Control List entry containing authorization and resource. </para>
+    </briefdescription>
+    <detaileddescription>
+    </detaileddescription>
+    <location file="src/scitokens.h" line="39" column="1" bodyfile="src/scitokens.h" bodystart="39" bodyend="42"/>
+    <listofallmembers>
+      <member refid="structAcl__s_1aa3e239ffe81f17c522e3a107fb22d680" prot="public" virt="non-virtual"><scope>Acl_s</scope><name>authz</name></member>
+      <member refid="structAcl__s_1accb77910576632f970d8663b93294b06" prot="public" virt="non-virtual"><scope>Acl_s</scope><name>resource</name></member>
+    </listofallmembers>
+  </compounddef>
+</doxygen>
