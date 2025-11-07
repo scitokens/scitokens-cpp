@@ -734,12 +734,12 @@ std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
         auto metadata = std::string(buffer, len);
         picojson::value json_obj;
         auto err = picojson::parse(json_obj, metadata);
-        status->m_cget.reset();
         if (!err.empty()) {
             throw JsonException("JSON parse failure when downloading from the "
                                 " public key URL " +
                                 status->m_cget->get_url() + ": " + err);
         }
+        status->m_cget.reset();
 
         auto now = std::time(NULL);
         // TODO: take expiration time from the cache-control header in the
