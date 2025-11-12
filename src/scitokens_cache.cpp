@@ -40,61 +40,7 @@ void initialize_cachedb(const std::string &keycache_file) {
     sqlite3_close(db);
 }
 
-/**
- * Get the Cache file location
- *  1. User-defined through config api
- *  2. $XDG_CACHE_HOME
- *  3. .cache subdirectory of home directory as returned by the password
- * database
- */
-std::string get_cache_file() {
-
-    const char *xdg_cache_home = getenv("XDG_CACHE_HOME");
-
-    auto bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
-    bufsize = (bufsize == -1) ? 16384 : bufsize;
-
-    std::unique_ptr<char[]> buf(new char[bufsize]);
-
-    std::string home_dir;
-    struct passwd pwd, *result = NULL;
-    getpwuid_r(geteuid(), &pwd, buf.get(), bufsize, &result);
-    if (result && result->pw_dir) {
-        home_dir = result->pw_dir;
-        home_dir += "/.cache";
-    }
-
-    // Figure out where to plop the cache based on priority
-    std::string cache_dir;
-    std::string configured_cache_dir =
-        configurer::Configuration::get_cache_home();
-    if (configured_cache_dir.length() > 0) { // The variable has been configured
-        cache_dir = configured_cache_dir;
-    } else {
-        cache_dir = xdg_cache_home ? xdg_cache_home : home_dir.c_str();
-    }
-
-    if (cache_dir.size() == 0) {
-        return "";
-    }
-
-    int r = mkdir(cache_dir.c_str(), 0700);
-    if ((r < 0) && errno != EEXIST) {
-        return "";
-    }
-
-    std::string keycache_dir = cache_dir + "/scitokens";
-    r = mkdir(keycache_dir.c_str(), 0700);
-    if ((r < 0) && errno != EEXIST) {
-        return "";
-    }
-
-    std::string keycache_file = keycache_dir + "/scitokens_cpp.sqllite";
-    initialize_cachedb(keycache_file);
-
-    return keycache_file;
-}
-
+// Remove issuer_entry function and other namespace functions remain here
 // Remove a given issuer from the database.  Starts a new transaction
 // if `new_transaction` is true.
 // If a failure occurs, then this function returns nonzero and closes
@@ -145,6 +91,77 @@ int remove_issuer_entry(sqlite3 *db, const std::string &issuer,
 }
 
 } // namespace
+
+/**
+ * @brief Determines the location of the SciTokens key cache file.
+ *
+ * This function checks environment variables and configuration settings to find
+ * the appropriate directory for the key cache file. It prioritizes the following:
+ *   1. SCITOKENS_KEYCACHE_FILE environment variable (direct file path).
+ *   2. Configured cache directory via Configuration::get_cache_home().
+ *   3. XDG_CACHE_HOME environment variable.
+ *   4. Default to $HOME/.cache if none of the above are set.
+ *
+ * The function ensures the cache directory exists, creates it if necessary,
+ * initializes the SQLite database if needed, and returns the full path to the
+ * cache file. Returns an empty string on failure.
+ *
+ * @return std::string Full path to the key cache file, or empty string on error.
+ */
+std::string scitokens::get_cache_file() {
+    // Check for direct cache file location first (offline support)
+    const char *direct_cache_file = getenv("SCITOKENS_KEYCACHE_FILE");
+    if (direct_cache_file && strlen(direct_cache_file) > 0) {
+        std::string keycache_file(direct_cache_file);
+        initialize_cachedb(keycache_file);
+        return keycache_file;
+    }
+
+    const char *xdg_cache_home = getenv("XDG_CACHE_HOME");
+
+    auto bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+    bufsize = (bufsize == -1) ? 16384 : bufsize;
+
+    std::unique_ptr<char[]> buf(new char[bufsize]);
+
+    std::string home_dir;
+    struct passwd pwd, *result = NULL;
+    getpwuid_r(geteuid(), &pwd, buf.get(), bufsize, &result);
+    if (result && result->pw_dir) {
+        home_dir = result->pw_dir;
+        home_dir += "/.cache";
+    }
+
+    // Figure out where to plop the cache based on priority
+    std::string cache_dir;
+    std::string configured_cache_dir =
+        configurer::Configuration::get_cache_home();
+    if (configured_cache_dir.length() > 0) { // The variable has been configured
+        cache_dir = configured_cache_dir;
+    } else {
+        cache_dir = xdg_cache_home ? xdg_cache_home : home_dir.c_str();
+    }
+
+    if (cache_dir.size() == 0) {
+        return "";
+    }
+
+    int r = mkdir(cache_dir.c_str(), 0700);
+    if ((r < 0) && errno != EEXIST) {
+        return "";
+    }
+
+    std::string keycache_dir = cache_dir + "/scitokens";
+    r = mkdir(keycache_dir.c_str(), 0700);
+    if ((r < 0) && errno != EEXIST) {
+        return "";
+    }
+
+    std::string keycache_file = keycache_dir + "/scitokens_cpp.sqllite";
+    initialize_cachedb(keycache_file);
+
+    return keycache_file;
+}
 
 bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
                                                    int64_t now,

@@ -841,6 +841,80 @@ TEST_F(KeycacheTest, RefreshExpiredTest) {
     EXPECT_EQ(jwks_str, "{\"keys\": []}");
 }
 
+TEST_F(KeycacheTest, OfflineCacheFileTest) {
+    char *err_msg = nullptr;
+    
+    // Create a temporary file for offline cache
+    char temp_file[] = "/tmp/test_offline_cache_XXXXXX";
+    int fd = mkstemp(temp_file);
+    ASSERT_TRUE(fd != -1);
+    close(fd);
+    unlink(temp_file); // Remove the file so SQLite can create it
+    
+    // Set the environment variable
+    setenv("SCITOKENS_KEYCACHE_FILE", temp_file, 1);
+    
+    // Store JWKS with explicit expiry time (1 hour from now)
+    time_t now = time(nullptr);
+    int64_t expires_at = static_cast<int64_t>(now) + 3600;
+    
+    auto rv = keycache_set_jwks_with_expiry("https://offline.test.com", 
+                                            demo_scitokens2.c_str(), 
+                                            expires_at, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    
+    // Retrieve JWKS from offline cache
+    char *jwks;
+    rv = keycache_get_cached_jwks("https://offline.test.com", &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+    
+    EXPECT_EQ(demo_scitokens2, jwks_str);
+    
+    // Clean up
+    unlink(temp_file);
+    unsetenv("SCITOKENS_KEYCACHE_FILE");
+}
+
+TEST_F(KeycacheTest, OfflineCacheExpiryTest) {
+    char *err_msg = nullptr;
+    
+    // Create a temporary file for offline cache
+    char temp_file[] = "/tmp/test_offline_expiry_XXXXXX";
+    int fd = mkstemp(temp_file);
+    ASSERT_TRUE(fd != -1);
+    close(fd);
+    unlink(temp_file); // Remove the file so SQLite can create it
+    
+    // Set the environment variable
+    setenv("SCITOKENS_KEYCACHE_FILE", temp_file, 1);
+    
+    // Store JWKS with expiry time in the past (already expired)
+    time_t now = time(nullptr);
+    int64_t expires_at = static_cast<int64_t>(now) - 3600; // 1 hour ago
+    
+    auto rv = keycache_set_jwks_with_expiry("https://expired.test.com", 
+                                            demo_scitokens2.c_str(), 
+                                            expires_at, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    
+    // Retrieve JWKS from offline cache - should get empty keys due to expiry
+    char *jwks;
+    rv = keycache_get_cached_jwks("https://expired.test.com", &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+    
+    EXPECT_EQ(jwks_str, "{\"keys\": []}");
+    
+    // Clean up
+    unlink(temp_file);
+    unsetenv("SCITOKENS_KEYCACHE_FILE");
+}
+
 class IssuerSecurityTest : public ::testing::Test {
   protected:
     void SetUp() override {
