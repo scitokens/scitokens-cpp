@@ -1,4 +1,5 @@
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -65,6 +66,9 @@ namespace scitokens {
 
 namespace internal {
 
+// Forward declaration
+class MonitoringStats;
+
 class SimpleCurlGet {
 
     int m_maxbytes{1048576};
@@ -110,6 +114,52 @@ class SimpleCurlGet {
                              void *userp);
 };
 
+/**
+ * Statistics for monitoring token validation per issuer.
+ */
+struct IssuerStats {
+    std::atomic<uint64_t> successful_validations{0};
+    std::atomic<uint64_t> unsuccessful_validations{0};
+    std::atomic<uint64_t> expired_tokens{0};
+    double total_time_s{0.0}; // Total time in seconds - protected by mutex
+};
+
+/**
+ * Monitoring statistics singleton.
+ * Tracks per-issuer validation statistics and protects against
+ * resource exhaustion from invalid issuers.
+ */
+class MonitoringStats {
+  public:
+    static MonitoringStats &instance();
+
+    void record_validation_success(const std::string &issuer,
+                                   double duration_s);
+    void record_validation_failure(const std::string &issuer,
+                                   double duration_s);
+    void record_expired_token(const std::string &issuer);
+    void record_failed_issuer_lookup(const std::string &issuer);
+
+    std::string get_json() const;
+    void reset();
+
+  private:
+    MonitoringStats() = default;
+    ~MonitoringStats() = default;
+    MonitoringStats(const MonitoringStats &) = delete;
+    MonitoringStats &operator=(const MonitoringStats &) = delete;
+
+    // Limit the number of failed issuer entries to prevent DDoS
+    static constexpr size_t MAX_FAILED_ISSUERS = 100;
+
+    mutable std::mutex m_mutex;
+    std::unordered_map<std::string, IssuerStats> m_issuer_stats;
+    std::unordered_map<std::string, uint64_t> m_failed_issuer_lookups;
+
+    std::string sanitize_issuer_for_json(const std::string &issuer) const;
+    void prune_failed_issuers();
+};
+
 } // namespace internal
 
 class UnsupportedKeyException : public std::runtime_error {
@@ -127,6 +177,18 @@ class JWTVerificationException : public std::runtime_error {
 class CurlException : public std::runtime_error {
   public:
     explicit CurlException(const std::string &msg) : std::runtime_error(msg) {}
+};
+
+class IssuerLookupException : public CurlException {
+  public:
+    explicit IssuerLookupException(const std::string &msg)
+        : CurlException(msg) {}
+};
+
+class TokenExpiredException : public JWTVerificationException {
+  public:
+    explicit TokenExpiredException(const std::string &msg)
+        : JWTVerificationException(msg) {}
 };
 
 class MissingIssuerException : public std::runtime_error {
@@ -226,6 +288,8 @@ class AsyncStatus {
     std::string m_jwt_string;
     std::string m_public_pem;
     std::string m_algorithm;
+    std::chrono::steady_clock::time_point m_start_time;
+    bool m_monitoring_started{false};
 
     struct timeval get_timeout_val(time_t expiry_time) const {
         auto now = time(NULL);
@@ -407,6 +471,9 @@ class Validator {
 
     void set_now(std::chrono::system_clock::time_point now) { m_now = now; }
 
+    // Maximum timeout for select() in microseconds for periodic checks
+    static constexpr long MAX_SELECT_TIMEOUT_US = 50000; // 50ms
+
     std::unique_ptr<AsyncStatus> verify_async(const SciToken &scitoken) {
         const jwt::decoded_jwt<jwt::traits::kazuho_picojson> *jwt_decoded =
             scitoken.m_decoded.get();
@@ -418,24 +485,96 @@ class Validator {
     }
 
     void verify(const SciToken &scitoken, time_t expiry_time) {
-        auto result = verify_async(scitoken);
-        while (!result->m_done) {
-            auto timeout_val = result->get_timeout_val(expiry_time);
-            select(result->get_max_fd() + 1, result->get_read_fd_set(),
-                   result->get_write_fd_set(), result->get_exc_fd_set(),
-                   &timeout_val);
-            if (time(NULL) >= expiry_time) {
-                throw CurlException("Timeout when loading the OIDC metadata.");
+        std::string issuer = "";
+        auto start_time = std::chrono::steady_clock::now();
+
+        try {
+            auto result = verify_async(scitoken);
+
+            // Extract issuer from the result's JWT string after decoding starts
+            const jwt::decoded_jwt<jwt::traits::kazuho_picojson> *jwt_decoded =
+                scitoken.m_decoded.get();
+            if (jwt_decoded && jwt_decoded->has_payload_claim("iss")) {
+                issuer = jwt_decoded->get_issuer();
             }
 
-            result = verify_async_continue(std::move(result));
+            while (!result->m_done) {
+                auto timeout_val = result->get_timeout_val(expiry_time);
+                // Limit select to MAX_SELECT_TIMEOUT_US for periodic checks
+                if (timeout_val.tv_sec > 0 ||
+                    timeout_val.tv_usec > MAX_SELECT_TIMEOUT_US) {
+                    timeout_val.tv_sec = 0;
+                    timeout_val.tv_usec = MAX_SELECT_TIMEOUT_US;
+                }
+
+                select(result->get_max_fd() + 1, result->get_read_fd_set(),
+                       result->get_write_fd_set(), result->get_exc_fd_set(),
+                       &timeout_val);
+
+                if (time(NULL) >= expiry_time) {
+                    throw CurlException(
+                        "Timeout when loading the OIDC metadata.");
+                }
+
+                result = verify_async_continue(std::move(result));
+            }
+
+            // Record successful validation
+            if (!issuer.empty()) {
+                auto end_time = std::chrono::steady_clock::now();
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::duration<double>>(
+                        end_time - start_time);
+                internal::MonitoringStats::instance().record_validation_success(
+                    issuer, duration.count());
+            }
+        } catch (const std::exception &e) {
+            // Record failure if we have an issuer
+            if (!issuer.empty()) {
+                auto end_time = std::chrono::steady_clock::now();
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::duration<double>>(
+                        end_time - start_time);
+                record_validation_error(issuer, e, duration.count());
+            }
+            throw;
         }
     }
 
     void verify(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
-        auto result = verify_async(jwt);
-        while (!result->m_done) {
-            result = verify_async_continue(std::move(result));
+        std::string issuer = "";
+        auto start_time = std::chrono::steady_clock::now();
+
+        try {
+            // Try to extract issuer for monitoring
+            if (jwt.has_payload_claim("iss")) {
+                issuer = jwt.get_issuer();
+            }
+
+            auto result = verify_async(jwt);
+            while (!result->m_done) {
+                result = verify_async_continue(std::move(result));
+            }
+
+            // Record successful validation
+            if (!issuer.empty()) {
+                auto end_time = std::chrono::steady_clock::now();
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::duration<double>>(
+                        end_time - start_time);
+                internal::MonitoringStats::instance().record_validation_success(
+                    issuer, duration.count());
+            }
+        } catch (const std::exception &e) {
+            // Record failure if we have an issuer
+            if (!issuer.empty()) {
+                auto end_time = std::chrono::steady_clock::now();
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::duration<double>>(
+                        end_time - start_time);
+                record_validation_error(issuer, e, duration.count());
+            }
+            throw;
         }
     }
 
@@ -514,6 +653,9 @@ class Validator {
         status->m_jwt_string = jwt.get_token();
         status->m_public_pem = public_pem;
         status->m_algorithm = algorithm;
+        // Start monitoring timing
+        status->m_start_time = std::chrono::steady_clock::now();
+        status->m_monitoring_started = true;
 
         return verify_async_continue(std::move(status));
     }
@@ -542,7 +684,17 @@ class Validator {
 
         const jwt::decoded_jwt<jwt::traits::kazuho_picojson> jwt(
             status->m_jwt_string);
-        verifier.verify(jwt);
+        try {
+            verifier.verify(jwt);
+        } catch (const std::exception &e) {
+            // Check if this is an expiration error from jwt-cpp
+            std::string error_msg = e.what();
+            if (error_msg.find("exp") != std::string::npos ||
+                error_msg.find("expir") != std::string::npos) {
+                throw TokenExpiredException(error_msg);
+            }
+            throw;
+        }
 
         bool must_verify_everything = true;
         if (jwt.has_payload_claim("ver")) {
@@ -677,6 +829,17 @@ class Validator {
                     }
                 }
         }
+
+        // Record successful validation
+        if (status->m_monitoring_started) {
+            auto end_time = std::chrono::steady_clock::now();
+            auto duration =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    end_time - status->m_start_time);
+            internal::MonitoringStats::instance().record_validation_success(
+                status->m_issuer, duration.count());
+        }
+
         std::unique_ptr<AsyncStatus> result(new AsyncStatus());
         result->m_done = true;
         return result;
@@ -800,6 +963,25 @@ class Validator {
             // If anything goes wrong, return a safe fallback
             return "<invalid issuer>";
         }
+    }
+
+    /**
+     * Helper method to record monitoring statistics for validation errors.
+     */
+    void record_validation_error(const std::string &issuer,
+                                 const std::exception &e, double duration_s) {
+        // Check exception type instead of string introspection
+        if (dynamic_cast<const IssuerLookupException *>(&e)) {
+            internal::MonitoringStats::instance().record_failed_issuer_lookup(
+                issuer);
+        }
+
+        if (dynamic_cast<const TokenExpiredException *>(&e)) {
+            internal::MonitoringStats::instance().record_expired_token(issuer);
+        }
+
+        internal::MonitoringStats::instance().record_validation_failure(
+            issuer, duration_s);
     }
 
     bool m_validate_all_claims{true};

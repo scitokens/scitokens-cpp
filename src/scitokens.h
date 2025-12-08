@@ -329,6 +329,27 @@ int scitoken_config_set_str(const char *key, const char *value, char **err_msg);
  */
 int scitoken_config_get_str(const char *key, char **output, char **err_msg);
 
+/**
+ * Get monitoring statistics as a JSON string.
+ * Returns a JSON object containing per-issuer validation statistics including:
+ * - successful_validations: count of successful token validations
+ * - unsuccessful_validations: count of failed token validations
+ * - expired_tokens: count of expired tokens encountered
+ * - total_validation_time_s: total validation time in seconds
+ * - failed_issuer_lookups: count of failed issuer lookups (limited to prevent
+ * DDoS)
+ *
+ * The returned string must be freed by the caller using free().
+ * Returns 0 on success, nonzero on failure.
+ */
+int scitoken_get_monitoring_json(char **json_out, char **err_msg);
+
+/**
+ * Reset all monitoring statistics.
+ * Returns 0 on success, nonzero on failure.
+ */
+int scitoken_reset_monitoring_stats(char **err_msg);
+
 #ifdef __cplusplus
 }
 #endif

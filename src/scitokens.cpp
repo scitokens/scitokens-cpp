@@ -246,10 +246,12 @@ int scitoken_get_expiration(const SciToken token, long long *expiry,
             // Float value - convert to integer (truncate)
             // Float value - convert to integer using std::floor().
             // This ensures expiration is not extended by fractional seconds.
-            result = static_cast<long long>(std::floor(claim_value.get<double>()));
+            result =
+                static_cast<long long>(std::floor(claim_value.get<double>()));
         } else {
             if (err_msg) {
-                *err_msg = strdup("'exp' claim must be a number (integer or float)");
+                *err_msg =
+                    strdup("'exp' claim must be a number (integer or float)");
             }
             return -1;
         }
@@ -1080,9 +1082,9 @@ int scitoken_config_set_str(const char *key, const char *value,
             return -1;
         }
     } else if (_key == "tls.ca_file") {
-       configurer::Configuration::set_tls_ca_file(value ? std::string(value) : "");
-    }
-    else {
+        configurer::Configuration::set_tls_ca_file(value ? std::string(value)
+                                                         : "");
+    } else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
         }
@@ -1109,6 +1111,38 @@ int scitoken_config_get_str(const char *key, char **output, char **err_msg) {
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int scitoken_get_monitoring_json(char **json_out, char **err_msg) {
+    if (!json_out) {
+        if (err_msg) {
+            *err_msg = strdup("JSON output pointer may not be null.");
+        }
+        return -1;
+    }
+    try {
+        std::string json =
+            scitokens::internal::MonitoringStats::instance().get_json();
+        *json_out = strdup(json.c_str());
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int scitoken_reset_monitoring_stats(char **err_msg) {
+    try {
+        scitokens::internal::MonitoringStats::instance().reset();
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
         }
         return -1;
     }
