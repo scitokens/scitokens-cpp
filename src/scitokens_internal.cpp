@@ -51,6 +51,8 @@ std::shared_ptr<std::mutex> get_issuer_mutex(const std::string &issuer) {
     // Prevent resource exhaustion: limit the number of cached mutexes
     if (issuer_mutexes.size() >= MAX_ISSUER_MUTEXES) {
         // Remove mutexes that are no longer in use
+        // Since we hold issuer_mutex_map_lock, no other thread can acquire
+        // a reference to these mutexes, making this check safe
         for (auto iter = issuer_mutexes.begin(); iter != issuer_mutexes.end(); ) {
             if (iter->second.use_count() == 1) {
                 // Only we hold a reference, safe to remove
@@ -60,11 +62,9 @@ std::shared_ptr<std::mutex> get_issuer_mutex(const std::string &issuer) {
             }
         }
         
-        // If still at capacity, clear the oldest entries
-        // Note: In a production system, we might use an LRU cache
-        if (issuer_mutexes.size() >= MAX_ISSUER_MUTEXES) {
-            issuer_mutexes.clear();
-        }
+        // If still at capacity after cleanup, allow creating this new mutex anyway
+        // The limit is a soft limit - we'll exceed it temporarily for active issuers
+        // This is better than either blocking or aggressively clearing the cache
     }
     
     auto mutex_ptr = std::make_shared<std::mutex>();

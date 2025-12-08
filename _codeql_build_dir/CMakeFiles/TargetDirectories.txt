@@ -1,0 +1,12 @@
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/SciTokens.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/scitokens-test.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/scitokens-verify.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/scitokens-test-access.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/scitokens-list-access.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/scitokens-create.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/edit_cache.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/rebuild_cache.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/list_install_components.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/install.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/install/local.dir
+/home/runner/work/scitokens-cpp/scitokens-cpp/_codeql_build_dir/CMakeFiles/install/strip.dir
