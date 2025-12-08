@@ -3,6 +3,7 @@
 #include <memory>
 #include <sstream>
 #include <sys/stat.h>
+#include <unordered_map>
 
 #include <jwt-cpp/base.h>
 #include <jwt-cpp/jwt.h>
@@ -32,6 +33,44 @@ struct CurlRaii {
 CurlRaii myCurl;
 
 std::mutex key_refresh_mutex;
+
+// Per-issuer mutex map for preventing thundering herd on new issuers
+std::mutex issuer_mutex_map_lock;
+std::unordered_map<std::string, std::shared_ptr<std::mutex>> issuer_mutexes;
+constexpr size_t MAX_ISSUER_MUTEXES = 1000;
+
+// Get or create a mutex for a specific issuer
+std::shared_ptr<std::mutex> get_issuer_mutex(const std::string &issuer) {
+    std::lock_guard<std::mutex> guard(issuer_mutex_map_lock);
+    
+    auto it = issuer_mutexes.find(issuer);
+    if (it != issuer_mutexes.end()) {
+        return it->second;
+    }
+    
+    // Prevent resource exhaustion: limit the number of cached mutexes
+    if (issuer_mutexes.size() >= MAX_ISSUER_MUTEXES) {
+        // Remove mutexes that are no longer in use
+        for (auto iter = issuer_mutexes.begin(); iter != issuer_mutexes.end(); ) {
+            if (iter->second.use_count() == 1) {
+                // Only we hold a reference, safe to remove
+                iter = issuer_mutexes.erase(iter);
+            } else {
+                ++iter;
+            }
+        }
+        
+        // If still at capacity, clear the oldest entries
+        // Note: In a production system, we might use an LRU cache
+        if (issuer_mutexes.size() >= MAX_ISSUER_MUTEXES) {
+            issuer_mutexes.clear();
+        }
+    }
+    
+    auto mutex_ptr = std::make_shared<std::mutex>();
+    issuer_mutexes[issuer] = mutex_ptr;
+    return mutex_ptr;
+}
 
 } // namespace
 
@@ -854,16 +893,29 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
             result->m_done = true;
         }
     } else {
-        // No keys in the DB, or they are expired
+        // No keys in the DB, or they are expired, so get them from the web.
         // Record that we had expired keys if the issuer was previously known
-        // (This is tracked by having an entry in issuer stats)
         auto &issuer_stats =
             internal::MonitoringStats::instance().get_issuer_stats(issuer);
         issuer_stats.inc_expired_key();
 
-        // Get keys from the web.
-        result = get_public_keys_from_web(
-            issuer, internal::SimpleCurlGet::default_timeout);
+        // Use per-issuer lock to prevent thundering herd for new issuers
+        auto issuer_mutex = get_issuer_mutex(issuer);
+        std::lock_guard<std::mutex> lock(*issuer_mutex);
+
+        // Check again if keys are now in DB (another thread may have fetched
+        // them)
+        if (get_public_keys_from_db(issuer, now, result->m_keys,
+                                    result->m_next_update)) {
+            // Keys are now available, use them
+            result->m_continue_fetch = false;
+            result->m_do_store = false;
+            result->m_done = true;
+        } else {
+            // Still no keys, fetch them from the web
+            result = get_public_keys_from_web(
+                issuer, internal::SimpleCurlGet::default_timeout);
+        }
     }
     result->m_issuer = issuer;
     result->m_kid = kid;

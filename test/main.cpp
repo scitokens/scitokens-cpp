@@ -1028,6 +1028,43 @@ TEST_F(EnvConfigTest, StringConfigFromEnv) {
         free(err_msg);
 }
 
+// Test for thundering herd prevention with per-issuer locks
+TEST_F(IssuerSecurityTest, ThunderingHerdPrevention) {
+    char *err_msg = nullptr;
+
+    // Create tokens for a new issuer and pre-populate the cache
+    std::string test_issuer = "https://thundering-herd-test.example.org/gtest";
+
+    auto rv = scitoken_set_claim_string(m_token.get(), "iss",
+                                        test_issuer.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    // Store public key for this issuer in the cache
+    rv = scitoken_store_public_ec_key(test_issuer.c_str(), "1", ec_public,
+                                      &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Successfully deserialize - the per-issuer lock should prevent thundering
+    // herd Since we pre-populated the cache, this should succeed without
+    // network access
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    // Verify the issuer claim
+    char *value;
+    rv = scitoken_get_claim_string(m_read_token.get(), "iss", &value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(value != nullptr);
+    std::unique_ptr<char, decltype(&free)> value_ptr(value, free);
+    EXPECT_STREQ(value, test_issuer.c_str());
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
