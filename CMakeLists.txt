@@ -75,6 +75,10 @@ target_link_libraries(scitokens-list-access SciTokens)
 add_executable(scitokens-create src/create.cpp)
 target_link_libraries(scitokens-create SciTokens)
 
+add_executable(scitokens-generate-jwks src/generate_jwks.cpp)
+target_include_directories(scitokens-generate-jwks PRIVATE ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS})
+target_link_libraries(scitokens-generate-jwks ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
+
 get_directory_property(TARGETS BUILDSYSTEM_TARGETS)
 install(
   TARGETS ${TARGETS} 
