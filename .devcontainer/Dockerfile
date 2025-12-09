@@ -47,12 +47,10 @@ RUN apt-get update \
 
 # Create a non-root user to use
 ARG USERNAME=vscode
-ARG USER_UID=1000
-ARG USER_GID=$USER_UID
 
-# Handle case where GID may already exist
-RUN if ! getent group $USER_GID; then groupadd --gid $USER_GID $USERNAME; fi \
-    && if ! getent passwd $USER_UID; then useradd --uid $USER_UID --gid $USER_GID -m $USERNAME; fi \
+# Create user and group without forcing specific UID/GID
+RUN groupadd $USERNAME \
+    && useradd -g $USERNAME -m $USERNAME \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
 
