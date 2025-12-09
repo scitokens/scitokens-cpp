@@ -204,9 +204,9 @@ int main(int argc, char *argv[]) {
     }
 
     OSSL_PARAM params[2];
-    char curve_name[] = "prime256v1";
-    params[0] = OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME,
-                                                 curve_name, 0);
+    const char curve_name[] = "prime256v1";
+    params[0] = OSSL_PARAM_construct_utf8_string(
+        OSSL_PKEY_PARAM_GROUP_NAME, const_cast<char *>(curve_name), 0);
     params[1] = OSSL_PARAM_construct_end();
 
     if (EVP_PKEY_CTX_set_params(ctx.get(), params) <= 0) {
@@ -218,6 +218,9 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Failed to generate EC key\n");
         return 1;
     }
+
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_ptr(
+        pkey, EVP_PKEY_free);
 #else
     std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> ec_key(
         EC_KEY_new_by_curve_name(EC_NAME), EC_KEY_free);
@@ -232,21 +235,24 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_temp(
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_ptr(
         EVP_PKEY_new(), EVP_PKEY_free);
-    if (!pkey_temp || EVP_PKEY_assign_EC_KEY(pkey_temp.get(), ec_key.release()) != 1) {
+    if (!pkey_ptr) {
         fprintf(stderr, "Failed to create EVP_PKEY\n");
         return 1;
     }
-    pkey = pkey_temp.release();
-#endif
 
-    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_ptr(
-        pkey, EVP_PKEY_free);
+    if (EVP_PKEY_assign_EC_KEY(pkey_ptr.get(), ec_key.get()) != 1) {
+        fprintf(stderr, "Failed to assign EC key to EVP_PKEY\n");
+        return 1;
+    }
+    // Successfully assigned; release ownership from ec_key
+    ec_key.release();
+#endif
 
     // Extract EC coordinates for JWKS
     std::string x_coord, y_coord;
-    if (!extract_ec_coordinates(pkey, x_coord, y_coord)) {
+    if (!extract_ec_coordinates(pkey_ptr.get(), x_coord, y_coord)) {
         fprintf(stderr, "Failed to extract EC coordinates\n");
         return 1;
     }
@@ -286,7 +292,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (PEM_write_bio_PUBKEY(pub_bio.get(), pkey) != 1) {
+    if (PEM_write_bio_PUBKEY(pub_bio.get(), pkey_ptr.get()) != 1) {
         fprintf(stderr, "Failed to write public key\n");
         return 1;
     }
@@ -303,7 +309,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (PEM_write_bio_PrivateKey(priv_bio.get(), pkey, nullptr, nullptr, 0,
+    if (PEM_write_bio_PrivateKey(priv_bio.get(), pkey_ptr.get(), nullptr, nullptr, 0,
                                  nullptr, nullptr) != 1) {
         fprintf(stderr, "Failed to write private key\n");
         return 1;
