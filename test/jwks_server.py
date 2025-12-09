@@ -17,6 +17,9 @@ from pathlib import Path
 
 class JWKSHandler(BaseHTTPRequestHandler):
     """HTTP handler for JWKS and discovery endpoints."""
+    
+    # Use HTTP/1.1 for proper connection handling
+    protocol_version = 'HTTP/1.1'
 
     def log_message(self, format, *args):
         """Override to log to file instead of stderr."""
@@ -46,20 +49,24 @@ class JWKSHandler(BaseHTTPRequestHandler):
             "authorization_endpoint": f"{issuer}/authorize",
         }
         
+        content = json.dumps(discovery).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(content)))
         self.end_headers()
-        self.wfile.write(json.dumps(discovery).encode())
+        self.wfile.write(content)
 
     def serve_jwks(self):
         """Serve JWKS document."""
         with open(self.server.jwks_file, 'r') as f:
             jwks_content = f.read()
         
+        content = jwks_content.encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(content)))
         self.end_headers()
-        self.wfile.write(jwks_content.encode())
+        self.wfile.write(content)
 
 
 def main():
