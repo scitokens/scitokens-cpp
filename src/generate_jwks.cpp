@@ -147,15 +147,15 @@ bool extract_ec_coordinates(EVP_PKEY *pkey, std::string &x_coord,
     x_coord = base64url_encode(pub_key_buf.get() + 1, 32);
     y_coord = base64url_encode(pub_key_buf.get() + 33, 32);
 #else
-    EC_KEY *ec_key = EVP_PKEY_get1_EC_KEY(pkey);
+    std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> ec_key(
+        EVP_PKEY_get1_EC_KEY(pkey), EC_KEY_free);
     if (!ec_key) {
         return false;
     }
 
-    const EC_POINT *pub_key = EC_KEY_get0_public_key(ec_key);
-    const EC_GROUP *group = EC_KEY_get0_group(ec_key);
+    const EC_POINT *pub_key = EC_KEY_get0_public_key(ec_key.get());
+    const EC_GROUP *group = EC_KEY_get0_group(ec_key.get());
     if (!pub_key || !group) {
-        EC_KEY_free(ec_key);
         return false;
     }
 
@@ -164,7 +164,6 @@ bool extract_ec_coordinates(EVP_PKEY *pkey, std::string &x_coord,
 
     if (!EC_POINT_get_affine_coordinates_GFp(group, pub_key, x.get(), y.get(),
                                              nullptr)) {
-        EC_KEY_free(ec_key);
         return false;
     }
 
@@ -180,8 +179,6 @@ bool extract_ec_coordinates(EVP_PKEY *pkey, std::string &x_coord,
 
     x_coord = base64url_encode(x_buf, 32);
     y_coord = base64url_encode(y_buf, 32);
-
-    EC_KEY_free(ec_key);
 #endif
 
     return true;
@@ -207,9 +204,9 @@ int main(int argc, char *argv[]) {
     }
 
     OSSL_PARAM params[2];
-    const char curve_name[] = "prime256v1";
+    char curve_name[] = "prime256v1";
     params[0] = OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME,
-                                                 const_cast<char *>(curve_name), 0);
+                                                 curve_name, 0);
     params[1] = OSSL_PARAM_construct_end();
 
     if (EVP_PKEY_CTX_set_params(ctx.get(), params) <= 0) {
@@ -235,14 +232,13 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    pkey = EVP_PKEY_new();
-    if (!pkey || EVP_PKEY_assign_EC_KEY(pkey, ec_key.release()) != 1) {
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_temp(
+        EVP_PKEY_new(), EVP_PKEY_free);
+    if (!pkey_temp || EVP_PKEY_assign_EC_KEY(pkey_temp.get(), ec_key.release()) != 1) {
         fprintf(stderr, "Failed to create EVP_PKEY\n");
-        if (pkey) {
-            EVP_PKEY_free(pkey);
-        }
         return 1;
     }
+    pkey = pkey_temp.release();
 #endif
 
     std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_ptr(
