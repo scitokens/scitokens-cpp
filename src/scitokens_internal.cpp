@@ -42,18 +42,19 @@ constexpr size_t MAX_ISSUER_MUTEXES = 1000;
 // Get or create a mutex for a specific issuer
 std::shared_ptr<std::mutex> get_issuer_mutex(const std::string &issuer) {
     std::lock_guard<std::mutex> guard(issuer_mutex_map_lock);
-    
+
     auto it = issuer_mutexes.find(issuer);
     if (it != issuer_mutexes.end()) {
         return it->second;
     }
-    
+
     // Prevent resource exhaustion: limit the number of cached mutexes
     if (issuer_mutexes.size() >= MAX_ISSUER_MUTEXES) {
         // Remove mutexes that are no longer in use
         // Since we hold issuer_mutex_map_lock, no other thread can acquire
         // a reference to these mutexes, making this check safe
-        for (auto iter = issuer_mutexes.begin(); iter != issuer_mutexes.end(); ) {
+        for (auto iter = issuer_mutexes.begin();
+             iter != issuer_mutexes.end();) {
             if (iter->second.use_count() == 1) {
                 // Only we hold a reference, safe to remove
                 iter = issuer_mutexes.erase(iter);
@@ -61,13 +62,14 @@ std::shared_ptr<std::mutex> get_issuer_mutex(const std::string &issuer) {
                 ++iter;
             }
         }
-        
+
         // If still at capacity after cleanup, fail rather than unbounded growth
         if (issuer_mutexes.size() >= MAX_ISSUER_MUTEXES) {
-            throw std::runtime_error("Too many concurrent issuers - resource exhaustion prevented");
+            throw std::runtime_error(
+                "Too many concurrent issuers - resource exhaustion prevented");
         }
     }
-    
+
     auto mutex_ptr = std::make_shared<std::mutex>();
     issuer_mutexes[issuer] = mutex_ptr;
     return mutex_ptr;
