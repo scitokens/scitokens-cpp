@@ -46,11 +46,11 @@ namespace internal {
 // BackgroundRefreshManager implementation
 void BackgroundRefreshManager::start() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_running) {
+    if (m_running.load(std::memory_order_acquire)) {
         return; // Already running
     }
-    m_shutdown = false;
-    m_running = true;
+    m_shutdown.store(false, std::memory_order_release);
+    m_running.store(true, std::memory_order_release);
     m_thread = std::make_unique<std::thread>(
         &BackgroundRefreshManager::refresh_loop, this);
 }
@@ -60,12 +60,12 @@ void BackgroundRefreshManager::stop() {
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        if (!m_running) {
+        if (!m_running.load(std::memory_order_acquire)) {
             return; // Not running
         }
 
-        m_shutdown = true;
-        m_running = false;
+        m_shutdown.store(true, std::memory_order_release);
+        m_running.store(false, std::memory_order_release);
         thread_to_join = std::move(m_thread);
     }
 
@@ -77,18 +77,19 @@ void BackgroundRefreshManager::stop() {
 }
 
 void BackgroundRefreshManager::refresh_loop() {
-    while (!m_shutdown) {
+    while (!m_shutdown.load(std::memory_order_acquire)) {
         auto interval = configurer::Configuration::get_refresh_interval();
         auto threshold = configurer::Configuration::get_refresh_threshold();
 
         // Wait for the interval or until shutdown
         {
             std::unique_lock<std::mutex> lock(m_mutex);
-            m_cv.wait_for(lock, std::chrono::milliseconds(interval),
-                          [this]() { return m_shutdown.load(); });
+            m_cv.wait_for(lock, std::chrono::milliseconds(interval), [this]() {
+                return m_shutdown.load(std::memory_order_acquire);
+            });
         }
 
-        if (m_shutdown) {
+        if (m_shutdown.load(std::memory_order_acquire)) {
             break;
         }
 
@@ -97,7 +98,7 @@ void BackgroundRefreshManager::refresh_loop() {
         auto issuers = scitokens::Validator::get_all_issuers_from_db(now);
 
         for (const auto &issuer_pair : issuers) {
-            if (m_shutdown) {
+            if (m_shutdown.load(std::memory_order_acquire)) {
                 break;
             }
 

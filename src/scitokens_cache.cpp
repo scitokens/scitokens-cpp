@@ -353,16 +353,13 @@ scitokens::Validator::get_all_issuers_from_db(int64_t now) {
 
         auto top_obj = json_obj.get<picojson::object>();
 
-        // Check if expired
+        // Get expiry time
         auto expires_iter = top_obj.find("expires");
         if (expires_iter == top_obj.end() ||
             !expires_iter->second.is<int64_t>()) {
             continue;
         }
         auto expiry = expires_iter->second.get<int64_t>();
-        if (now > expiry) {
-            continue; // Skip expired entries
-        }
 
         // Get next_update time
         auto next_update_iter = top_obj.find("next_update");
@@ -373,6 +370,13 @@ scitokens::Validator::get_all_issuers_from_db(int64_t now) {
             next_update = expiry - 4 * 3600;
         } else {
             next_update = next_update_iter->second.get<int64_t>();
+        }
+
+        // Include expired entries - they should be refreshed after a long
+        // downtime If expired, set next_update to now so they get refreshed
+        // immediately
+        if (now > expiry) {
+            next_update = now;
         }
 
         result.push_back({issuer, next_update});
