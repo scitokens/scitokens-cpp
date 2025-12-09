@@ -1,15 +1,20 @@
 #include <cstdio>
 #include <cstring>
+#include <fcntl.h>
 #include <fstream>
 #include <getopt.h>
+#include <iomanip>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <openssl/bn.h>
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
+#include <openssl/sha.h>
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/core_names.h>
@@ -30,7 +35,7 @@ const char usage[] =
     " Options\n"
     "    -h | --help                    Display usage\n"
     "    -k | --kid        <key_id>     Key ID for the JWKS (default: "
-    "\"key-es256\")\n"
+    "generated from public key fingerprint)\n"
     "    -j | --jwks    <jwks_file>     Output file for JWKS (default: "
     "\"jwks.json\")\n"
     "    -p | --private <private_file>  Output file for private key PEM "
@@ -48,7 +53,7 @@ const struct option long_options[] = {{"help", no_argument, NULL, 'h'},
 
 const char short_options[] = "hk:j:p:P:";
 
-std::string g_kid = "key-es256";
+std::string g_kid = ""; // Empty by default, will be generated from fingerprint
 std::string g_jwks_file = "jwks.json";
 std::string g_private_file = "private.pem";
 std::string g_public_file = "public.pem";
@@ -184,6 +189,40 @@ bool extract_ec_coordinates(EVP_PKEY *pkey, std::string &x_coord,
     return true;
 }
 
+// Generate a key ID from the public key fingerprint
+std::string generate_key_id(EVP_PKEY *pkey) {
+    // Get the public key in DER format
+    std::unique_ptr<BIO, decltype(&BIO_free_all)> bio(BIO_new(BIO_s_mem()),
+                                                      BIO_free_all);
+    if (!bio) {
+        return "";
+    }
+
+    if (i2d_PUBKEY_bio(bio.get(), pkey) != 1) {
+        return "";
+    }
+
+    // Get the DER data
+    char *der_data = nullptr;
+    long der_len = BIO_get_mem_data(bio.get(), &der_data);
+    if (der_len <= 0 || !der_data) {
+        return "";
+    }
+
+    // Compute SHA256 hash
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<const unsigned char *>(der_data), der_len, hash);
+
+    // Convert first 4 bytes to hex (8 characters)
+    std::ostringstream oss;
+    for (int i = 0; i < 4; i++) {
+        oss << std::hex << std::setfill('0') << std::setw(2)
+            << static_cast<int>(hash[i]);
+    }
+
+    return oss.str();
+}
+
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -257,6 +296,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // Generate key ID from fingerprint if not specified
+    if (g_kid.empty()) {
+        g_kid = generate_key_id(pkey_ptr.get());
+        if (g_kid.empty()) {
+            fprintf(stderr, "Failed to generate key ID from fingerprint\n");
+            return 1;
+        }
+    }
+
     // Write JWKS file
     std::ofstream jwks_out(g_jwks_file);
     if (!jwks_out) {
@@ -296,7 +344,16 @@ int main(int argc, char *argv[]) {
 
     printf("Public key written to: %s\n", g_public_file.c_str());
 
-    // Write private key PEM
+    // Write private key PEM with secure permissions (0600)
+    // First, create the file with restrictive permissions
+    int fd = open(g_private_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+        fprintf(stderr, "Failed to create %s with secure permissions\n",
+                g_private_file.c_str());
+        return 1;
+    }
+    close(fd);
+
     std::unique_ptr<BIO, decltype(&BIO_free_all)> priv_bio(
         BIO_new_file(g_private_file.c_str(), "w"), BIO_free_all);
     if (!priv_bio) {
