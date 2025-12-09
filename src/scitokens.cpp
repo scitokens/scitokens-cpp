@@ -51,8 +51,10 @@ int configurer::Configuration::get_monitoring_file_interval() {
 
 // Background refresh config
 std::atomic_bool configurer::Configuration::m_background_refresh_enabled{false};
-std::atomic_int configurer::Configuration::m_refresh_interval{60000};     // 60 seconds
-std::atomic_int configurer::Configuration::m_refresh_threshold{600000};   // 10 minutes
+std::atomic_int configurer::Configuration::m_refresh_interval{
+    60000}; // 60 seconds
+std::atomic_int configurer::Configuration::m_refresh_threshold{
+    600000}; // 10 minutes
 
 SciTokenKey scitoken_key_create(const char *key_id, const char *alg,
                                 const char *public_contents,
@@ -1029,11 +1031,13 @@ int keycache_set_background_refresh(int enabled, char **err_msg) {
     try {
         bool enable = (enabled != 0);
         configurer::Configuration::set_background_refresh_enabled(enable);
-        
+
         if (enable) {
-            scitokens::internal::BackgroundRefreshManager::get_instance().start();
+            scitokens::internal::BackgroundRefreshManager::get_instance()
+                .start();
         } else {
-            scitokens::internal::BackgroundRefreshManager::get_instance().stop();
+            scitokens::internal::BackgroundRefreshManager::get_instance()
+                .stop();
         }
     } catch (std::exception &exc) {
         if (err_msg) {

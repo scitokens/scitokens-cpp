@@ -7,9 +7,9 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <thread>
 #include <curl/curl.h>
 #include <jwt-cpp/jwt.h>
+#include <thread>
 #include <uuid/uuid.h>
 
 #if defined(__GNUC__)
@@ -88,8 +88,8 @@ class Configuration {
     static std::atomic<bool> m_monitoring_file_configured; // Fast-path flag
     static std::atomic_int m_monitoring_file_interval; // In seconds, default 60
     static std::atomic_bool m_background_refresh_enabled;
-    static std::atomic_int m_refresh_interval;    // N milliseconds
-    static std::atomic_int m_refresh_threshold;   // M milliseconds
+    static std::atomic_int m_refresh_interval;  // N milliseconds
+    static std::atomic_int m_refresh_threshold; // M milliseconds
     // static bool check_dir(const std::string dir_path);
     static std::pair<bool, std::string>
     mkdir_and_parents_if_needed(const std::string dir_path);
@@ -116,24 +116,18 @@ class BackgroundRefreshManager {
         return instance;
     }
 
-    // Start the background refresh thread
+    // Start the background refresh thread (can be called multiple times)
     void start();
 
-    // Stop the background refresh thread
+    // Stop the background refresh thread (can be called multiple times)
     void stop();
-
-    // Add an issuer to the list of issuers to monitor
-    void add_issuer(const std::string &issuer);
-
-    // Get all known issuers
-    std::vector<std::string> get_issuers();
 
   private:
     BackgroundRefreshManager() = default;
     ~BackgroundRefreshManager() { stop(); }
     BackgroundRefreshManager(const BackgroundRefreshManager &) = delete;
-    BackgroundRefreshManager &operator=(const BackgroundRefreshManager &) =
-        delete;
+    BackgroundRefreshManager &
+    operator=(const BackgroundRefreshManager &) = delete;
 
     void refresh_loop();
 
@@ -142,8 +136,6 @@ class BackgroundRefreshManager {
     std::unique_ptr<std::thread> m_thread;
     std::atomic_bool m_shutdown{false};
     std::atomic_bool m_running{false};
-    std::once_flag m_start_once;
-    std::unordered_map<std::string, bool> m_issuers;
 };
 
 class SimpleCurlGet {
@@ -836,10 +828,12 @@ class Validator {
 
     std::unique_ptr<AsyncStatus>
     verify_async(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
-        // Start background refresh thread if configured (using once_flag to ensure it only happens once)
-        if (configurer::Configuration::get_background_refresh_enabled()) {
-            internal::BackgroundRefreshManager::get_instance().start();
-        }
+        // Start background refresh thread if configured on first verification
+        std::call_once(m_background_refresh_once, []() {
+            if (configurer::Configuration::get_background_refresh_enabled()) {
+                internal::BackgroundRefreshManager::get_instance().start();
+            }
+        });
 
         // If token has a typ header claim (RFC8725 Section 3.11), trust that in
         // COMPAT mode.
@@ -1187,6 +1181,14 @@ class Validator {
      */
     static std::string get_jwks(const std::string &issuer);
 
+    /**
+     * Get all issuers from the database along with their next_update times.
+     * Returns a vector of pairs (issuer, next_update).
+     * Only returns non-expired entries.
+     */
+    static std::vector<std::pair<std::string, int64_t>>
+    get_all_issuers_from_db(int64_t now);
+
   private:
     static std::unique_ptr<AsyncStatus>
     get_public_key_pem(const std::string &issuer, const std::string &kid,
@@ -1257,6 +1259,9 @@ class Validator {
 
     std::vector<std::string> m_critical_claims;
     std::vector<std::string> m_allowed_issuers;
+
+    // Once flag for starting background refresh on first verification
+    static std::once_flag m_background_refresh_once;
 };
 
 class Enforcer {

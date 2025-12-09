@@ -38,44 +38,42 @@ std::mutex key_refresh_mutex;
 
 namespace scitokens {
 
+// Define the static once_flag for Validator
+std::once_flag Validator::m_background_refresh_once;
+
 namespace internal {
 
 // BackgroundRefreshManager implementation
 void BackgroundRefreshManager::start() {
-    // call_once ensures this block runs exactly once, even if called from multiple threads
-    std::call_once(m_start_once, [this]() {
-        m_shutdown = false;
-        m_running = true;
-        m_thread = std::make_unique<std::thread>(&BackgroundRefreshManager::refresh_loop, this);
-    });
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_running) {
+        return; // Already running
+    }
+    m_shutdown = false;
+    m_running = true;
+    m_thread = std::make_unique<std::thread>(
+        &BackgroundRefreshManager::refresh_loop, this);
 }
 
 void BackgroundRefreshManager::stop() {
-    if (!m_running) {
-        return;  // Not running
+    std::unique_ptr<std::thread> thread_to_join;
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_running) {
+            return; // Not running
+        }
+
+        m_shutdown = true;
+        m_running = false;
+        thread_to_join = std::move(m_thread);
     }
 
-    m_shutdown = true;
     m_cv.notify_all();
 
-    if (m_thread && m_thread->joinable()) {
-        m_thread->join();
+    if (thread_to_join && thread_to_join->joinable()) {
+        thread_to_join->join();
     }
-    m_running = false;
-}
-
-void BackgroundRefreshManager::add_issuer(const std::string &issuer) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_issuers[issuer] = true;
-}
-
-std::vector<std::string> BackgroundRefreshManager::get_issuers() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    std::vector<std::string> result;
-    for (const auto &pair : m_issuers) {
-        result.push_back(pair.first);
-    }
-    return result;
 }
 
 void BackgroundRefreshManager::refresh_loop() {
@@ -94,35 +92,33 @@ void BackgroundRefreshManager::refresh_loop() {
             break;
         }
 
-        // Get list of issuers to check
-        auto issuers = get_issuers();
+        // Get list of issuers from the database
         auto now = std::time(NULL);
+        auto issuers = scitokens::Validator::get_all_issuers_from_db(now);
 
-        for (const auto &issuer : issuers) {
+        for (const auto &issuer_pair : issuers) {
             if (m_shutdown) {
                 break;
             }
 
-            // Check if this issuer needs refresh
-            picojson::value keys;
-            int64_t next_update;
-            if (scitokens::Validator::get_public_keys_from_db(issuer, now, keys, next_update)) {
-                // Calculate time until next_update in milliseconds
-                int64_t time_until_update = (next_update - now) * 1000;
+            const auto &issuer = issuer_pair.first;
+            const auto &next_update = issuer_pair.second;
 
-                // If next update is within threshold, try to refresh
-                if (time_until_update <= threshold) {
-                    try {
-                        // Perform refresh (this will use the refresh_jwks method)
-                        scitokens::Validator::refresh_jwks(issuer);
-                    } catch (std::exception &) {
-                        // Silently ignore errors in background refresh to avoid
-                        // disrupting the application. Background refresh is a best-effort
-                        // optimization. If it fails, the next token verification will
-                        // trigger a foreground refresh as usual.
-                        // TODO: In future work, track statistics (success/failure counts)
-                        // to monitor refresh health.
-                    }
+            // Calculate time until next_update in milliseconds
+            int64_t time_until_update = (next_update - now) * 1000;
+
+            // If next update is within threshold, try to refresh
+            if (time_until_update <= threshold) {
+                try {
+                    // Perform refresh (this will use the refresh_jwks method)
+                    scitokens::Validator::refresh_jwks(issuer);
+                } catch (std::exception &) {
+                    // Silently ignore errors in background refresh to avoid
+                    // disrupting the application. Background refresh is a
+                    // best-effort optimization. If it fails, the next token
+                    // verification will trigger a foreground refresh as usual.
+                    // TODO: In future work, track statistics (success/failure
+                    // counts) to monitor refresh health.
                 }
             }
         }
@@ -957,11 +953,6 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
     }
     result->m_issuer = issuer;
     result->m_kid = kid;
-
-    // Track this issuer for background refresh if enabled
-    if (configurer::Configuration::get_background_refresh_enabled()) {
-        internal::BackgroundRefreshManager::get_instance().add_issuer(issuer);
-    }
 
     // Always call the continue because it formats the public_pem and algorithm
     return get_public_key_pem_continue(std::move(result), public_pem,
