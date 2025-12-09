@@ -95,6 +95,10 @@ echo "Signing keys and JWKS created"
 ##########################
 echo "Starting JWKS web server..."
 
+# Clean up old server ready file to avoid stale data
+READY_FILE="$TEST_DIR/server_ready"
+rm -f "$READY_FILE"
+
 # Start server in background, detached from terminal
 python3 "$SOURCE_DIR/test/jwks_server.py" \
   --jwks "$RUNDIR/jwks.json" \
@@ -108,14 +112,13 @@ SERVER_PID=$!
 echo "Server PID: $SERVER_PID"
 
 # Wait for server to be ready
-READY_FILE="$TEST_DIR/server_ready"
-TIMEOUT=30
+TIMEOUT=10
 ELAPSED=0
 
 while [ ! -f "$READY_FILE" ]; do
-  sleep 0.5
+  sleep 0.05
   ELAPSED=$((ELAPSED + 1))
-  if [ $ELAPSED -ge $((TIMEOUT * 2)) ]; then
+  if [ $ELAPSED -ge $((TIMEOUT * 20)) ]; then
     echo "Timeout waiting for server to start"
     kill $SERVER_PID 2>/dev/null || true
     exit 1

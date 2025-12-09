@@ -43,21 +43,18 @@ fi
 kill "$SERVER_PID" 2>/dev/null || true
 
 # Wait for server to stop (with timeout)
-TIMEOUT=10
+TIMEOUT=5
 ELAPSED=0
 while kill -0 "$SERVER_PID" 2>/dev/null; do
-  sleep 0.5
+  sleep 0.1
   ELAPSED=$((ELAPSED + 1))
-  if [ $ELAPSED -ge $((TIMEOUT * 2)) ]; then
+  if [ $ELAPSED -ge $((TIMEOUT * 10)) ]; then
     echo "Timeout waiting for server to stop, sending SIGKILL"
     kill -9 "$SERVER_PID" 2>/dev/null || true
-    sleep 1
+    sleep 0.1
     break
   fi
 done
-
-# Give it one more second after SIGKILL
-sleep 1
 
 # Verify server is stopped (best effort - don't fail if already gone)
 if kill -0 "$SERVER_PID" 2>/dev/null; then

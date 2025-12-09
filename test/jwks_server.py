@@ -114,11 +114,15 @@ def main():
     print(f"Server PID: {os.getpid()}", flush=True)
     print(f"Server ready file: {ready_file}", flush=True)
     
-    # Handle shutdown gracefully
+    # Handle shutdown gracefully - set a flag that will be checked
+    shutdown_requested = [False]
+    
     def signal_handler(signum, frame):
         print("Shutting down server...", flush=True)
-        server.shutdown()
-        sys.exit(0)
+        shutdown_requested[0] = True
+        # Shutdown needs to be called from a different thread or we need to exit
+        # Using os._exit to immediately terminate
+        os._exit(0)
     
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
