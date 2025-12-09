@@ -39,13 +39,12 @@ const char usage[] =
     "(default: \"public.pem\")\n"
     "\n";
 
-const struct option long_options[] = {
-    {"help", no_argument, NULL, 'h'},
-    {"kid", required_argument, NULL, 'k'},
-    {"jwks", required_argument, NULL, 'j'},
-    {"private", required_argument, NULL, 'p'},
-    {"public", required_argument, NULL, 'P'},
-    {0, 0, 0, 0}};
+const struct option long_options[] = {{"help", no_argument, NULL, 'h'},
+                                      {"kid", required_argument, NULL, 'k'},
+                                      {"jwks", required_argument, NULL, 'j'},
+                                      {"private", required_argument, NULL, 'p'},
+                                      {"public", required_argument, NULL, 'P'},
+                                      {0, 0, 0, 0}};
 
 const char short_options[] = "hk:j:p:P:";
 
@@ -126,12 +125,13 @@ bool extract_ec_coordinates(EVP_PKEY *pkey, std::string &x_coord,
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
     size_t pub_key_len = 0;
 
-    if (EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY,
-                                        nullptr, 0, &pub_key_len) != 1) {
+    if (EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY, nullptr,
+                                        0, &pub_key_len) != 1) {
         return false;
     }
 
-    std::unique_ptr<unsigned char[]> pub_key_buf(new unsigned char[pub_key_len]);
+    std::unique_ptr<unsigned char[]> pub_key_buf(
+        new unsigned char[pub_key_len]);
 
     if (EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY,
                                         pub_key_buf.get(), pub_key_len,
@@ -219,8 +219,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_ptr(
-        pkey, EVP_PKEY_free);
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_ptr(pkey,
+                                                                 EVP_PKEY_free);
 #else
     std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> ec_key(
         EC_KEY_new_by_curve_name(EC_NAME), EC_KEY_free);
@@ -235,8 +235,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_ptr(
-        EVP_PKEY_new(), EVP_PKEY_free);
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey_ptr(EVP_PKEY_new(),
+                                                                 EVP_PKEY_free);
     if (!pkey_ptr) {
         fprintf(stderr, "Failed to create EVP_PKEY\n");
         return 1;
@@ -260,8 +260,7 @@ int main(int argc, char *argv[]) {
     // Write JWKS file
     std::ofstream jwks_out(g_jwks_file);
     if (!jwks_out) {
-        fprintf(stderr, "Failed to open %s for writing\n",
-                g_jwks_file.c_str());
+        fprintf(stderr, "Failed to open %s for writing\n", g_jwks_file.c_str());
         return 1;
     }
 
@@ -282,9 +281,8 @@ int main(int argc, char *argv[]) {
     printf("JWKS written to: %s\n", g_jwks_file.c_str());
 
     // Write public key PEM
-    std::unique_ptr<BIO, decltype(&BIO_free_all)> pub_bio(BIO_new_file(
-                                                               g_public_file.c_str(), "w"),
-                                                           BIO_free_all);
+    std::unique_ptr<BIO, decltype(&BIO_free_all)> pub_bio(
+        BIO_new_file(g_public_file.c_str(), "w"), BIO_free_all);
     if (!pub_bio) {
         fprintf(stderr, "Failed to open %s for writing\n",
                 g_public_file.c_str());
@@ -299,17 +297,16 @@ int main(int argc, char *argv[]) {
     printf("Public key written to: %s\n", g_public_file.c_str());
 
     // Write private key PEM
-    std::unique_ptr<BIO, decltype(&BIO_free_all)> priv_bio(BIO_new_file(
-                                                                g_private_file.c_str(), "w"),
-                                                            BIO_free_all);
+    std::unique_ptr<BIO, decltype(&BIO_free_all)> priv_bio(
+        BIO_new_file(g_private_file.c_str(), "w"), BIO_free_all);
     if (!priv_bio) {
         fprintf(stderr, "Failed to open %s for writing\n",
                 g_private_file.c_str());
         return 1;
     }
 
-    if (PEM_write_bio_PrivateKey(priv_bio.get(), pkey_ptr.get(), nullptr, nullptr, 0,
-                                 nullptr, nullptr) != 1) {
+    if (PEM_write_bio_PrivateKey(priv_bio.get(), pkey_ptr.get(), nullptr,
+                                 nullptr, 0, nullptr, nullptr) != 1) {
         fprintf(stderr, "Failed to write private key\n");
         return 1;
     }
