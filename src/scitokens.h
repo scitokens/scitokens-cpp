@@ -291,6 +291,25 @@ int keycache_get_cached_jwks(const char *issuer, char **jwks, char **err_msg);
 int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
 
 /**
+ * Enable or disable the background refresh thread for JWKS.
+ * - When enabled, a background thread will periodically check if any known
+ *   issuers need their JWKS refreshed based on the configured refresh interval
+ *   and threshold.
+ * - If enabled=1 and the thread is not running, it will be started.
+ * - If enabled=0 and the thread is running, it will be stopped gracefully.
+ * - Returns 0 on success, nonzero on failure.
+ */
+int keycache_set_background_refresh(int enabled, char **err_msg);
+
+/**
+ * Stop the background refresh thread if it is running.
+ * - This is a convenience function equivalent to
+ *   keycache_set_background_refresh(0, err_msg).
+ * - Returns 0 on success, nonzero on failure.
+ */
+int keycache_stop_background_refresh(char **err_msg);
+
+/**
  * APIs for managing scitokens configuration parameters.
  */
 

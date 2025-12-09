@@ -39,6 +39,94 @@ namespace scitokens {
 
 namespace internal {
 
+// BackgroundRefreshManager implementation
+void BackgroundRefreshManager::start() {
+    if (m_running) {
+        return;  // Already running
+    }
+
+    std::call_once(m_start_once, [this]() {
+        m_shutdown = false;
+        m_running = true;
+        m_thread = std::make_unique<std::thread>(&BackgroundRefreshManager::refresh_loop, this);
+    });
+}
+
+void BackgroundRefreshManager::stop() {
+    if (!m_running) {
+        return;  // Not running
+    }
+
+    m_shutdown = true;
+    m_cv.notify_all();
+
+    if (m_thread && m_thread->joinable()) {
+        m_thread->join();
+    }
+    m_running = false;
+}
+
+void BackgroundRefreshManager::add_issuer(const std::string &issuer) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_issuers[issuer] = true;
+}
+
+std::vector<std::string> BackgroundRefreshManager::get_issuers() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::string> result;
+    for (const auto &pair : m_issuers) {
+        result.push_back(pair.first);
+    }
+    return result;
+}
+
+void BackgroundRefreshManager::refresh_loop() {
+    while (!m_shutdown) {
+        auto interval = configurer::Configuration::get_refresh_interval();
+        auto threshold = configurer::Configuration::get_refresh_threshold();
+
+        // Wait for the interval or until shutdown
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_cv.wait_for(lock, std::chrono::milliseconds(interval),
+                          [this]() { return m_shutdown.load(); });
+        }
+
+        if (m_shutdown) {
+            break;
+        }
+
+        // Get list of issuers to check
+        auto issuers = get_issuers();
+        auto now = std::time(NULL);
+
+        for (const auto &issuer : issuers) {
+            if (m_shutdown) {
+                break;
+            }
+
+            // Check if this issuer needs refresh
+            picojson::value keys;
+            int64_t next_update;
+            if (scitokens::Validator::get_public_keys_from_db(issuer, now, keys, next_update)) {
+                // Calculate time until next_update in milliseconds
+                int64_t time_until_update = (next_update - now) * 1000;
+
+                // If next update is within threshold, try to refresh
+                if (time_until_update <= threshold) {
+                    try {
+                        // Perform refresh (this will use the refresh_jwks method)
+                        scitokens::Validator::refresh_jwks(issuer);
+                    } catch (std::exception &) {
+                        // Ignore errors in background refresh
+                        // In the future, we can track statistics here
+                    }
+                }
+            }
+        }
+    }
+}
+
 SimpleCurlGet::GetStatus SimpleCurlGet::perform_start(const std::string &url) {
     m_len = 0;
 
@@ -867,6 +955,11 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
     }
     result->m_issuer = issuer;
     result->m_kid = kid;
+
+    // Track this issuer for background refresh if enabled
+    if (configurer::Configuration::get_background_refresh_enabled()) {
+        internal::BackgroundRefreshManager::get_instance().add_issuer(issuer);
+    }
 
     // Always call the continue because it formats the public_pem and algorithm
     return get_public_key_pem_continue(std::move(result), public_pem,

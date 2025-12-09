@@ -6,6 +6,8 @@
 #include <unordered_map>
 
 #include <atomic>
+#include <condition_variable>
+#include <thread>
 #include <curl/curl.h>
 #include <jwt-cpp/jwt.h>
 #include <uuid/uuid.h>
@@ -60,6 +62,22 @@ class Configuration {
         return m_monitoring_file_configured.load(std::memory_order_relaxed);
     }
 
+    // Background refresh configuration
+    static void set_background_refresh_enabled(bool enabled) {
+        m_background_refresh_enabled = enabled;
+    }
+    static bool get_background_refresh_enabled() {
+        return m_background_refresh_enabled;
+    }
+    static void set_refresh_interval(int interval_ms) {
+        m_refresh_interval = interval_ms;
+    }
+    static int get_refresh_interval() { return m_refresh_interval; }
+    static void set_refresh_threshold(int threshold_ms) {
+        m_refresh_threshold = threshold_ms;
+    }
+    static int get_refresh_threshold() { return m_refresh_threshold; }
+
   private:
     static std::atomic_int m_next_update_delta;
     static std::atomic_int m_expiry_delta;
@@ -69,6 +87,9 @@ class Configuration {
     static std::mutex m_monitoring_file_mutex;
     static std::atomic<bool> m_monitoring_file_configured; // Fast-path flag
     static std::atomic_int m_monitoring_file_interval; // In seconds, default 60
+    static std::atomic_bool m_background_refresh_enabled;
+    static std::atomic_int m_refresh_interval;    // N milliseconds
+    static std::atomic_int m_refresh_threshold;   // M milliseconds
     // static bool check_dir(const std::string dir_path);
     static std::pair<bool, std::string>
     mkdir_and_parents_if_needed(const std::string dir_path);
@@ -82,6 +103,48 @@ namespace internal {
 
 // Forward declaration
 class MonitoringStats;
+
+/**
+ * Manages the background thread for refreshing JWKS.
+ * This is a singleton that starts/stops a background thread which periodically
+ * checks if any known issuers need their JWKS refreshed.
+ */
+class BackgroundRefreshManager {
+  public:
+    static BackgroundRefreshManager &get_instance() {
+        static BackgroundRefreshManager instance;
+        return instance;
+    }
+
+    // Start the background refresh thread
+    void start();
+
+    // Stop the background refresh thread
+    void stop();
+
+    // Add an issuer to the list of issuers to monitor
+    void add_issuer(const std::string &issuer);
+
+    // Get all known issuers
+    std::vector<std::string> get_issuers();
+
+  private:
+    BackgroundRefreshManager() = default;
+    ~BackgroundRefreshManager() { stop(); }
+    BackgroundRefreshManager(const BackgroundRefreshManager &) = delete;
+    BackgroundRefreshManager &operator=(const BackgroundRefreshManager &) =
+        delete;
+
+    void refresh_loop();
+
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::unique_ptr<std::thread> m_thread;
+    std::atomic_bool m_shutdown{false};
+    std::atomic_bool m_running{false};
+    std::once_flag m_start_once;
+    std::unordered_map<std::string, bool> m_issuers;
+};
 
 class SimpleCurlGet {
 
@@ -587,6 +650,8 @@ class SciToken {
 };
 
 class Validator {
+
+    friend class internal::BackgroundRefreshManager;
 
     typedef int (*StringValidatorFunction)(const char *value, char **err_msg);
     typedef bool (*ClaimValidatorFunction)(const jwt::claim &claim_value,
