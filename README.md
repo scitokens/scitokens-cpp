@@ -42,6 +42,30 @@ echo "<your_token_here>" | ./scitokens-verify
 Replace the given token above with the fresh one you just generated; using the above token should give an expired
 token error. The token must be provided via standard input (stdin).
 
+Generating Keys for Testing
+----------------------------
+
+For testing and development purposes, you can generate EC (ES256) key pairs using the `scitokens-generate-jwks` tool:
+
+```
+./scitokens-generate-jwks --kid my-key-id --jwks jwks.json --private private.pem --public public.pem
+```
+
+This generates:
+- `jwks.json`: A JWKS (JSON Web Key Set) file containing the public key
+- `public.pem`: The public key in PEM format
+- `private.pem`: The private key in PEM format
+
+You can then create and verify tokens using these keys:
+
+```
+# Create a token
+./scitokens-create --cred public.pem --key private.pem --keyid my-key-id --issuer https://my-issuer.example.com --claim "sub=testuser"
+
+# Verify the token
+echo "<token>" | ./scitokens-verify --cred public.pem --issuer https://my-issuer.example.com --keyid my-key-id
+```
+
 Instructions for Generating a Release
 -------------------------------------
 
