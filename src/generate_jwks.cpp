@@ -204,7 +204,7 @@ int main(int argc, char *argv[]) {
     }
 
     OSSL_PARAM params[2];
-    const char curve_name[] = "prime256v1";
+    const char *curve_name = "prime256v1";
     params[0] = OSSL_PARAM_construct_utf8_string(
         OSSL_PKEY_PARAM_GROUP_NAME, const_cast<char *>(curve_name), 0);
     params[1] = OSSL_PARAM_construct_end();
@@ -278,7 +278,6 @@ int main(int argc, char *argv[]) {
     jwks_out << "    }\n";
     jwks_out << "  ]\n";
     jwks_out << "}\n";
-    jwks_out.close();
 
     printf("JWKS written to: %s\n", g_jwks_file.c_str());
 
