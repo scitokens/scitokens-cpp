@@ -62,16 +62,6 @@ class JWKSHandler(BaseHTTPRequestHandler):
         self.wfile.write(jwks_content.encode())
 
 
-def find_free_port():
-    """Find a free port by binding to port 0."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        # Bind to localhost only for security
-        s.bind(('localhost', 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-    return port
-
-
 def main():
     parser = argparse.ArgumentParser(description='JWKS test server')
     parser.add_argument('--jwks', required=True, help='Path to JWKS file')
@@ -81,15 +71,9 @@ def main():
     parser.add_argument('--key', help='Path to TLS key file')
     args = parser.parse_args()
 
-    # Find a free port
-    port = find_free_port()
-    
     # Determine if we're using HTTPS
     use_https = args.cert and args.key
     protocol = "https" if use_https else "http"
-    
-    # Create issuer URL
-    issuer_url = f"{protocol}://localhost:{port}"
     
     # Create test directory
     test_dir = Path(args.build_dir) / 'tests' / args.test_name
@@ -99,10 +83,9 @@ def main():
     ready_file = test_dir / 'server_ready'
     log_file = test_dir / 'server.log'
     
-    # Setup HTTP server
-    server = HTTPServer(('localhost', port), JWKSHandler)
+    # Setup HTTP server - bind to port 0 to get a free port automatically
+    server = HTTPServer(('localhost', 0), JWKSHandler)
     server.jwks_file = args.jwks
-    server.issuer_url = issuer_url
     server.log_file = str(log_file)
     
     # Setup TLS if certificates provided
@@ -115,6 +98,11 @@ def main():
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
         server.socket = context.wrap_socket(server.socket, server_side=True)
+    
+    # Get the actual port that was assigned
+    port = server.server_address[1]
+    issuer_url = f"{protocol}://localhost:{port}"
+    server.issuer_url = issuer_url
     
     # Write server info to ready file
     with open(ready_file, 'w') as f:
