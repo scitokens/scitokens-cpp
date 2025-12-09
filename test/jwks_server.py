@@ -94,6 +94,15 @@ def main():
         context.load_cert_chain(args.cert, args.key)
         # Set minimum TLS version to 1.2 for security
         context.minimum_version = ssl.TLSVersion.TLSv1_2
+        # Set cipher suites for OpenSSL 3.0.2 compatibility
+        # SECLEVEL=1 allows 2048-bit RSA and SHA-1 for test certificates
+        try:
+            context.set_ciphers('DEFAULT:@SECLEVEL=1')
+        except ssl.SSLError:
+            # Fallback for older Python/OpenSSL
+            context.set_ciphers('DEFAULT')
+        # Disable TLS session tickets to avoid issues with session resumption
+        context.options |= ssl.OP_NO_TICKET
         # Allow self-signed certificates for testing
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
