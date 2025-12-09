@@ -63,3 +63,11 @@ else
   echo "Server stopped successfully"
 fi
 
+# Print server log if it exists
+SERVER_LOG="$TEST_DIR/server.log"
+if [ -f "$SERVER_LOG" ]; then
+  echo ""
+  echo "=== Server Log ==="
+  cat "$SERVER_LOG"
+  echo "=================="
+fi
