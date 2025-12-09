@@ -65,7 +65,8 @@ class JWKSHandler(BaseHTTPRequestHandler):
 def find_free_port():
     """Find a free port by binding to port 0."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
+        # Bind to localhost only for security
+        s.bind(('localhost', 0))
         s.listen(1)
         port = s.getsockname()[1]
     return port
@@ -108,6 +109,8 @@ def main():
     if use_https:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(args.cert, args.key)
+        # Set minimum TLS version to 1.2 for security
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         # Allow self-signed certificates for testing
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
