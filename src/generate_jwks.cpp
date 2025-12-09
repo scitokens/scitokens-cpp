@@ -131,17 +131,17 @@ bool extract_ec_coordinates(EVP_PKEY *pkey, std::string &x_coord,
     // For OpenSSL 3.0+, use the BIGNUM parameter API which is more reliable
     BIGNUM *x_bn = nullptr;
     BIGNUM *y_bn = nullptr;
-    
+
     if (EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_EC_PUB_X, &x_bn) != 1 ||
         EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_EC_PUB_Y, &y_bn) != 1) {
         BN_free(x_bn);
         BN_free(y_bn);
         return false;
     }
-    
+
     std::unique_ptr<BIGNUM, decltype(&BN_free)> x(x_bn, BN_free);
     std::unique_ptr<BIGNUM, decltype(&BN_free)> y(y_bn, BN_free);
-    
+
     // Convert BIGNUMs to fixed-size byte arrays (32 bytes for P-256)
     unsigned char x_buf[32] = {0};
     unsigned char y_buf[32] = {0};
@@ -175,11 +175,13 @@ bool extract_ec_coordinates(EVP_PKEY *pkey, std::string &x_coord,
     // or EC_POINT_get_affine_coordinates_GFp for older versions
     int result = 0;
 #if OPENSSL_VERSION_NUMBER >= 0x10101000L
-    result = EC_POINT_get_affine_coordinates(group, pub_key, x.get(), y.get(), nullptr);
+    result = EC_POINT_get_affine_coordinates(group, pub_key, x.get(), y.get(),
+                                             nullptr);
 #else
-    result = EC_POINT_get_affine_coordinates_GFp(group, pub_key, x.get(), y.get(), nullptr);
+    result = EC_POINT_get_affine_coordinates_GFp(group, pub_key, x.get(),
+                                                 y.get(), nullptr);
 #endif
-    
+
     if (result != 1) {
         return false;
     }
