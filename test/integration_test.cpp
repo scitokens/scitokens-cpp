@@ -1113,8 +1113,10 @@ TEST_F(IntegrationTest, MonitoringFileOutput) {
 TEST_F(IntegrationTest, BackgroundRefreshTest) {
     char *err_msg = nullptr;
 
-    // Set smaller intervals for testing (1 second refresh interval, 2 seconds threshold)
-    int rv = scitoken_config_set_int("keycache.refresh_interval_ms", 1000, &err_msg);
+    // Set smaller intervals for testing (1 second refresh interval, 2 seconds
+    // threshold)
+    int rv =
+        scitoken_config_set_int("keycache.refresh_interval_ms", 1000, &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set refresh interval: "
                      << (err_msg ? err_msg : "unknown error");
     if (err_msg) {
@@ -1122,7 +1124,8 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
         err_msg = nullptr;
     }
 
-    rv = scitoken_config_set_int("keycache.refresh_threshold_ms", 2000, &err_msg);
+    rv = scitoken_config_set_int("keycache.refresh_threshold_ms", 2000,
+                                 &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set refresh threshold: "
                      << (err_msg ? err_msg : "unknown error");
     if (err_msg) {
@@ -1146,21 +1149,23 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
     ASSERT_TRUE(token.get() != nullptr);
 
     rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
-                                    &err_msg);
+                                   &err_msg);
     ASSERT_EQ(rv, 0);
     if (err_msg) {
         free(err_msg);
         err_msg = nullptr;
     }
 
-    rv = scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
+    rv =
+        scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
     ASSERT_EQ(rv, 0);
     if (err_msg) {
         free(err_msg);
         err_msg = nullptr;
     }
 
-    rv = scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
+    rv =
+        scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
     ASSERT_EQ(rv, 0);
     if (err_msg) {
         free(err_msg);
@@ -1183,7 +1188,8 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
         scitoken_create(nullptr), scitoken_destroy);
     ASSERT_TRUE(verify_token.get() != nullptr);
 
-    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr, &err_msg);
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to verify token: "
                      << (err_msg ? err_msg : "unknown error");
     if (err_msg) {
@@ -1224,17 +1230,18 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
 
     std::cout << "Background refresh enabled" << std::endl;
 
-    // Wait for background refresh to trigger (threshold is 2 seconds, interval is 1 second)
-    // We need to wait at least 3 seconds: 1s for next_update to be within threshold + 2s for detection
-    // Note: Using sleep() is acceptable for integration tests as we're verifying real-time behavior
-    // of the background thread against an actual HTTPS server
+    // Wait for background refresh to trigger (threshold is 2 seconds, interval
+    // is 1 second) We need to wait at least 3 seconds: 1s for next_update to be
+    // within threshold + 2s for detection Note: Using sleep() is acceptable for
+    // integration tests as we're verifying real-time behavior of the background
+    // thread against an actual HTTPS server
     std::cout << "Waiting 4 seconds for background refresh..." << std::endl;
     sleep(4);
 
     // The background refresh should have occurred
     // We can't easily verify it refreshed without instrumenting the code more,
     // but we can verify the thread is running and didn't crash
-    
+
     // Stop background refresh
     rv = keycache_stop_background_refresh(&err_msg);
     ASSERT_EQ(rv, 0) << "Failed to stop background refresh: "
