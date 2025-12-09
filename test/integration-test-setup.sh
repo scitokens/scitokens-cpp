@@ -176,8 +176,15 @@ done
 
 echo "Server ready"
 
-# Read server info
+# Read server info from ready file
 . "$READY_FILE"
+
+# Verify we got the PID from the ready file
+if [ -z "$PID" ]; then
+  echo "Failed to get PID from server ready file"
+  kill $SERVER_PID 2>/dev/null || true
+  exit 1
+fi
 
 if [ -z "$ISSUER_URL" ]; then
   echo "Failed to get issuer URL from server"

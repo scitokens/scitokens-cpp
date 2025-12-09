@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 #include <fstream>
+#include <iostream>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
