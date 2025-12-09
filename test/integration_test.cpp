@@ -1226,6 +1226,8 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
 
     // Wait for background refresh to trigger (threshold is 2 seconds, interval is 1 second)
     // We need to wait at least 3 seconds: 1s for next_update to be within threshold + 2s for detection
+    // Note: Using sleep() is acceptable for integration tests as we're verifying real-time behavior
+    // of the background thread against an actual HTTPS server
     std::cout << "Waiting 4 seconds for background refresh..." << std::endl;
     sleep(4);
 

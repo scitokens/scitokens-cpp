@@ -836,6 +836,11 @@ class Validator {
 
     std::unique_ptr<AsyncStatus>
     verify_async(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
+        // Start background refresh thread if configured (using once_flag to ensure it only happens once)
+        if (configurer::Configuration::get_background_refresh_enabled()) {
+            internal::BackgroundRefreshManager::get_instance().start();
+        }
+
         // If token has a typ header claim (RFC8725 Section 3.11), trust that in
         // COMPAT mode.
         if (jwt.has_type()) {

@@ -1,4 +1,5 @@
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <sstream>
@@ -41,10 +42,7 @@ namespace internal {
 
 // BackgroundRefreshManager implementation
 void BackgroundRefreshManager::start() {
-    if (m_running) {
-        return;  // Already running
-    }
-
+    // call_once ensures this block runs exactly once, even if called from multiple threads
     std::call_once(m_start_once, [this]() {
         m_shutdown = false;
         m_running = true;
@@ -118,8 +116,12 @@ void BackgroundRefreshManager::refresh_loop() {
                         // Perform refresh (this will use the refresh_jwks method)
                         scitokens::Validator::refresh_jwks(issuer);
                     } catch (std::exception &) {
-                        // Ignore errors in background refresh
-                        // In the future, we can track statistics here
+                        // Silently ignore errors in background refresh to avoid
+                        // disrupting the application. Background refresh is a best-effort
+                        // optimization. If it fails, the next token verification will
+                        // trigger a foreground refresh as usual.
+                        // TODO: In future work, track statistics (success/failure counts)
+                        // to monitor refresh health.
                     }
                 }
             }
