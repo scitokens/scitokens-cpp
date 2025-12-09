@@ -132,9 +132,6 @@ bool extract_ec_coordinates(EVP_PKEY *pkey, std::string &x_coord,
     }
 
     std::unique_ptr<unsigned char[]> pub_key_buf(new unsigned char[pub_key_len]);
-    if (!pub_key_buf) {
-        return false;
-    }
 
     if (EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY,
                                         pub_key_buf.get(), pub_key_len,
@@ -210,8 +207,9 @@ int main(int argc, char *argv[]) {
     }
 
     OSSL_PARAM params[2];
+    const char curve_name[] = "prime256v1";
     params[0] = OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME,
-                                                 (char *)"prime256v1", 0);
+                                                 const_cast<char *>(curve_name), 0);
     params[1] = OSSL_PARAM_construct_end();
 
     if (EVP_PKEY_CTX_set_params(ctx.get(), params) <= 0) {
