@@ -4,10 +4,11 @@
  * before the library is loaded to properly test the constructor function.
  */
 
-#include "../src/scitokens.h"
+#include "scitokens.h"
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <stdexcept>
 
 int main() {
     int failures = 0;
@@ -16,38 +17,48 @@ int main() {
     // Test 1: Check if SCITOKEN_CONFIG_KEYCACHE_UPDATE_INTERVAL_S was loaded
     const char *env_update = std::getenv("SCITOKEN_CONFIG_KEYCACHE_UPDATE_INTERVAL_S");
     if (env_update) {
-        int expected = std::atoi(env_update);
-        int actual = scitoken_config_get_int("keycache.update_interval_s", &err_msg);
-        if (actual != expected) {
-            std::cerr << "FAIL: keycache.update_interval_s expected " << expected 
-                      << " but got " << actual << std::endl;
-            if (err_msg) {
-                std::cerr << "Error: " << err_msg << std::endl;
-                free(err_msg);
-                err_msg = nullptr;
+        try {
+            int expected = std::stoi(env_update);
+            int actual = scitoken_config_get_int("keycache.update_interval_s", &err_msg);
+            if (actual != expected) {
+                std::cerr << "FAIL: keycache.update_interval_s expected " << expected 
+                          << " but got " << actual << std::endl;
+                if (err_msg) {
+                    std::cerr << "Error: " << err_msg << std::endl;
+                    free(err_msg);
+                    err_msg = nullptr;
+                }
+                failures++;
+            } else {
+                std::cout << "PASS: keycache.update_interval_s = " << actual << std::endl;
             }
+        } catch (const std::exception &e) {
+            std::cerr << "FAIL: Could not parse env var value: " << e.what() << std::endl;
             failures++;
-        } else {
-            std::cout << "PASS: keycache.update_interval_s = " << actual << std::endl;
         }
     }
     
     // Test 2: Check if SCITOKEN_CONFIG_KEYCACHE_EXPIRATION_INTERVAL_S was loaded
     const char *env_expiry = std::getenv("SCITOKEN_CONFIG_KEYCACHE_EXPIRATION_INTERVAL_S");
     if (env_expiry) {
-        int expected = std::atoi(env_expiry);
-        int actual = scitoken_config_get_int("keycache.expiration_interval_s", &err_msg);
-        if (actual != expected) {
-            std::cerr << "FAIL: keycache.expiration_interval_s expected " << expected 
-                      << " but got " << actual << std::endl;
-            if (err_msg) {
-                std::cerr << "Error: " << err_msg << std::endl;
-                free(err_msg);
-                err_msg = nullptr;
+        try {
+            int expected = std::stoi(env_expiry);
+            int actual = scitoken_config_get_int("keycache.expiration_interval_s", &err_msg);
+            if (actual != expected) {
+                std::cerr << "FAIL: keycache.expiration_interval_s expected " << expected 
+                          << " but got " << actual << std::endl;
+                if (err_msg) {
+                    std::cerr << "Error: " << err_msg << std::endl;
+                    free(err_msg);
+                    err_msg = nullptr;
+                }
+                failures++;
+            } else {
+                std::cout << "PASS: keycache.expiration_interval_s = " << actual << std::endl;
             }
+        } catch (const std::exception &e) {
+            std::cerr << "FAIL: Could not parse env var value: " << e.what() << std::endl;
             failures++;
-        } else {
-            std::cout << "PASS: keycache.expiration_interval_s = " << actual << std::endl;
         }
     }
     
@@ -100,19 +111,24 @@ int main() {
     // Test 5: Test case insensitivity (lowercase env var)
     const char *env_lower = std::getenv("scitoken_config_keycache_update_interval_s");
     if (env_lower) {
-        int expected = std::atoi(env_lower);
-        int actual = scitoken_config_get_int("keycache.update_interval_s", &err_msg);
-        if (actual != expected) {
-            std::cerr << "FAIL: lowercase env var - keycache.update_interval_s expected " 
-                      << expected << " but got " << actual << std::endl;
-            if (err_msg) {
-                std::cerr << "Error: " << err_msg << std::endl;
-                free(err_msg);
-                err_msg = nullptr;
+        try {
+            int expected = std::stoi(env_lower);
+            int actual = scitoken_config_get_int("keycache.update_interval_s", &err_msg);
+            if (actual != expected) {
+                std::cerr << "FAIL: lowercase env var - keycache.update_interval_s expected " 
+                          << expected << " but got " << actual << std::endl;
+                if (err_msg) {
+                    std::cerr << "Error: " << err_msg << std::endl;
+                    free(err_msg);
+                    err_msg = nullptr;
+                }
+                failures++;
+            } else {
+                std::cout << "PASS: lowercase env var - keycache.update_interval_s = " << actual << std::endl;
             }
+        } catch (const std::exception &e) {
+            std::cerr << "FAIL: Could not parse env var value: " << e.what() << std::endl;
             failures++;
-        } else {
-            std::cout << "PASS: lowercase env var - keycache.update_interval_s = " << actual << std::endl;
         }
     }
     

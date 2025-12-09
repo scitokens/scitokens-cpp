@@ -5,6 +5,8 @@
 #include <cstdlib>
 #include <algorithm>
 #include <cctype>
+#include <array>
+#include <stdexcept>
 
 #include "scitokens.h"
 #include "scitokens_internal.h"
@@ -40,12 +42,12 @@ void load_config_from_environment() {
         bool is_int;
     };
     
-    const ConfigMapping known_configs[] = {
+    const std::array<ConfigMapping, 4> known_configs = {{
         {"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
         {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S", true},
         {"keycache.cache_home", "KEYCACHE_CACHE_HOME", false},
         {"tls.ca_file", "TLS_CA_FILE", false}
-    };
+    }};
     
     const char *prefix = "SCITOKEN_CONFIG_";
     
@@ -71,8 +73,10 @@ void load_config_from_environment() {
             try {
                 int value = std::stoi(env_value);
                 scitoken_config_set_int(config.config_key, value, &err_msg);
-            } catch (...) {
-                // Silently ignore parse errors during initialization
+            } catch (const std::invalid_argument &) {
+                // Silently ignore invalid integer format during initialization
+            } catch (const std::out_of_range &) {
+                // Silently ignore out-of-range values during initialization
             }
         } else {
             scitoken_config_set_str(config.config_key, env_value, &err_msg);
