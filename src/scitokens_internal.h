@@ -834,7 +834,7 @@ class Validator {
         if (status->m_monitoring_started) {
             auto end_time = std::chrono::steady_clock::now();
             auto duration =
-                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::duration_cast<std::chrono::duration<double>>(
                     end_time - status->m_start_time);
             internal::MonitoringStats::instance().record_validation_success(
                 status->m_issuer, duration.count());

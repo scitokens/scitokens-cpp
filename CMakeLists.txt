@@ -80,12 +80,6 @@ add_executable(scitokens-generate-jwks src/generate_jwks.cpp)
 target_include_directories(scitokens-generate-jwks PRIVATE ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS})
 target_link_libraries(scitokens-generate-jwks ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
 
-add_executable(scitokens-test-monitoring src/test_monitoring.cpp)
-target_link_libraries(scitokens-test-monitoring SciTokens)
-
-add_executable(scitokens-test-monitoring-comprehensive src/test_monitoring_comprehensive.cpp)
-target_link_libraries(scitokens-test-monitoring-comprehensive SciTokens)
-
 get_directory_property(TARGETS BUILDSYSTEM_TARGETS)
 install(
   TARGETS ${TARGETS} 

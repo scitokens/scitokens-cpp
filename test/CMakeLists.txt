@@ -20,6 +20,20 @@ add_test(
     ${CMAKE_CURRENT_BINARY_DIR}/scitokens-gtest
   )
 
+# Monitoring unit tests
+add_executable(scitokens-monitoring-test monitoring_test.cpp)
+if( NOT SCITOKENS_EXTERNAL_GTEST )
+    add_dependencies(scitokens-monitoring-test gtest)
+endif()
+target_link_libraries(scitokens-monitoring-test SciTokens "${LIBGTEST}" pthread)
+
+add_test(
+  NAME
+    monitoring
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/scitokens-monitoring-test
+  )
+
 # Integration test executable
 add_executable(scitokens-integration-test integration_test.cpp)
 if( NOT SCITOKENS_EXTERNAL_GTEST )
