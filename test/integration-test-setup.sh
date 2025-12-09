@@ -66,75 +66,29 @@ openssl x509 -req -days 365 -in server.csr -CA ca-cert.pem -CAkey ca-key.pem \
 echo "TLS certificates created"
 
 ##########################
-# Generate signing keys
+# Generate signing keys and JWKS
 ##########################
-echo "Generating EC signing keys..."
+echo "Generating EC signing keys and JWKS..."
 
-# Generate EC private key
-openssl ecparam -name prime256v1 -genkey -noout -out signing-key.pem 2>/dev/null
+# Use scitokens-generate-jwks to create keys and JWKS
+if [ ! -f "$BINARY_DIR/scitokens-generate-jwks" ]; then
+  echo "Error: scitokens-generate-jwks not found in $BINARY_DIR"
+  echo "Please build the project first with: make scitokens-generate-jwks"
+  exit 1
+fi
 
-# Extract public key
-openssl ec -in signing-key.pem -pubout -out signing-pub.pem 2>/dev/null
-
-echo "Signing keys created"
-
-##########################
-# Generate JWKS
-##########################
-echo "Generating JWKS..."
-
-# Use Python to convert EC public key to JWKS format
-python3 - <<'PYTHON_SCRIPT' > jwks.json
-import json
-import base64
-import sys
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.backends import default_backend
-
-# Read the public key
-with open('signing-pub.pem', 'rb') as f:
-    pem_data = f.read()
-
-# Load the public key
-public_key = serialization.load_pem_public_key(pem_data, backend=default_backend())
-
-# Get the public numbers
-public_numbers = public_key.public_numbers()
-
-# Convert to base64url format (without padding)
-def int_to_base64url(num, length):
-    num_bytes = num.to_bytes(length, byteorder='big')
-    b64 = base64.urlsafe_b64encode(num_bytes).decode('ascii')
-    return b64.rstrip('=')
-
-# For P-256 curve, coordinates are 32 bytes
-x_b64 = int_to_base64url(public_numbers.x, 32)
-y_b64 = int_to_base64url(public_numbers.y, 32)
-
-# Create JWKS
-jwks = {
-    "keys": [
-        {
-            "kty": "EC",
-            "use": "sig",
-            "crv": "P-256",
-            "kid": "test-key-1",
-            "x": x_b64,
-            "y": y_b64,
-            "alg": "ES256"
-        }
-    ]
-}
-
-print(json.dumps(jwks, indent=2))
-PYTHON_SCRIPT
+"$BINARY_DIR/scitokens-generate-jwks" \
+  --kid "test-key-1" \
+  --jwks jwks.json \
+  --private signing-key.pem \
+  --public signing-pub.pem
 
 if [ ! -f jwks.json ]; then
   echo "Failed to generate JWKS"
   exit 1
 fi
 
-echo "JWKS created"
+echo "Signing keys and JWKS created"
 
 ##########################
 # Start Python web server

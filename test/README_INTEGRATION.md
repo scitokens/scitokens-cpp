@@ -90,17 +90,24 @@ The server is designed to be minimal and focused solely on the requirements for 
 
 ## Requirements
 
-- Python 3.6+
+- Python 3.6+ (for the test server)
 - OpenSSL command-line tools
-- cryptography Python package (for JWKS generation)
+- scitokens-generate-jwks (built from this repository)
 
 ## Troubleshooting
 
 ### Server fails to start
 
-Check that Python 3 is available and the cryptography package is installed:
+Check that Python 3 is available:
 ```bash
-python3 -c "from cryptography.hazmat.primitives import serialization"
+python3 --version
+```
+
+### Missing scitokens-generate-jwks
+
+If the setup script fails because `scitokens-generate-jwks` is not found, rebuild the project:
+```bash
+make scitokens-generate-jwks
 ```
 
 ### TLS certificate errors
@@ -127,4 +134,4 @@ kill <PID>
 
 5. **Detached Server Process**: The server runs detached from the shell to avoid blocking the setup script.
 
-6. **Minimal Python Server**: Using Python's built-in `http.server` keeps dependencies minimal. Only the cryptography package is needed for JWKS generation.
+6. **Minimal Python Server**: Using Python's built-in `http.server` keeps dependencies minimal. JWKS generation is handled by the `scitokens-generate-jwks` tool built from this repository.
