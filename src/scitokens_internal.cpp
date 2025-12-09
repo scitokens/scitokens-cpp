@@ -62,9 +62,10 @@ std::shared_ptr<std::mutex> get_issuer_mutex(const std::string &issuer) {
             }
         }
         
-        // If still at capacity after cleanup, allow creating this new mutex anyway
-        // The limit is a soft limit - we'll exceed it temporarily for active issuers
-        // This is better than either blocking or aggressively clearing the cache
+        // If still at capacity after cleanup, fail rather than unbounded growth
+        if (issuer_mutexes.size() >= MAX_ISSUER_MUTEXES) {
+            throw std::runtime_error("Too many concurrent issuers - resource exhaustion prevented");
+        }
     }
     
     auto mutex_ptr = std::make_shared<std::mutex>();
