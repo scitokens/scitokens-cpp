@@ -51,24 +51,27 @@ class Configuration {
 
   private:
     // Accessor functions for construct-on-first-use idiom
-    static std::atomic_int& get_next_update_delta_ref() {
+    static std::atomic_int &get_next_update_delta_ref() {
         static std::atomic_int instance{600};
         return instance;
     }
-    static std::atomic_int& get_expiry_delta_ref() {
+    static std::atomic_int &get_expiry_delta_ref() {
         static std::atomic_int instance{4 * 24 * 3600};
         return instance;
     }
-    static std::shared_ptr<std::string>& get_cache_home_ref() {
-        static std::shared_ptr<std::string> instance = std::make_shared<std::string>("");
+    static std::shared_ptr<std::string> &get_cache_home_ref() {
+        static std::shared_ptr<std::string> instance =
+            std::make_shared<std::string>("");
         return instance;
     }
-    static std::shared_ptr<std::string>& get_tls_ca_file_ref() {
-        static std::shared_ptr<std::string> instance = std::make_shared<std::string>("");
+    static std::shared_ptr<std::string> &get_tls_ca_file_ref() {
+        static std::shared_ptr<std::string> instance =
+            std::make_shared<std::string>("");
         return instance;
     }
-    
-    // Keep old declarations for backwards compatibility (will forward to accessor functions)
+
+    // Keep old declarations for backwards compatibility (will forward to
+    // accessor functions)
     static std::atomic_int m_next_update_delta;
     static std::atomic_int m_expiry_delta;
     static std::shared_ptr<std::string> m_cache_home;

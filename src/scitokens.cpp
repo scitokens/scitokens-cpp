@@ -1,12 +1,12 @@
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <cctype>
+#include <cstdlib>
 #include <exception>
+#include <stdexcept>
 #include <string.h>
 #include <sys/stat.h>
-#include <cstdlib>
-#include <algorithm>
-#include <cctype>
-#include <array>
-#include <stdexcept>
 
 #include "scitokens.h"
 #include "scitokens_internal.h"
@@ -35,27 +35,28 @@ std::string to_lowercase(const std::string &str) {
 
 // Load configuration from environment variables on library initialization
 void load_config_from_environment() {
-    // List of known configuration keys with their types and corresponding env var names
+    // List of known configuration keys with their types and corresponding env
+    // var names
     struct ConfigMapping {
         const char *config_key;
         const char *env_var_suffix; // After SCITOKEN_CONFIG_
         bool is_int;
     };
-    
-    const std::array<ConfigMapping, 4> known_configs = {{
-        {"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
-        {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S", true},
-        {"keycache.cache_home", "KEYCACHE_CACHE_HOME", false},
-        {"tls.ca_file", "TLS_CA_FILE", false}
-    }};
-    
+
+    const std::array<ConfigMapping, 4> known_configs = {
+        {{"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
+         {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S",
+          true},
+         {"keycache.cache_home", "KEYCACHE_CACHE_HOME", false},
+         {"tls.ca_file", "TLS_CA_FILE", false}}};
+
     const char *prefix = "SCITOKEN_CONFIG_";
-    
+
     // Check each known configuration
     for (const auto &config : known_configs) {
         // Build the full environment variable name
         std::string env_var = prefix + std::string(config.env_var_suffix);
-        
+
         // Also try case variations (uppercase, lowercase, mixed)
         const char *env_value = std::getenv(env_var.c_str());
         if (!env_value) {
@@ -63,11 +64,11 @@ void load_config_from_environment() {
             std::string env_var_lower = to_lowercase(env_var);
             env_value = std::getenv(env_var_lower.c_str());
         }
-        
+
         if (!env_value) {
             continue; // Not set in environment
         }
-        
+
         char *err_msg = nullptr;
         if (config.is_int) {
             try {
@@ -81,7 +82,7 @@ void load_config_from_environment() {
         } else {
             scitoken_config_set_str(config.config_key, env_value, &err_msg);
         }
-        
+
         // Free error message if any (we ignore errors during initialization)
         if (err_msg) {
             free(err_msg);
@@ -90,8 +91,7 @@ void load_config_from_environment() {
 }
 
 // Use constructor attribute to run on library load
-__attribute__((constructor))
-void init_scitokens_config() {
+__attribute__((constructor)) void init_scitokens_config() {
     load_config_from_environment();
 }
 
@@ -323,10 +323,12 @@ int scitoken_get_expiration(const SciToken token, long long *expiry,
             // Float value - convert to integer (truncate)
             // Float value - convert to integer using std::floor().
             // This ensures expiration is not extended by fractional seconds.
-            result = static_cast<long long>(std::floor(claim_value.get<double>()));
+            result =
+                static_cast<long long>(std::floor(claim_value.get<double>()));
         } else {
             if (err_msg) {
-                *err_msg = strdup("'exp' claim must be a number (integer or float)");
+                *err_msg =
+                    strdup("'exp' claim must be a number (integer or float)");
             }
             return -1;
         }
@@ -1157,9 +1159,9 @@ int scitoken_config_set_str(const char *key, const char *value,
             return -1;
         }
     } else if (_key == "tls.ca_file") {
-       configurer::Configuration::set_tls_ca_file(value ? std::string(value) : "");
-    }
-    else {
+        configurer::Configuration::set_tls_ca_file(value ? std::string(value)
+                                                         : "");
+    } else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
         }
