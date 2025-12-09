@@ -1,1 +1,0 @@
-/home/runner/work/scitokens-cpp/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -O2 -g -DNDEBUG -Wl,--dependency-file=CMakeFiles/scitokens-generate-jwks.dir/link.d "CMakeFiles/scitokens-generate-jwks.dir/src/generate_jwks.cpp.o" -o scitokens-generate-jwks  -lssl -lcrypto -lcrypto
