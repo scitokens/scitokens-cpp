@@ -20,6 +20,23 @@ add_test(
     ${CMAKE_CURRENT_BINARY_DIR}/scitokens-gtest
   )
 
+# Environment variable configuration test executable
+add_executable(scitokens-env-test test_env_config.cpp)
+target_link_libraries(scitokens-env-test SciTokens)
+
+# Environment variable configuration test
+add_test(
+  NAME
+    env_config
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/scitokens-env-test
+)
+
+set_tests_properties(env_config
+  PROPERTIES
+    ENVIRONMENT "SCITOKEN_CONFIG_KEYCACHE_UPDATE_INTERVAL_S=1234;SCITOKEN_CONFIG_KEYCACHE_EXPIRATION_INTERVAL_S=5678;SCITOKEN_CONFIG_KEYCACHE_CACHE_HOME=/tmp/test_scitoken_cache;SCITOKEN_CONFIG_TLS_CA_FILE=/tmp/test_ca.pem"
+)
+
 # Integration test executable
 add_executable(scitokens-integration-test integration_test.cpp)
 if( NOT SCITOKENS_EXTERNAL_GTEST )

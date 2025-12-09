@@ -1131,7 +1131,7 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
     // If setting to "", then we should treat as though it is unsetting the
     // config
     if (dir_path.length() == 0) { // User is configuring to empty string
-        m_cache_home = std::make_shared<std::string>(dir_path);
+        get_cache_home_ref() = std::make_shared<std::string>(dir_path);
         return std::make_pair(true, "");
     }
 
@@ -1154,20 +1154,20 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
 
     // Now it exists and we can write to it, set the value and let
     // scitokens_cache handle the rest
-    m_cache_home = std::make_shared<std::string>(cleaned_dir_path);
+    get_cache_home_ref() = std::make_shared<std::string>(cleaned_dir_path);
     return std::make_pair(true, "");
 }
 
 void configurer::Configuration::set_tls_ca_file(const std::string ca_file) {
-    m_tls_ca_file = std::make_shared<std::string>(ca_file);
+    get_tls_ca_file_ref() = std::make_shared<std::string>(ca_file);
 }
 
 std::string configurer::Configuration::get_cache_home() {
-    return *m_cache_home;
+    return *get_cache_home_ref();
 }
 
 std::string configurer::Configuration::get_tls_ca_file() {
-    return *m_tls_ca_file;
+    return *get_tls_ca_file_ref();
 }
 
 // bool configurer::Configuration::check_dir(const std::string dir_path) {

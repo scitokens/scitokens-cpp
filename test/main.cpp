@@ -941,6 +941,79 @@ TEST_F(IssuerSecurityTest, SpecialCharacterIssuer) {
     EXPECT_NE(error_message.find("\""), std::string::npos);
 }
 
+// Test suite for environment variable configuration
+class EnvConfigTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        // Save original config values
+        char *err_msg = nullptr;
+        original_update_interval = scitoken_config_get_int("keycache.update_interval_s", &err_msg);
+        original_expiry_interval = scitoken_config_get_int("keycache.expiration_interval_s", &err_msg);
+        
+        char *cache_home = nullptr;
+        scitoken_config_get_str("keycache.cache_home", &cache_home, &err_msg);
+        if (cache_home) {
+            original_cache_home = cache_home;
+            free(cache_home);
+        }
+        
+        char *ca_file = nullptr;
+        scitoken_config_get_str("tls.ca_file", &ca_file, &err_msg);
+        if (ca_file) {
+            original_ca_file = ca_file;
+            free(ca_file);
+        }
+    }
+    
+    void TearDown() override {
+        // Restore original config values
+        char *err_msg = nullptr;
+        scitoken_config_set_int("keycache.update_interval_s", original_update_interval, &err_msg);
+        scitoken_config_set_int("keycache.expiration_interval_s", original_expiry_interval, &err_msg);
+        scitoken_config_set_str("keycache.cache_home", original_cache_home.c_str(), &err_msg);
+        scitoken_config_set_str("tls.ca_file", original_ca_file.c_str(), &err_msg);
+    }
+    
+    int original_update_interval = 600;
+    int original_expiry_interval = 4 * 24 * 3600;
+    std::string original_cache_home;
+    std::string original_ca_file;
+};
+
+TEST_F(EnvConfigTest, IntConfigFromEnv) {
+    // Note: This test verifies that the environment variable was read at library load time
+    // We can't test setting environment variables after library load in the same process
+    // This test would need to be run with environment variables set before starting the test
+    
+    // Test that we can manually set and get config values
+    char *err_msg = nullptr;
+    int test_value = 1234;
+    auto rv = scitoken_config_set_int("keycache.update_interval_s", test_value, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    
+    int retrieved = scitoken_config_get_int("keycache.update_interval_s", &err_msg);
+    EXPECT_EQ(retrieved, test_value) << (err_msg ? err_msg : "");
+    
+    if (err_msg) free(err_msg);
+}
+
+TEST_F(EnvConfigTest, StringConfigFromEnv) {
+    // Test that we can manually set and get string config values
+    char *err_msg = nullptr;
+    const char *test_path = "/tmp/test_cache";
+    auto rv = scitoken_config_set_str("keycache.cache_home", test_path, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    
+    char *output = nullptr;
+    rv = scitoken_config_get_str("keycache.cache_home", &output, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    ASSERT_TRUE(output != nullptr);
+    EXPECT_STREQ(output, test_path);
+    
+    free(output);
+    if (err_msg) free(err_msg);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
