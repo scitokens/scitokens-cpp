@@ -124,7 +124,6 @@ std::string base64url_encode(const unsigned char *data, size_t len) {
 bool extract_ec_coordinates(EVP_PKEY *pkey, std::string &x_coord,
                             std::string &y_coord) {
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
-    unsigned char *pub_key_buf = nullptr;
     size_t pub_key_len = 0;
 
     if (EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY,
@@ -132,27 +131,24 @@ bool extract_ec_coordinates(EVP_PKEY *pkey, std::string &x_coord,
         return false;
     }
 
-    pub_key_buf = (unsigned char *)malloc(pub_key_len);
+    std::unique_ptr<unsigned char[]> pub_key_buf(new unsigned char[pub_key_len]);
     if (!pub_key_buf) {
         return false;
     }
 
     if (EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY,
-                                        pub_key_buf, pub_key_len,
+                                        pub_key_buf.get(), pub_key_len,
                                         &pub_key_len) != 1) {
-        free(pub_key_buf);
         return false;
     }
 
     // For uncompressed EC point format: 0x04 || X || Y
     if (pub_key_len != 65 || pub_key_buf[0] != 0x04) {
-        free(pub_key_buf);
         return false;
     }
 
-    x_coord = base64url_encode(pub_key_buf + 1, 32);
-    y_coord = base64url_encode(pub_key_buf + 33, 32);
-    free(pub_key_buf);
+    x_coord = base64url_encode(pub_key_buf.get() + 1, 32);
+    y_coord = base64url_encode(pub_key_buf.get() + 33, 32);
 #else
     EC_KEY *ec_key = EVP_PKEY_get1_EC_KEY(pkey);
     if (!ec_key) {
