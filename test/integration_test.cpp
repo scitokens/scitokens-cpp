@@ -1106,6 +1106,159 @@ TEST_F(IntegrationTest, MonitoringFileOutput) {
     std::remove(test_file.c_str());
 }
 
+// =============================================================================
+// Background JWKS Refresh Test
+// =============================================================================
+
+TEST_F(IntegrationTest, BackgroundRefreshTest) {
+    char *err_msg = nullptr;
+
+    // Set smaller intervals for testing (1 second refresh interval, 2 seconds threshold)
+    int rv = scitoken_config_set_int("keycache.refresh_interval_ms", 1000, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set refresh interval: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv = scitoken_config_set_int("keycache.refresh_threshold_ms", 2000, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set refresh threshold: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a key and token
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
+                                    &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv = scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv = scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // First verification - this will fetch JWKS and track the issuer
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to verify token: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Get the current JWKS to verify it exists
+    char *jwks_before = nullptr;
+    rv = keycache_get_cached_jwks(issuer_url_.c_str(), &jwks_before, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to get cached JWKS: "
+                     << (err_msg ? err_msg : "unknown error");
+    ASSERT_TRUE(jwks_before != nullptr);
+    std::unique_ptr<char, decltype(&free)> jwks_before_ptr(jwks_before, free);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::cout << "Initial JWKS fetched successfully" << std::endl;
+
+    // Set update interval to 1 second so keys will need refresh soon
+    rv = scitoken_config_set_int("keycache.update_interval_s", 1, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Enable background refresh
+    rv = keycache_set_background_refresh(1, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to enable background refresh: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::cout << "Background refresh enabled" << std::endl;
+
+    // Wait for background refresh to trigger (threshold is 2 seconds, interval is 1 second)
+    // We need to wait at least 3 seconds: 1s for next_update to be within threshold + 2s for detection
+    std::cout << "Waiting 4 seconds for background refresh..." << std::endl;
+    sleep(4);
+
+    // The background refresh should have occurred
+    // We can't easily verify it refreshed without instrumenting the code more,
+    // but we can verify the thread is running and didn't crash
+    
+    // Stop background refresh
+    rv = keycache_stop_background_refresh(&err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to stop background refresh: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::cout << "Background refresh stopped successfully" << std::endl;
+
+    // Verify we can still access the JWKS
+    char *jwks_after = nullptr;
+    rv = keycache_get_cached_jwks(issuer_url_.c_str(), &jwks_after, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to get cached JWKS after background refresh: "
+                     << (err_msg ? err_msg : "unknown error");
+    ASSERT_TRUE(jwks_after != nullptr);
+    std::unique_ptr<char, decltype(&free)> jwks_after_ptr(jwks_after, free);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::cout << "Test completed successfully" << std::endl;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
