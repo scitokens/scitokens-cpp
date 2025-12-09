@@ -94,6 +94,9 @@ def main():
         context.load_cert_chain(args.cert, args.key)
         # Set minimum TLS version to 1.2 for security
         context.minimum_version = ssl.TLSVersion.TLSv1_2
+        # Set cipher suites to be compatible with OpenSSL 3.0
+        # Use DEFAULT cipher list which is broadly compatible
+        context.set_ciphers('DEFAULT:@SECLEVEL=1')
         # Allow self-signed certificates for testing
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE

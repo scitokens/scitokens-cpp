@@ -55,9 +55,12 @@ openssl genrsa -out server-key.pem 2048 2>/dev/null
 openssl req -new -key server-key.pem -out server.csr \
   -subj "/C=US/ST=Test/L=Test/O=SciTokens Test/CN=localhost" 2>/dev/null
 
-# Create server certificate signed by CA
+# Create server certificate signed by CA with proper extensions
 cat > server-cert-ext.cnf <<EOF
 subjectAltName = DNS:localhost,IP:127.0.0.1
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
 EOF
 
 openssl x509 -req -days 365 -in server.csr -CA ca-cert.pem -CAkey ca-key.pem \
