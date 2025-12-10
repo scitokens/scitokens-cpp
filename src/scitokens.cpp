@@ -43,7 +43,7 @@ void load_config_from_environment() {
         bool is_int;
     };
 
-    const std::array<ConfigMapping, 4> known_configs = {
+    const std::array<ConfigMapping, 6> known_configs = {
         {{"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
          {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S",
           true},
