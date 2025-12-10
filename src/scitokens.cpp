@@ -24,7 +24,8 @@ std::shared_ptr<std::string> configurer::Configuration::m_tls_ca_file =
 // Protected by mutex; atomic flag for fast-path check
 std::string configurer::Configuration::m_monitoring_file;
 std::mutex configurer::Configuration::m_monitoring_file_mutex;
-std::atomic<bool> configurer::Configuration::m_monitoring_file_configured{false};
+std::atomic<bool> configurer::Configuration::m_monitoring_file_configured{
+    false};
 std::atomic_int configurer::Configuration::m_monitoring_file_interval{60};
 
 void configurer::Configuration::set_monitoring_file(const std::string &path) {
@@ -1128,8 +1129,8 @@ int scitoken_config_set_str(const char *key, const char *value,
         configurer::Configuration::set_tls_ca_file(value ? std::string(value)
                                                          : "");
     } else if (_key == "monitoring.file") {
-        configurer::Configuration::set_monitoring_file(value ? std::string(value)
-                                                             : "");
+        configurer::Configuration::set_monitoring_file(
+            value ? std::string(value) : "");
     } else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
@@ -1153,7 +1154,8 @@ int scitoken_config_get_str(const char *key, char **output, char **err_msg) {
     } else if (_key == "tls.ca_file") {
         *output = strdup(configurer::Configuration::get_tls_ca_file().c_str());
     } else if (_key == "monitoring.file") {
-        *output = strdup(configurer::Configuration::get_monitoring_file().c_str());
+        *output =
+            strdup(configurer::Configuration::get_monitoring_file().c_str());
     }
 
     else {

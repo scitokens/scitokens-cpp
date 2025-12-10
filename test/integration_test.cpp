@@ -1032,9 +1032,9 @@ TEST_F(IntegrationTest, MonitoringFileOutput) {
 
     // Create and verify a token (this should trigger file write)
     // Use test-key-1 to match the key ID in the JWKS server
-    SciTokenKey key = scitoken_key_create("test-key-1", "ES256",
-                                          public_key_.c_str(),
-                                          private_key_.c_str(), &err_msg);
+    SciTokenKey key =
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg);
     ASSERT_TRUE(key != nullptr);
     std::unique_ptr<void, decltype(&scitoken_key_destroy)> key_ptr(
         key, scitoken_key_destroy);
@@ -1071,8 +1071,8 @@ TEST_F(IntegrationTest, MonitoringFileOutput) {
 
     // Check that the monitoring file was created
     std::ifstream file(test_file);
-    EXPECT_TRUE(file.good()) << "Monitoring file should have been created at "
-                             << test_file;
+    EXPECT_TRUE(file.good())
+        << "Monitoring file should have been created at " << test_file;
 
     if (file.good()) {
         // Read and parse the file

@@ -68,7 +68,7 @@ class Configuration {
     static std::string m_monitoring_file;
     static std::mutex m_monitoring_file_mutex;
     static std::atomic<bool> m_monitoring_file_configured; // Fast-path flag
-    static std::atomic_int m_monitoring_file_interval;     // In seconds, default 60
+    static std::atomic_int m_monitoring_file_interval; // In seconds, default 60
     // static bool check_dir(const std::string dir_path);
     static std::pair<bool, std::string>
     mkdir_and_parents_if_needed(const std::string dir_path);
@@ -140,8 +140,10 @@ struct IssuerStats {
     std::atomic<uint64_t> expired_tokens{0};
 
     // Validation started counters (separate from results)
-    std::atomic<uint64_t> sync_validations_started{0};  // Started via blocking verify()
-    std::atomic<uint64_t> async_validations_started{0}; // Started via verify_async()
+    std::atomic<uint64_t> sync_validations_started{
+        0}; // Started via blocking verify()
+    std::atomic<uint64_t> async_validations_started{
+        0}; // Started via verify_async()
 
     // Duration tracking (nanoseconds)
     // sync_total_time_ns is updated periodically during blocking verify()
@@ -417,7 +419,8 @@ class AsyncStatus {
     std::string m_algorithm;
     std::chrono::steady_clock::time_point m_start_time;
     bool m_monitoring_started{false};
-    bool m_is_sync{false}; // True if called from blocking verify(), false for pure async
+    bool m_is_sync{
+        false}; // True if called from blocking verify(), false for pure async
 
     struct timeval get_timeout_val(time_t expiry_time) const {
         auto now = time(NULL);
@@ -613,7 +616,8 @@ class Validator {
     }
 
     void verify(const SciToken &scitoken, time_t expiry_time) {
-        // Check if monitoring file should be written (fast-path, relaxed atomic)
+        // Check if monitoring file should be written (fast-path, relaxed
+        // atomic)
         internal::MonitoringStats::instance().maybe_write_monitoring_file();
 
         std::string issuer = "";
@@ -653,8 +657,9 @@ class Validator {
                 // Update duration periodically on each select return
                 if (issuer_stats) {
                     auto now = std::chrono::steady_clock::now();
-                    auto delta = std::chrono::duration_cast<
-                        std::chrono::nanoseconds>(now - last_duration_update);
+                    auto delta =
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            now - last_duration_update);
                     issuer_stats->add_sync_time(delta);
                     last_duration_update = now;
                 }
@@ -664,7 +669,8 @@ class Validator {
                         "Timeout when loading the OIDC metadata.");
                 }
 
-                // Only continue if select returned due to I/O activity (not timeout)
+                // Only continue if select returned due to I/O activity (not
+                // timeout)
                 if (select_result > 0) {
                     result = verify_async_continue(std::move(result));
                 }
@@ -675,8 +681,9 @@ class Validator {
             // Record successful validation (final duration update)
             if (issuer_stats) {
                 auto end_time = std::chrono::steady_clock::now();
-                auto delta = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    end_time - last_duration_update);
+                auto delta =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        end_time - last_duration_update);
                 issuer_stats->add_sync_time(delta);
                 issuer_stats->inc_successful_validation();
             }
@@ -684,8 +691,9 @@ class Validator {
             // Record failure (final duration update)
             if (issuer_stats) {
                 auto end_time = std::chrono::steady_clock::now();
-                auto delta = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    end_time - last_duration_update);
+                auto delta =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        end_time - last_duration_update);
                 issuer_stats->add_sync_time(delta);
                 record_validation_error_stats(*issuer_stats, e);
             } else if (!issuer.empty()) {
@@ -704,7 +712,8 @@ class Validator {
     }
 
     void verify(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
-        // Check if monitoring file should be written (fast-path, relaxed atomic)
+        // Check if monitoring file should be written (fast-path, relaxed
+        // atomic)
         internal::MonitoringStats::instance().maybe_write_monitoring_file();
 
         std::string issuer = "";
@@ -1015,14 +1024,16 @@ class Validator {
                 }
         }
 
-        // Record successful validation (only for async API, sync handles its own)
+        // Record successful validation (only for async API, sync handles its
+        // own)
         if (status->m_monitoring_started && !status->m_is_sync) {
             auto end_time = std::chrono::steady_clock::now();
             auto duration =
                 std::chrono::duration_cast<std::chrono::nanoseconds>(
                     end_time - status->m_start_time);
-            auto &stats = internal::MonitoringStats::instance().get_issuer_stats(
-                status->m_issuer);
+            auto &stats =
+                internal::MonitoringStats::instance().get_issuer_stats(
+                    status->m_issuer);
             stats.inc_successful_validation();
             stats.add_async_time(duration);
         }

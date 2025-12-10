@@ -166,7 +166,8 @@ void MonitoringStats::maybe_write_monitoring_file() noexcept {
                                .count();
         int64_t last_write =
             m_last_file_write_time.load(std::memory_order_relaxed);
-        int interval = configurer::Configuration::get_monitoring_file_interval();
+        int interval =
+            configurer::Configuration::get_monitoring_file_interval();
 
         // Check if enough time has passed since last write
         if (now_seconds - last_write < interval) {

@@ -357,9 +357,8 @@ TEST_F(MonitoringTest, MonitoringFileConfiguration) {
     EXPECT_EQ(interval, 60);
 
     // Set a monitoring file path
-    rv = scitoken_config_set_str("monitoring.file",
-                                 "/tmp/scitokens_test_monitoring.json",
-                                 &err_msg);
+    rv = scitoken_config_set_str(
+        "monitoring.file", "/tmp/scitokens_test_monitoring.json", &err_msg);
     EXPECT_EQ(rv, 0);
 
     rv = scitoken_config_get_str("monitoring.file", &path, &err_msg);

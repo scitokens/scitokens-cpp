@@ -306,7 +306,8 @@ int config_set_int(const char *key, int value, char **err_msg);
  * Supported keys:
  * - "keycache.update_interval_s": Interval between key cache updates (seconds)
  * - "keycache.expiration_interval_s": Key cache expiration time (seconds)
- * - "monitoring.file_interval_s": Interval between monitoring file writes (seconds, default 60)
+ * - "monitoring.file_interval_s": Interval between monitoring file writes
+ * (seconds, default 60)
  */
 int scitoken_config_set_int(const char *key, int value, char **err_msg);
 
@@ -322,7 +323,8 @@ int config_get_int(const char *key, char **err_msg);
  * Supported keys:
  * - "keycache.update_interval_s": Interval between key cache updates (seconds)
  * - "keycache.expiration_interval_s": Key cache expiration time (seconds)
- * - "monitoring.file_interval_s": Interval between monitoring file writes (seconds, default 60)
+ * - "monitoring.file_interval_s": Interval between monitoring file writes
+ * (seconds, default 60)
  */
 int scitoken_config_get_int(const char *key, char **err_msg);
 
@@ -333,9 +335,10 @@ int scitoken_config_get_int(const char *key, char **err_msg);
  * Supported keys:
  * - "keycache.cache_home": Directory for the key cache
  * - "tls.ca_file": Path to TLS CA certificate file
- * - "monitoring.file": Path to write monitoring JSON (empty to disable, default disabled)
- *                      When enabled, monitoring stats are written periodically during verify()
- *                      calls. The write interval is controlled by "monitoring.file_interval_s".
+ * - "monitoring.file": Path to write monitoring JSON (empty to disable, default
+ * disabled) When enabled, monitoring stats are written periodically during
+ * verify() calls. The write interval is controlled by
+ * "monitoring.file_interval_s".
  */
 int scitoken_config_set_str(const char *key, const char *value, char **err_msg);
 
@@ -361,7 +364,8 @@ int scitoken_config_get_str(const char *key, char **output, char **err_msg);
  * - expired_tokens: count of expired tokens encountered
  * - sync_validations_started: count of validations started via blocking API
  * - async_validations_started: count of validations started via async API
- * - sync_total_time_s: time spent in blocking verify() calls (updated every 50ms)
+ * - sync_total_time_s: time spent in blocking verify() calls (updated every
+ * 50ms)
  * - async_total_time_s: time spent in async validations (updated on completion)
  * - total_validation_time_s: sum of sync and async time
  * - successful_key_lookups: count of successful JWKS web refreshes
