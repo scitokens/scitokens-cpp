@@ -39,13 +39,13 @@ class Configuration {
   public:
     Configuration() {}
     static void set_next_update_delta(int _next_update_delta) {
-        m_next_update_delta = _next_update_delta;
+        get_next_update_delta_ref() = _next_update_delta;
     }
-    static int get_next_update_delta() { return m_next_update_delta; }
+    static int get_next_update_delta() { return get_next_update_delta_ref(); }
     static void set_expiry_delta(int _expiry_delta) {
-        m_expiry_delta = _expiry_delta;
+        get_expiry_delta_ref() = _expiry_delta;
     }
-    static int get_expiry_delta() { return m_expiry_delta; }
+    static int get_expiry_delta() { return get_expiry_delta_ref(); }
     static std::pair<bool, std::string>
     set_cache_home(const std::string cache_home);
     static std::string get_cache_home();
@@ -79,6 +79,45 @@ class Configuration {
     static int get_refresh_threshold() { return m_refresh_threshold; }
 
   private:
+    // Accessor functions for construct-on-first-use idiom
+    static std::atomic_int &get_next_update_delta_ref() {
+        static std::atomic_int instance{600};
+        return instance;
+    }
+    static std::atomic_int &get_expiry_delta_ref() {
+        static std::atomic_int instance{4 * 24 * 3600};
+        return instance;
+    }
+
+    // Thread-safe accessors for string configurations
+    static std::mutex &get_cache_home_mutex() {
+        static std::mutex instance;
+        return instance;
+    }
+    static std::string &get_cache_home_string() {
+        static std::string instance;
+        return instance;
+    }
+    static std::atomic<bool> &get_cache_home_set() {
+        static std::atomic<bool> instance{false};
+        return instance;
+    }
+
+    static std::mutex &get_tls_ca_file_mutex() {
+        static std::mutex instance;
+        return instance;
+    }
+    static std::string &get_tls_ca_file_string() {
+        static std::string instance;
+        return instance;
+    }
+    static std::atomic<bool> &get_tls_ca_file_set() {
+        static std::atomic<bool> instance{false};
+        return instance;
+    }
+
+    // Keep old declarations for backwards compatibility (will forward to
+    // accessor functions)
     static std::atomic_int m_next_update_delta;
     static std::atomic_int m_expiry_delta;
     static std::shared_ptr<std::string> m_cache_home;

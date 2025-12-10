@@ -1265,7 +1265,9 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
     // If setting to "", then we should treat as though it is unsetting the
     // config
     if (dir_path.length() == 0) { // User is configuring to empty string
-        m_cache_home = std::make_shared<std::string>(dir_path);
+        std::lock_guard<std::mutex> lock(get_cache_home_mutex());
+        get_cache_home_string() = dir_path;
+        get_cache_home_set().store(false, std::memory_order_relaxed);
         return std::make_pair(true, "");
     }
 
@@ -1288,20 +1290,38 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
 
     // Now it exists and we can write to it, set the value and let
     // scitokens_cache handle the rest
-    m_cache_home = std::make_shared<std::string>(cleaned_dir_path);
+    {
+        std::lock_guard<std::mutex> lock(get_cache_home_mutex());
+        get_cache_home_string() = cleaned_dir_path;
+        get_cache_home_set().store(true, std::memory_order_relaxed);
+    }
     return std::make_pair(true, "");
 }
 
 void configurer::Configuration::set_tls_ca_file(const std::string ca_file) {
-    m_tls_ca_file = std::make_shared<std::string>(ca_file);
+    std::lock_guard<std::mutex> lock(get_tls_ca_file_mutex());
+    get_tls_ca_file_string() = ca_file;
+    get_tls_ca_file_set().store(!ca_file.empty(), std::memory_order_relaxed);
 }
 
 std::string configurer::Configuration::get_cache_home() {
-    return *m_cache_home;
+    // Fast path: check if the value has been set
+    if (!get_cache_home_set().load(std::memory_order_relaxed)) {
+        return "";
+    }
+    // Slow path: acquire lock and read the value
+    std::lock_guard<std::mutex> lock(get_cache_home_mutex());
+    return get_cache_home_string();
 }
 
 std::string configurer::Configuration::get_tls_ca_file() {
-    return *m_tls_ca_file;
+    // Fast path: check if the value has been set
+    if (!get_tls_ca_file_set().load(std::memory_order_relaxed)) {
+        return "";
+    }
+    // Slow path: acquire lock and read the value
+    std::lock_guard<std::mutex> lock(get_tls_ca_file_mutex());
+    return get_tls_ca_file_string();
 }
 
 // bool configurer::Configuration::check_dir(const std::string dir_path) {
