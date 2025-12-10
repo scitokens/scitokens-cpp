@@ -59,14 +59,31 @@ class Configuration {
         static std::atomic_int instance{4 * 24 * 3600};
         return instance;
     }
-    static std::shared_ptr<std::string> &get_cache_home_ref() {
-        static std::shared_ptr<std::string> instance =
-            std::make_shared<std::string>("");
+
+    // Thread-safe accessors for string configurations
+    static std::mutex &get_cache_home_mutex() {
+        static std::mutex instance;
         return instance;
     }
-    static std::shared_ptr<std::string> &get_tls_ca_file_ref() {
-        static std::shared_ptr<std::string> instance =
-            std::make_shared<std::string>("");
+    static std::string &get_cache_home_string() {
+        static std::string instance;
+        return instance;
+    }
+    static std::atomic<bool> &get_cache_home_set() {
+        static std::atomic<bool> instance{false};
+        return instance;
+    }
+
+    static std::mutex &get_tls_ca_file_mutex() {
+        static std::mutex instance;
+        return instance;
+    }
+    static std::string &get_tls_ca_file_string() {
+        static std::string instance;
+        return instance;
+    }
+    static std::atomic<bool> &get_tls_ca_file_set() {
+        static std::atomic<bool> instance{false};
         return instance;
     }
 
