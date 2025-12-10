@@ -39,6 +39,9 @@ class MonitoringStats {
         uint64_t expired_keys{0};
         uint64_t failed_refreshes{0};
         uint64_t stale_key_uses{0};
+        // Background refresh statistics
+        uint64_t background_successful_refreshes{0};
+        uint64_t background_failed_refreshes{0};
     };
 
     struct FailedIssuerLookup {
@@ -154,6 +157,19 @@ class MonitoringStats {
                     it = stats_obj.find("stale_key_uses");
                     if (it != stats_obj.end() && it->second.is<double>()) {
                         stats.stale_key_uses =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    // Background refresh statistics
+                    it = stats_obj.find("background_successful_refreshes");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.background_successful_refreshes =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("background_failed_refreshes");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.background_failed_refreshes =
                             static_cast<uint64_t>(it->second.get<double>());
                     }
 
@@ -1104,6 +1120,220 @@ TEST_F(IntegrationTest, MonitoringFileOutput) {
     scitoken_config_set_str("monitoring.file", "", &err_msg);
     scitoken_config_set_int("monitoring.file_interval_s", 60, &err_msg);
     std::remove(test_file.c_str());
+}
+
+// =============================================================================
+// Background JWKS Refresh Test
+// =============================================================================
+
+TEST_F(IntegrationTest, BackgroundRefreshTest) {
+    char *err_msg = nullptr;
+
+    // Reset monitoring stats to get a clean baseline
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Set smaller intervals for testing (1 second refresh interval, 2 seconds
+    // threshold)
+    int rv =
+        scitoken_config_set_int("keycache.refresh_interval_ms", 1000, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set refresh interval: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv = scitoken_config_set_int("keycache.refresh_threshold_ms", 2000,
+                                 &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set refresh threshold: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Set update interval to 1 second BEFORE first verification so the
+    // cache entry will have next_update just 1 second in the future.
+    // This ensures the background thread can refresh within the test window.
+    rv = scitoken_config_set_int("keycache.update_interval_s", 1, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a key and token
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
+                                   &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv =
+        scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv =
+        scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // First verification - this will fetch JWKS and track the issuer
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to verify token: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Get the current JWKS to verify it exists
+    char *jwks_before = nullptr;
+    rv = keycache_get_cached_jwks(issuer_url_.c_str(), &jwks_before, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to get cached JWKS: "
+                     << (err_msg ? err_msg : "unknown error");
+    ASSERT_TRUE(jwks_before != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::cout << "Initial JWKS fetched successfully" << std::endl;
+
+    // Re-set the JWKS to force a fresh cache entry with the current
+    // update_interval (1 second). This ensures next_update is just 1 second
+    // in the future so the background thread will refresh it.
+    rv = keycache_set_jwks(issuer_url_.c_str(), jwks_before, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set JWKS: "
+                     << (err_msg ? err_msg : "unknown error");
+    free(jwks_before);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::cout << "JWKS re-set with 1-second update interval" << std::endl;
+
+    // Get monitoring stats before background refresh
+    auto before_stats = getCurrentMonitoringStats();
+    auto before_issuer_stats = before_stats.getIssuerStats(issuer_url_);
+    std::cout << "Before background refresh:" << std::endl;
+    std::cout << "  background_successful_refreshes: "
+              << before_issuer_stats.background_successful_refreshes
+              << std::endl;
+    std::cout << "  background_failed_refreshes: "
+              << before_issuer_stats.background_failed_refreshes << std::endl;
+
+    // Enable background refresh
+    rv = keycache_set_background_refresh(1, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to enable background refresh: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::cout << "Background refresh enabled" << std::endl;
+
+    // Wait for background refresh to trigger (threshold is 2 seconds, interval
+    // is 1 second) We need to wait at least 3 seconds: 1s for next_update to be
+    // within threshold + 2s for detection Note: Using sleep() is acceptable for
+    // integration tests as we're verifying real-time behavior of the background
+    // thread against an actual HTTPS server
+    std::cout << "Waiting 4 seconds for background refresh..." << std::endl;
+    sleep(4);
+
+    // Stop background refresh
+    rv = keycache_stop_background_refresh(&err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to stop background refresh: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::cout << "Background refresh stopped successfully" << std::endl;
+
+    // Verify we can still access the JWKS
+    char *jwks_after = nullptr;
+    rv = keycache_get_cached_jwks(issuer_url_.c_str(), &jwks_after, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to get cached JWKS after background refresh: "
+                     << (err_msg ? err_msg : "unknown error");
+    ASSERT_TRUE(jwks_after != nullptr);
+    std::unique_ptr<char, decltype(&free)> jwks_after_ptr(jwks_after, free);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Verify that background refresh statistics increased for our issuer
+    auto after_stats = getCurrentMonitoringStats();
+    auto after_issuer_stats = after_stats.getIssuerStats(issuer_url_);
+
+    std::cout << "After background refresh:" << std::endl;
+    std::cout << "  background_successful_refreshes: "
+              << after_issuer_stats.background_successful_refreshes
+              << std::endl;
+    std::cout << "  background_failed_refreshes: "
+              << after_issuer_stats.background_failed_refreshes << std::endl;
+
+    // The background thread should have performed at least one refresh
+    // for our issuer (either successful or failed)
+    uint64_t total_background_refreshes =
+        after_issuer_stats.background_successful_refreshes +
+        after_issuer_stats.background_failed_refreshes;
+    uint64_t before_total =
+        before_issuer_stats.background_successful_refreshes +
+        before_issuer_stats.background_failed_refreshes;
+
+    EXPECT_GT(total_background_refreshes, before_total)
+        << "Background refresh thread should have performed at least one "
+           "refresh attempt for our issuer";
+
+    std::cout << "Test completed successfully" << std::endl;
 }
 
 } // namespace

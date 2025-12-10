@@ -43,14 +43,17 @@ void load_config_from_environment() {
         bool is_int;
     };
 
-    const std::array<ConfigMapping, 6> known_configs = {
+    const std::array<ConfigMapping, 8> known_configs = {
         {{"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
          {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S",
           true},
          {"keycache.cache_home", "KEYCACHE_CACHE_HOME", false},
          {"tls.ca_file", "TLS_CA_FILE", false},
          {"monitoring.file", "MONITORING_FILE", false},
-         {"monitoring.file_interval_s", "MONITORING_FILE_INTERVAL_S", true}}};
+         {"monitoring.file_interval_s", "MONITORING_FILE_INTERVAL_S", true},
+         {"keycache.refresh_interval_ms", "KEYCACHE_REFRESH_INTERVAL_MS", true},
+         {"keycache.refresh_threshold_ms", "KEYCACHE_REFRESH_THRESHOLD_MS",
+          true}}};
 
     const char *prefix = "SCITOKEN_CONFIG_";
 
@@ -127,6 +130,13 @@ void configurer::Configuration::set_monitoring_file_interval(int seconds) {
 int configurer::Configuration::get_monitoring_file_interval() {
     return m_monitoring_file_interval;
 }
+
+// Background refresh config
+std::atomic_bool configurer::Configuration::m_background_refresh_enabled{false};
+std::atomic_int configurer::Configuration::m_refresh_interval_ms{
+    60000}; // 60 seconds
+std::atomic_int configurer::Configuration::m_refresh_threshold_ms{
+    600000}; // 10 minutes
 
 SciTokenKey scitoken_key_create(const char *key_id, const char *alg,
                                 const char *public_contents,
@@ -1099,6 +1109,31 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg) {
     return 0;
 }
 
+int keycache_set_background_refresh(int enabled, char **err_msg) {
+    try {
+        bool enable = (enabled != 0);
+        configurer::Configuration::set_background_refresh_enabled(enable);
+
+        if (enable) {
+            scitokens::internal::BackgroundRefreshManager::get_instance()
+                .start();
+        } else {
+            scitokens::internal::BackgroundRefreshManager::get_instance()
+                .stop();
+        }
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int keycache_stop_background_refresh(char **err_msg) {
+    return keycache_set_background_refresh(0, err_msg);
+}
+
 int config_set_int(const char *key, int value, char **err_msg) {
     return scitoken_config_set_int(key, value, err_msg);
 }
@@ -1145,6 +1180,28 @@ int scitoken_config_set_int(const char *key, int value, char **err_msg) {
         return 0;
     }
 
+    else if (_key == "keycache.refresh_interval_ms") {
+        if (value < 0) {
+            if (err_msg) {
+                *err_msg = strdup("Refresh interval must be positive.");
+            }
+            return -1;
+        }
+        configurer::Configuration::set_refresh_interval(value);
+        return 0;
+    }
+
+    else if (_key == "keycache.refresh_threshold_ms") {
+        if (value < 0) {
+            if (err_msg) {
+                *err_msg = strdup("Refresh threshold must be positive.");
+            }
+            return -1;
+        }
+        configurer::Configuration::set_refresh_threshold(value);
+        return 0;
+    }
+
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
@@ -1176,6 +1233,14 @@ int scitoken_config_get_int(const char *key, char **err_msg) {
 
     else if (_key == "monitoring.file_interval_s") {
         return configurer::Configuration::get_monitoring_file_interval();
+    }
+
+    else if (_key == "keycache.refresh_interval_ms") {
+        return configurer::Configuration::get_refresh_interval();
+    }
+
+    else if (_key == "keycache.refresh_threshold_ms") {
+        return configurer::Configuration::get_refresh_threshold();
     }
 
     else {

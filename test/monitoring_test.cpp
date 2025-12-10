@@ -77,34 +77,34 @@ class MonitoringStats {
                         issuer_entry.second.get<picojson::object>();
 
                     auto it = stats_obj.find("successful_validations");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.successful_validations =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("unsuccessful_validations");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.unsuccessful_validations =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("expired_tokens");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.expired_tokens =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     // Validation started counters
                     it = stats_obj.find("sync_validations_started");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.sync_validations_started =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("async_validations_started");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.async_validations_started =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     // Duration tracking
@@ -126,15 +126,15 @@ class MonitoringStats {
 
                     // Key lookup statistics
                     it = stats_obj.find("successful_key_lookups");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.successful_key_lookups =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("failed_key_lookups");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.failed_key_lookups =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("failed_key_lookup_time_s");
@@ -145,21 +145,21 @@ class MonitoringStats {
 
                     // Key refresh statistics
                     it = stats_obj.find("expired_keys");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.expired_keys =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("failed_refreshes");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.failed_refreshes =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("stale_key_uses");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.stale_key_uses =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     issuers_[issuer_entry.first] = stats;
@@ -179,9 +179,9 @@ class MonitoringStats {
                     auto &lookup_obj = entry.second.get<picojson::object>();
 
                     auto it = lookup_obj.find("count");
-                    if (it != lookup_obj.end() && it->second.is<double>()) {
+                    if (it != lookup_obj.end() && it->second.is<int64_t>()) {
                         lookup.count =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = lookup_obj.find("total_time_s");

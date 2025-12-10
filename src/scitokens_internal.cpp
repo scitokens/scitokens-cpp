@@ -1,4 +1,5 @@
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <sstream>
@@ -37,7 +38,100 @@ std::mutex key_refresh_mutex;
 
 namespace scitokens {
 
+// Define the static once_flag for Validator
+std::once_flag Validator::m_background_refresh_once;
+
 namespace internal {
+
+// BackgroundRefreshManager implementation
+void BackgroundRefreshManager::start() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_running.load(std::memory_order_acquire)) {
+        return; // Already running
+    }
+    m_shutdown.store(false, std::memory_order_release);
+    m_running.store(true, std::memory_order_release);
+    m_thread = std::make_unique<std::thread>(
+        &BackgroundRefreshManager::refresh_loop, this);
+}
+
+void BackgroundRefreshManager::stop() {
+    std::unique_ptr<std::thread> thread_to_join;
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_running.load(std::memory_order_acquire)) {
+            return; // Not running
+        }
+
+        m_shutdown.store(true, std::memory_order_release);
+        m_running.store(false, std::memory_order_release);
+        thread_to_join = std::move(m_thread);
+    }
+
+    m_cv.notify_all();
+
+    if (thread_to_join && thread_to_join->joinable()) {
+        thread_to_join->join();
+    }
+}
+
+void BackgroundRefreshManager::refresh_loop() {
+    while (!m_shutdown.load(std::memory_order_acquire)) {
+        auto interval = configurer::Configuration::get_refresh_interval();
+        auto threshold = configurer::Configuration::get_refresh_threshold();
+
+        // Wait for the interval or until shutdown
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_cv.wait_for(lock, std::chrono::milliseconds(interval), [this]() {
+                return m_shutdown.load(std::memory_order_acquire);
+            });
+        }
+
+        if (m_shutdown.load(std::memory_order_acquire)) {
+            break;
+        }
+
+        // Get list of issuers from the database
+        auto now = std::time(NULL);
+        auto issuers = scitokens::Validator::get_all_issuers_from_db(now);
+
+        for (const auto &issuer_pair : issuers) {
+            if (m_shutdown.load(std::memory_order_acquire)) {
+                break;
+            }
+
+            const auto &issuer = issuer_pair.first;
+            const auto &next_update = issuer_pair.second;
+
+            // Calculate time until next_update in milliseconds
+            int64_t time_until_update = (next_update - now) * 1000;
+
+            // If next update is within threshold, try to refresh
+            if (time_until_update <= threshold) {
+                auto &stats =
+                    MonitoringStats::instance().get_issuer_stats(issuer);
+                try {
+                    // Perform refresh (this will use the refresh_jwks method)
+                    scitokens::Validator::refresh_jwks(issuer);
+                    stats.inc_background_successful_refresh();
+                } catch (std::exception &) {
+                    // Track failed refresh attempts
+                    stats.inc_background_failed_refresh();
+                    // Silently ignore errors in background refresh to avoid
+                    // disrupting the application. Background refresh is a
+                    // best-effort optimization. If it fails, the next token
+                    // verification will trigger a foreground refresh as usual.
+                }
+            }
+        }
+
+        // Write monitoring file from background thread if configured
+        // This avoids writing from verify() when background thread is running
+        MonitoringStats::instance().maybe_write_monitoring_file();
+    }
+}
 
 SimpleCurlGet::GetStatus SimpleCurlGet::perform_start(const std::string &url) {
     m_len = 0;
