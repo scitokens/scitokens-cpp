@@ -20,6 +20,35 @@ std::shared_ptr<std::string> configurer::Configuration::m_cache_home =
 std::shared_ptr<std::string> configurer::Configuration::m_tls_ca_file =
     std::make_shared<std::string>("");
 
+// Monitoring file config (empty string means disabled)
+// Protected by mutex; atomic flag for fast-path check
+std::string configurer::Configuration::m_monitoring_file;
+std::mutex configurer::Configuration::m_monitoring_file_mutex;
+std::atomic<bool> configurer::Configuration::m_monitoring_file_configured{
+    false};
+std::atomic_int configurer::Configuration::m_monitoring_file_interval{60};
+
+void configurer::Configuration::set_monitoring_file(const std::string &path) {
+    std::lock_guard<std::mutex> lock(m_monitoring_file_mutex);
+    m_monitoring_file = path;
+    // Update the atomic flag after setting the string
+    m_monitoring_file_configured.store(!path.empty(),
+                                       std::memory_order_release);
+}
+
+std::string configurer::Configuration::get_monitoring_file() {
+    std::lock_guard<std::mutex> lock(m_monitoring_file_mutex);
+    return m_monitoring_file;
+}
+
+void configurer::Configuration::set_monitoring_file_interval(int seconds) {
+    m_monitoring_file_interval = seconds;
+}
+
+int configurer::Configuration::get_monitoring_file_interval() {
+    return m_monitoring_file_interval;
+}
+
 SciTokenKey scitoken_key_create(const char *key_id, const char *alg,
                                 const char *public_contents,
                                 const char *private_contents, char **err_msg) {
@@ -246,10 +275,12 @@ int scitoken_get_expiration(const SciToken token, long long *expiry,
             // Float value - convert to integer (truncate)
             // Float value - convert to integer using std::floor().
             // This ensures expiration is not extended by fractional seconds.
-            result = static_cast<long long>(std::floor(claim_value.get<double>()));
+            result =
+                static_cast<long long>(std::floor(claim_value.get<double>()));
         } else {
             if (err_msg) {
-                *err_msg = strdup("'exp' claim must be a number (integer or float)");
+                *err_msg =
+                    strdup("'exp' claim must be a number (integer or float)");
             }
             return -1;
         }
@@ -1024,6 +1055,17 @@ int scitoken_config_set_int(const char *key, int value, char **err_msg) {
         return 0;
     }
 
+    else if (_key == "monitoring.file_interval_s") {
+        if (value < 0) {
+            if (err_msg) {
+                *err_msg = strdup("Interval cannot be negative.");
+            }
+            return -1;
+        }
+        configurer::Configuration::set_monitoring_file_interval(value);
+        return 0;
+    }
+
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
@@ -1053,6 +1095,10 @@ int scitoken_config_get_int(const char *key, char **err_msg) {
         return configurer::Configuration::get_expiry_delta();
     }
 
+    else if (_key == "monitoring.file_interval_s") {
+        return configurer::Configuration::get_monitoring_file_interval();
+    }
+
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
@@ -1080,9 +1126,12 @@ int scitoken_config_set_str(const char *key, const char *value,
             return -1;
         }
     } else if (_key == "tls.ca_file") {
-       configurer::Configuration::set_tls_ca_file(value ? std::string(value) : "");
-    }
-    else {
+        configurer::Configuration::set_tls_ca_file(value ? std::string(value)
+                                                         : "");
+    } else if (_key == "monitoring.file") {
+        configurer::Configuration::set_monitoring_file(
+            value ? std::string(value) : "");
+    } else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
         }
@@ -1104,11 +1153,46 @@ int scitoken_config_get_str(const char *key, char **output, char **err_msg) {
         *output = strdup(configurer::Configuration::get_cache_home().c_str());
     } else if (_key == "tls.ca_file") {
         *output = strdup(configurer::Configuration::get_tls_ca_file().c_str());
+    } else if (_key == "monitoring.file") {
+        *output =
+            strdup(configurer::Configuration::get_monitoring_file().c_str());
     }
 
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int scitoken_get_monitoring_json(char **json_out, char **err_msg) {
+    if (!json_out) {
+        if (err_msg) {
+            *err_msg = strdup("JSON output pointer may not be null.");
+        }
+        return -1;
+    }
+    try {
+        std::string json =
+            scitokens::internal::MonitoringStats::instance().get_json();
+        *json_out = strdup(json.c_str());
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int scitoken_reset_monitoring_stats(char **err_msg) {
+    try {
+        scitokens::internal::MonitoringStats::instance().reset();
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
         }
         return -1;
     }

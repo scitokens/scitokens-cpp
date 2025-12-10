@@ -1,5 +1,6 @@
 #include "../src/scitokens.h"
 
+#include <cmath>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -9,7 +10,239 @@
 #include <string>
 #include <unistd.h>
 
+#ifndef PICOJSON_USE_INT64
+#define PICOJSON_USE_INT64
+#endif
+#include <picojson/picojson.h>
+
 namespace {
+
+// Helper class to parse monitoring JSON
+class MonitoringStats {
+  public:
+    struct IssuerStats {
+        uint64_t successful_validations{0};
+        uint64_t unsuccessful_validations{0};
+        uint64_t expired_tokens{0};
+        // Validation started counters
+        uint64_t sync_validations_started{0};
+        uint64_t async_validations_started{0};
+        // Duration tracking
+        double sync_total_time_s{0.0};
+        double async_total_time_s{0.0};
+        double total_validation_time_s{0.0};
+        // Key lookup statistics
+        uint64_t successful_key_lookups{0};
+        uint64_t failed_key_lookups{0};
+        double failed_key_lookup_time_s{0.0};
+        // Key refresh statistics
+        uint64_t expired_keys{0};
+        uint64_t failed_refreshes{0};
+        uint64_t stale_key_uses{0};
+    };
+
+    struct FailedIssuerLookup {
+        uint64_t count{0};
+        double total_time_s{0.0};
+    };
+
+    bool parse(const std::string &json) {
+        picojson::value root;
+        std::string err = picojson::parse(root, json);
+        if (!err.empty()) {
+            return false;
+        }
+
+        if (!root.is<picojson::object>()) {
+            return false;
+        }
+
+        auto &root_obj = root.get<picojson::object>();
+
+        // Parse issuers
+        issuers_.clear();
+        auto issuers_it = root_obj.find("issuers");
+        if (issuers_it != root_obj.end() &&
+            issuers_it->second.is<picojson::object>()) {
+            auto &issuers_obj = issuers_it->second.get<picojson::object>();
+            for (const auto &issuer_entry : issuers_obj) {
+                if (issuer_entry.second.is<picojson::object>()) {
+                    IssuerStats stats;
+                    auto &stats_obj =
+                        issuer_entry.second.get<picojson::object>();
+
+                    auto it = stats_obj.find("successful_validations");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.successful_validations =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("unsuccessful_validations");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.unsuccessful_validations =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("expired_tokens");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.expired_tokens =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    // Validation started counters
+                    it = stats_obj.find("sync_validations_started");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.sync_validations_started =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("async_validations_started");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.async_validations_started =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    // Duration tracking
+                    it = stats_obj.find("sync_total_time_s");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.sync_total_time_s = it->second.get<double>();
+                    }
+
+                    it = stats_obj.find("async_total_time_s");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.async_total_time_s = it->second.get<double>();
+                    }
+
+                    it = stats_obj.find("total_validation_time_s");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.total_validation_time_s =
+                            it->second.get<double>();
+                    }
+
+                    // Key lookup statistics
+                    it = stats_obj.find("successful_key_lookups");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.successful_key_lookups =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("failed_key_lookups");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.failed_key_lookups =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("failed_key_lookup_time_s");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.failed_key_lookup_time_s =
+                            it->second.get<double>();
+                    }
+
+                    // Key refresh statistics
+                    it = stats_obj.find("expired_keys");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.expired_keys =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("failed_refreshes");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.failed_refreshes =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("stale_key_uses");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.stale_key_uses =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    issuers_[issuer_entry.first] = stats;
+                }
+            }
+        }
+
+        // Parse failed issuer lookups (now has count and total_time_s)
+        failed_issuer_lookups_.clear();
+        auto failed_it = root_obj.find("failed_issuer_lookups");
+        if (failed_it != root_obj.end() &&
+            failed_it->second.is<picojson::object>()) {
+            auto &failed_obj = failed_it->second.get<picojson::object>();
+            for (const auto &entry : failed_obj) {
+                if (entry.second.is<picojson::object>()) {
+                    FailedIssuerLookup lookup;
+                    auto &lookup_obj = entry.second.get<picojson::object>();
+
+                    auto it = lookup_obj.find("count");
+                    if (it != lookup_obj.end() && it->second.is<double>()) {
+                        lookup.count =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = lookup_obj.find("total_time_s");
+                    if (it != lookup_obj.end() && it->second.is<double>()) {
+                        lookup.total_time_s = it->second.get<double>();
+                    }
+
+                    failed_issuer_lookups_[entry.first] = lookup;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    IssuerStats getIssuerStats(const std::string &issuer) const {
+        auto it = issuers_.find(issuer);
+        if (it != issuers_.end()) {
+            return it->second;
+        }
+        return IssuerStats{};
+    }
+
+    FailedIssuerLookup getFailedLookup(const std::string &issuer) const {
+        auto it = failed_issuer_lookups_.find(issuer);
+        if (it != failed_issuer_lookups_.end()) {
+            return it->second;
+        }
+        return FailedIssuerLookup{};
+    }
+
+    uint64_t getFailedLookupCount(const std::string &issuer) const {
+        return getFailedLookup(issuer).count;
+    }
+
+    double getFailedLookupTime(const std::string &issuer) const {
+        return getFailedLookup(issuer).total_time_s;
+    }
+
+    size_t getIssuerCount() const { return issuers_.size(); }
+
+    size_t getFailedIssuerCount() const {
+        return failed_issuer_lookups_.size();
+    }
+
+  private:
+    std::map<std::string, IssuerStats> issuers_;
+    std::map<std::string, FailedIssuerLookup> failed_issuer_lookups_;
+};
+
+// Helper to get current monitoring stats
+MonitoringStats getCurrentMonitoringStats() {
+    char *json_out = nullptr;
+    char *err_msg = nullptr;
+    MonitoringStats stats;
+
+    int rv = scitoken_get_monitoring_json(&json_out, &err_msg);
+    if (rv == 0 && json_out) {
+        stats.parse(json_out);
+        free(json_out);
+    }
+    if (err_msg)
+        free(err_msg);
+
+    return stats;
+}
 
 // Helper to read environment variables from setup.sh
 class TestEnvironment {
@@ -378,6 +611,499 @@ TEST_F(IntegrationTest, EnforcerWithDynamicIssuer) {
     }
 
     enforcer_destroy(enforcer);
+}
+
+// =============================================================================
+// Monitoring API Integration Tests
+// =============================================================================
+
+TEST_F(IntegrationTest, MonitoringCountersIncrease) {
+    char *err_msg = nullptr;
+
+    // Reset monitoring stats
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Get initial stats
+    auto initial_stats = getCurrentMonitoringStats();
+    auto initial_issuer_stats = initial_stats.getIssuerStats(issuer_url_);
+
+    // Create and verify a valid token
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    auto rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
+                                        &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv =
+        scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Verify the token (should increment successful_validations)
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Check that counters increased
+    auto after_stats = getCurrentMonitoringStats();
+    auto after_issuer_stats = after_stats.getIssuerStats(issuer_url_);
+
+    EXPECT_GT(after_issuer_stats.successful_validations,
+              initial_issuer_stats.successful_validations)
+        << "successful_validations should have increased";
+
+    // Duration should also have increased
+    EXPECT_GT(after_issuer_stats.total_validation_time_s,
+              initial_issuer_stats.total_validation_time_s)
+        << "total_validation_time_s should have increased";
+
+    std::cout << "After successful validation:" << std::endl;
+    std::cout << "  successful_validations: "
+              << after_issuer_stats.successful_validations << std::endl;
+    std::cout << "  total_validation_time_s: "
+              << after_issuer_stats.total_validation_time_s << std::endl;
+}
+
+TEST_F(IntegrationTest, MonitoringFailedIssuerLookup404) {
+    char *err_msg = nullptr;
+
+    // Reset monitoring stats
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Parse the issuer URL to construct a 404 path
+    // The server returns 404 for paths other than
+    // /.well-known/openid-configuration We need to use the same host but a path
+    // that doesn't exist
+    std::string issuer_404 = issuer_url_ + "/nonexistent-path";
+
+    // Create a token with issuer that will get 404
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    // Use issuer URL that will cause 404 on metadata lookup
+    auto rv = scitoken_set_claim_string(token.get(), "iss", issuer_404.c_str(),
+                                        &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Try to verify - should fail with 404
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    EXPECT_NE(rv, 0) << "Verification should fail for 404 issuer";
+    if (err_msg) {
+        std::cout << "Expected error: " << err_msg << std::endl;
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Check that failed issuer lookup was recorded
+    auto stats = getCurrentMonitoringStats();
+    auto issuer_stats = stats.getIssuerStats(issuer_404);
+
+    EXPECT_GT(issuer_stats.unsuccessful_validations, 0u)
+        << "unsuccessful_validations should have increased for 404 issuer";
+
+    std::cout << "After 404 response:" << std::endl;
+    std::cout << "  unsuccessful_validations: "
+              << issuer_stats.unsuccessful_validations << std::endl;
+}
+
+TEST_F(IntegrationTest, MonitoringFailedDNSLookup) {
+    char *err_msg = nullptr;
+
+    // Reset monitoring stats
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Use an issuer with a hostname that won't resolve
+    std::string dns_fail_issuer =
+        "https://this-hostname-does-not-exist-12345.invalid";
+
+    // Create a token with issuer that will fail DNS lookup
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    auto rv = scitoken_set_claim_string(token.get(), "iss",
+                                        dns_fail_issuer.c_str(), &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Try to verify - should fail with DNS error
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    EXPECT_NE(rv, 0) << "Verification should fail for DNS lookup failure";
+    if (err_msg) {
+        std::cout << "Expected error (DNS): " << err_msg << std::endl;
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Check that failed issuer lookup was recorded
+    auto stats = getCurrentMonitoringStats();
+    auto issuer_stats = stats.getIssuerStats(dns_fail_issuer);
+
+    EXPECT_GT(issuer_stats.unsuccessful_validations, 0u)
+        << "unsuccessful_validations should have increased for DNS failure";
+
+    std::cout << "After DNS failure:" << std::endl;
+    std::cout << "  unsuccessful_validations: "
+              << issuer_stats.unsuccessful_validations << std::endl;
+}
+
+TEST_F(IntegrationTest, MonitoringFailedTCPConnection) {
+    char *err_msg = nullptr;
+
+    // Reset monitoring stats
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Use localhost with a privileged port (< 1024) that won't have a server
+    // Port 1 is typically not used and requires root to bind
+    std::string tcp_fail_issuer = "https://localhost:1";
+
+    // Create a token with issuer that will fail TCP connection
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    auto rv = scitoken_set_claim_string(token.get(), "iss",
+                                        tcp_fail_issuer.c_str(), &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Try to verify - should fail with connection refused
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    EXPECT_NE(rv, 0) << "Verification should fail for TCP connection failure";
+    if (err_msg) {
+        std::cout << "Expected error (TCP): " << err_msg << std::endl;
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Check that failed issuer lookup was recorded
+    auto stats = getCurrentMonitoringStats();
+    auto issuer_stats = stats.getIssuerStats(tcp_fail_issuer);
+
+    EXPECT_GT(issuer_stats.unsuccessful_validations, 0u)
+        << "unsuccessful_validations should have increased for TCP failure";
+
+    std::cout << "After TCP connection failure:" << std::endl;
+    std::cout << "  unsuccessful_validations: "
+              << issuer_stats.unsuccessful_validations << std::endl;
+}
+
+TEST_F(IntegrationTest, MonitoringDurationTracking) {
+    char *err_msg = nullptr;
+
+    // Reset monitoring stats
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Perform multiple validations and check duration increases
+    for (int i = 0; i < 3; i++) {
+        std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+            scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                                private_key_.c_str(), &err_msg),
+            scitoken_key_destroy);
+        ASSERT_TRUE(key.get() != nullptr);
+        if (err_msg) {
+            free(err_msg);
+            err_msg = nullptr;
+        }
+
+        std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+            scitoken_create(key.get()), scitoken_destroy);
+        ASSERT_TRUE(token.get() != nullptr);
+
+        auto rv = scitoken_set_claim_string(token.get(), "iss",
+                                            issuer_url_.c_str(), &err_msg);
+        ASSERT_EQ(rv, 0);
+        if (err_msg) {
+            free(err_msg);
+            err_msg = nullptr;
+        }
+
+        rv = scitoken_set_claim_string(token.get(), "sub", "test-subject",
+                                       &err_msg);
+        ASSERT_EQ(rv, 0);
+        if (err_msg) {
+            free(err_msg);
+            err_msg = nullptr;
+        }
+
+        scitoken_set_lifetime(token.get(), 3600);
+
+        char *token_value = nullptr;
+        rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+        ASSERT_EQ(rv, 0);
+        if (err_msg) {
+            free(err_msg);
+            err_msg = nullptr;
+        }
+        std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value,
+                                                               free);
+
+        std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+            scitoken_create(nullptr), scitoken_destroy);
+        ASSERT_TRUE(verify_token.get() != nullptr);
+
+        rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                     &err_msg);
+        ASSERT_EQ(rv, 0);
+        if (err_msg) {
+            free(err_msg);
+            err_msg = nullptr;
+        }
+    }
+
+    // Check final stats
+    auto stats = getCurrentMonitoringStats();
+    auto issuer_stats = stats.getIssuerStats(issuer_url_);
+
+    EXPECT_GE(issuer_stats.successful_validations, 3u)
+        << "Should have at least 3 successful validations";
+    EXPECT_GT(issuer_stats.total_validation_time_s, 0.0)
+        << "total_validation_time_s should be positive";
+
+    std::cout << "After multiple validations:" << std::endl;
+    std::cout << "  successful_validations: "
+              << issuer_stats.successful_validations << std::endl;
+    std::cout << "  total_validation_time_s: "
+              << issuer_stats.total_validation_time_s << std::endl;
+}
+
+// Test monitoring file output during token verification
+TEST_F(IntegrationTest, MonitoringFileOutput) {
+    char *err_msg = nullptr;
+
+    // Set up a test file path and zero interval for immediate write
+    std::string test_file = "/tmp/scitokens_monitoring_integration_" +
+                            std::to_string(time(nullptr)) + ".json";
+    scitoken_config_set_str("monitoring.file", test_file.c_str(), &err_msg);
+    scitoken_config_set_int("monitoring.file_interval_s", 0, &err_msg);
+
+    // Clean up any existing file
+    std::remove(test_file.c_str());
+
+    // Reset monitoring stats
+    scitoken_reset_monitoring_stats(&err_msg);
+
+    // Create and verify a token (this should trigger file write)
+    // Use test-key-1 to match the key ID in the JWKS server
+    SciTokenKey key =
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg);
+    ASSERT_TRUE(key != nullptr);
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key_ptr(
+        key, scitoken_key_destroy);
+
+    SciToken token = scitoken_create(key);
+    ASSERT_TRUE(token != nullptr);
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token_ptr(
+        token, scitoken_destroy);
+
+    scitoken_set_claim_string(token, "iss", issuer_url_.c_str(), &err_msg);
+    scitoken_set_claim_string(token, "sub", "test-user", &err_msg);
+    scitoken_set_claim_string(token, "scope", "read:/test", &err_msg);
+
+    char *token_value = nullptr;
+    int rv = scitoken_serialize(token, &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Verify the token - this should trigger monitoring file write
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    if (rv != 0 && err_msg) {
+        std::cerr << "Token verification error: " << err_msg << std::endl;
+    }
+    ASSERT_EQ(rv, 0) << "Token verification should succeed";
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Check that the monitoring file was created
+    std::ifstream file(test_file);
+    EXPECT_TRUE(file.good())
+        << "Monitoring file should have been created at " << test_file;
+
+    if (file.good()) {
+        // Read and parse the file
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        std::string content = buffer.str();
+
+        EXPECT_FALSE(content.empty()) << "Monitoring file should not be empty";
+
+        // Try to parse it as JSON
+        picojson::value root;
+        std::string parse_err = picojson::parse(root, content);
+        EXPECT_TRUE(parse_err.empty())
+            << "Monitoring file should contain valid JSON: " << parse_err;
+
+        if (parse_err.empty()) {
+            // Verify it has the expected structure
+            EXPECT_TRUE(root.is<picojson::object>());
+            auto &root_obj = root.get<picojson::object>();
+            EXPECT_TRUE(root_obj.find("issuers") != root_obj.end())
+                << "Monitoring JSON should have 'issuers' key";
+        }
+
+        std::cout << "Monitoring file content:" << std::endl;
+        std::cout << content << std::endl;
+    }
+
+    // Clean up
+    scitoken_config_set_str("monitoring.file", "", &err_msg);
+    scitoken_config_set_int("monitoring.file_interval_s", 60, &err_msg);
+    std::remove(test_file.c_str());
 }
 
 } // namespace
