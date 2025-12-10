@@ -43,14 +43,17 @@ void load_config_from_environment() {
         bool is_int;
     };
 
-    const std::array<ConfigMapping, 6> known_configs = {
+    const std::array<ConfigMapping, 8> known_configs = {
         {{"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
          {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S",
           true},
          {"keycache.cache_home", "KEYCACHE_CACHE_HOME", false},
          {"tls.ca_file", "TLS_CA_FILE", false},
          {"monitoring.file", "MONITORING_FILE", false},
-         {"monitoring.file_interval_s", "MONITORING_FILE_INTERVAL_S", true}}};
+         {"monitoring.file_interval_s", "MONITORING_FILE_INTERVAL_S", true},
+         {"keycache.refresh_interval_ms", "KEYCACHE_REFRESH_INTERVAL_MS", true},
+         {"keycache.refresh_threshold_ms", "KEYCACHE_REFRESH_THRESHOLD_MS",
+          true}}};
 
     const char *prefix = "SCITOKEN_CONFIG_";
 
@@ -130,9 +133,9 @@ int configurer::Configuration::get_monitoring_file_interval() {
 
 // Background refresh config
 std::atomic_bool configurer::Configuration::m_background_refresh_enabled{false};
-std::atomic_int configurer::Configuration::m_refresh_interval{
+std::atomic_int configurer::Configuration::m_refresh_interval_ms{
     60000}; // 60 seconds
-std::atomic_int configurer::Configuration::m_refresh_threshold{
+std::atomic_int configurer::Configuration::m_refresh_threshold_ms{
     600000}; // 10 minutes
 
 SciTokenKey scitoken_key_create(const char *key_id, const char *alg,

@@ -85,17 +85,21 @@ std::string MonitoringStats::get_json() const {
 
         picojson::object issuer_obj;
         issuer_obj["successful_validations"] = picojson::value(
-            static_cast<double>(stats.successful_validations.load()));
+            static_cast<int64_t>(stats.successful_validations.load(
+                std::memory_order_relaxed)));
         issuer_obj["unsuccessful_validations"] = picojson::value(
-            static_cast<double>(stats.unsuccessful_validations.load()));
-        issuer_obj["expired_tokens"] =
-            picojson::value(static_cast<double>(stats.expired_tokens.load()));
+            static_cast<int64_t>(stats.unsuccessful_validations.load(
+                std::memory_order_relaxed)));
+        issuer_obj["expired_tokens"] = picojson::value(static_cast<int64_t>(
+            stats.expired_tokens.load(std::memory_order_relaxed)));
 
         // Validation started counters
         issuer_obj["sync_validations_started"] = picojson::value(
-            static_cast<double>(stats.sync_validations_started.load()));
+            static_cast<int64_t>(stats.sync_validations_started.load(
+                std::memory_order_relaxed)));
         issuer_obj["async_validations_started"] = picojson::value(
-            static_cast<double>(stats.async_validations_started.load()));
+            static_cast<int64_t>(stats.async_validations_started.load(
+                std::memory_order_relaxed)));
 
         // Duration tracking
         issuer_obj["sync_total_time_s"] =
@@ -107,25 +111,29 @@ std::string MonitoringStats::get_json() const {
 
         // Web lookup statistics
         issuer_obj["successful_key_lookups"] = picojson::value(
-            static_cast<double>(stats.successful_key_lookups.load()));
-        issuer_obj["failed_key_lookups"] = picojson::value(
-            static_cast<double>(stats.failed_key_lookups.load()));
+            static_cast<int64_t>(stats.successful_key_lookups.load(
+                std::memory_order_relaxed)));
+        issuer_obj["failed_key_lookups"] = picojson::value(static_cast<int64_t>(
+            stats.failed_key_lookups.load(std::memory_order_relaxed)));
         issuer_obj["failed_key_lookup_time_s"] =
             picojson::value(stats.get_failed_key_lookup_time_s());
 
         // Key refresh statistics
-        issuer_obj["expired_keys"] =
-            picojson::value(static_cast<double>(stats.expired_keys.load()));
-        issuer_obj["failed_refreshes"] =
-            picojson::value(static_cast<double>(stats.failed_refreshes.load()));
-        issuer_obj["stale_key_uses"] =
-            picojson::value(static_cast<double>(stats.stale_key_uses.load()));
+        issuer_obj["expired_keys"] = picojson::value(static_cast<int64_t>(
+            stats.expired_keys.load(std::memory_order_relaxed)));
+        issuer_obj["failed_refreshes"] = picojson::value(static_cast<int64_t>(
+            stats.failed_refreshes.load(std::memory_order_relaxed)));
+        issuer_obj["stale_key_uses"] = picojson::value(static_cast<int64_t>(
+            stats.stale_key_uses.load(std::memory_order_relaxed)));
 
         // Background refresh statistics
-        issuer_obj["background_successful_refreshes"] = picojson::value(
-            static_cast<double>(stats.background_successful_refreshes.load()));
+        issuer_obj["background_successful_refreshes"] =
+            picojson::value(static_cast<int64_t>(
+                stats.background_successful_refreshes.load(
+                    std::memory_order_relaxed)));
         issuer_obj["background_failed_refreshes"] = picojson::value(
-            static_cast<double>(stats.background_failed_refreshes.load()));
+            static_cast<int64_t>(stats.background_failed_refreshes.load(
+                std::memory_order_relaxed)));
 
         std::string sanitized_issuer = sanitize_issuer_for_json(issuer);
         issuers_obj[sanitized_issuer] = picojson::value(issuer_obj);
@@ -141,7 +149,7 @@ std::string MonitoringStats::get_json() const {
                 sanitize_issuer_for_json(entry.first);
             picojson::object lookup_stats;
             lookup_stats["count"] =
-                picojson::value(static_cast<double>(entry.second.count));
+                picojson::value(static_cast<int64_t>(entry.second.count));
             lookup_stats["total_time_s"] =
                 picojson::value(entry.second.total_time_s);
             failed_obj[sanitized_issuer] = picojson::value(lookup_stats);

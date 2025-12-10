@@ -70,13 +70,13 @@ class Configuration {
         return m_background_refresh_enabled;
     }
     static void set_refresh_interval(int interval_ms) {
-        m_refresh_interval = interval_ms;
+        m_refresh_interval_ms = interval_ms;
     }
-    static int get_refresh_interval() { return m_refresh_interval; }
+    static int get_refresh_interval() { return m_refresh_interval_ms; }
     static void set_refresh_threshold(int threshold_ms) {
-        m_refresh_threshold = threshold_ms;
+        m_refresh_threshold_ms = threshold_ms;
     }
-    static int get_refresh_threshold() { return m_refresh_threshold; }
+    static int get_refresh_threshold() { return m_refresh_threshold_ms; }
 
   private:
     // Accessor functions for construct-on-first-use idiom
@@ -127,8 +127,8 @@ class Configuration {
     static std::atomic<bool> m_monitoring_file_configured; // Fast-path flag
     static std::atomic_int m_monitoring_file_interval; // In seconds, default 60
     static std::atomic_bool m_background_refresh_enabled;
-    static std::atomic_int m_refresh_interval;  // N milliseconds
-    static std::atomic_int m_refresh_threshold; // M milliseconds
+    static std::atomic_int m_refresh_interval_ms;  // N milliseconds
+    static std::atomic_int m_refresh_threshold_ms; // M milliseconds
     // static bool check_dir(const std::string dir_path);
     static std::pair<bool, std::string>
     mkdir_and_parents_if_needed(const std::string dir_path);
@@ -264,35 +264,59 @@ struct IssuerStats {
     std::atomic<uint64_t> background_successful_refreshes{0};
     std::atomic<uint64_t> background_failed_refreshes{0};
 
-    // Increment methods for atomic counters
-    void inc_successful_validation() { successful_validations++; }
-    void inc_unsuccessful_validation() { unsuccessful_validations++; }
-    void inc_expired_token() { expired_tokens++; }
-    void inc_sync_validation_started() { sync_validations_started++; }
-    void inc_async_validation_started() { async_validations_started++; }
-    void inc_stale_key_use() { stale_key_uses++; }
-    void inc_failed_refresh() { failed_refreshes++; }
-    void inc_expired_key() { expired_keys++; }
-    void inc_successful_key_lookup() { successful_key_lookups++; }
-    void inc_failed_key_lookup() { failed_key_lookups++; }
-    void inc_background_successful_refresh() {
-        background_successful_refreshes++;
+    // Increment methods for atomic counters (use relaxed ordering for stats)
+    void inc_successful_validation() {
+        successful_validations.fetch_add(1, std::memory_order_relaxed);
     }
-    void inc_background_failed_refresh() { background_failed_refreshes++; }
+    void inc_unsuccessful_validation() {
+        unsuccessful_validations.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_expired_token() {
+        expired_tokens.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_sync_validation_started() {
+        sync_validations_started.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_async_validation_started() {
+        async_validations_started.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_stale_key_use() {
+        stale_key_uses.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_failed_refresh() {
+        failed_refreshes.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_expired_key() {
+        expired_keys.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_successful_key_lookup() {
+        successful_key_lookups.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_failed_key_lookup() {
+        failed_key_lookups.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_background_successful_refresh() {
+        background_successful_refreshes.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_background_failed_refresh() {
+        background_failed_refreshes.fetch_add(1, std::memory_order_relaxed);
+    }
 
-    // Time setters that accept std::chrono::duration
+    // Time setters that accept std::chrono::duration (use relaxed ordering)
     template <typename Rep, typename Period>
     void add_sync_time(std::chrono::duration<Rep, Period> duration) {
         auto ns =
             std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
-        sync_total_time_ns += static_cast<uint64_t>(ns.count());
+        sync_total_time_ns.fetch_add(static_cast<uint64_t>(ns.count()),
+                                     std::memory_order_relaxed);
     }
 
     template <typename Rep, typename Period>
     void add_async_time(std::chrono::duration<Rep, Period> duration) {
         auto ns =
             std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
-        async_total_time_ns += static_cast<uint64_t>(ns.count());
+        async_total_time_ns.fetch_add(static_cast<uint64_t>(ns.count()),
+                                      std::memory_order_relaxed);
     }
 
     template <typename Rep, typename Period>
@@ -300,21 +324,27 @@ struct IssuerStats {
     add_failed_key_lookup_time(std::chrono::duration<Rep, Period> duration) {
         auto ns =
             std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
-        failed_key_lookup_time_ns += static_cast<uint64_t>(ns.count());
+        failed_key_lookup_time_ns.fetch_add(static_cast<uint64_t>(ns.count()),
+                                            std::memory_order_relaxed);
     }
 
     void inc_failed_key_lookup(std::chrono::nanoseconds duration) {
-        failed_key_lookups++;
-        failed_key_lookup_time_ns += static_cast<uint64_t>(duration.count());
+        failed_key_lookups.fetch_add(1, std::memory_order_relaxed);
+        failed_key_lookup_time_ns.fetch_add(
+            static_cast<uint64_t>(duration.count()), std::memory_order_relaxed);
     }
 
-    // Time getters that return seconds as double
+    // Time getters that return seconds as double (use relaxed ordering)
     double get_sync_time_s() const {
-        return static_cast<double>(sync_total_time_ns.load()) / 1e9;
+        return static_cast<double>(
+                   sync_total_time_ns.load(std::memory_order_relaxed)) /
+               1e9;
     }
 
     double get_async_time_s() const {
-        return static_cast<double>(async_total_time_ns.load()) / 1e9;
+        return static_cast<double>(
+                   async_total_time_ns.load(std::memory_order_relaxed)) /
+               1e9;
     }
 
     double get_total_time_s() const {
@@ -322,7 +352,9 @@ struct IssuerStats {
     }
 
     double get_failed_key_lookup_time_s() const {
-        return static_cast<double>(failed_key_lookup_time_ns.load()) / 1e9;
+        return static_cast<double>(
+                   failed_key_lookup_time_ns.load(std::memory_order_relaxed)) /
+               1e9;
     }
 };
 

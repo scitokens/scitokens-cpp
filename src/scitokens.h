@@ -327,6 +327,10 @@ int config_set_int(const char *key, int value, char **err_msg);
  * - "keycache.expiration_interval_s": Key cache expiration time (seconds)
  * - "monitoring.file_interval_s": Interval between monitoring file writes
  * (seconds, default 60)
+ * - "keycache.refresh_interval_ms": Background refresh thread check interval
+ * (milliseconds, default 60000)
+ * - "keycache.refresh_threshold_ms": Time before next_update when background
+ * refresh triggers (milliseconds, default 600000)
  */
 int scitoken_config_set_int(const char *key, int value, char **err_msg);
 
@@ -344,6 +348,10 @@ int config_get_int(const char *key, char **err_msg);
  * - "keycache.expiration_interval_s": Key cache expiration time (seconds)
  * - "monitoring.file_interval_s": Interval between monitoring file writes
  * (seconds, default 60)
+ * - "keycache.refresh_interval_ms": Background refresh thread check interval
+ * (milliseconds, default 60000)
+ * - "keycache.refresh_threshold_ms": Time before next_update when background
+ * refresh triggers (milliseconds, default 600000)
  */
 int scitoken_config_get_int(const char *key, char **err_msg);
 
