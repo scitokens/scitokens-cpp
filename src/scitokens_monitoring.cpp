@@ -121,6 +121,12 @@ std::string MonitoringStats::get_json() const {
         issuer_obj["stale_key_uses"] =
             picojson::value(static_cast<double>(stats.stale_key_uses.load()));
 
+        // Background refresh statistics
+        issuer_obj["background_successful_refreshes"] = picojson::value(
+            static_cast<double>(stats.background_successful_refreshes.load()));
+        issuer_obj["background_failed_refreshes"] = picojson::value(
+            static_cast<double>(stats.background_failed_refreshes.load()));
+
         std::string sanitized_issuer = sanitize_issuer_for_json(issuer);
         issuers_obj[sanitized_issuer] = picojson::value(issuer_obj);
     }
@@ -188,6 +194,15 @@ void MonitoringStats::maybe_write_monitoring_file() noexcept {
     } catch (...) {
         // Silently ignore any errors - this is best-effort
     }
+}
+
+void MonitoringStats::maybe_write_monitoring_file_from_verify() noexcept {
+    // If background refresh thread is running, it will handle the writes
+    // This avoids redundant writes and potential contention
+    if (BackgroundRefreshManager::get_instance().is_running()) {
+        return;
+    }
+    maybe_write_monitoring_file();
 }
 
 void MonitoringStats::write_monitoring_file_impl() noexcept {

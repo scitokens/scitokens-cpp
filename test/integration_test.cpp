@@ -39,6 +39,9 @@ class MonitoringStats {
         uint64_t expired_keys{0};
         uint64_t failed_refreshes{0};
         uint64_t stale_key_uses{0};
+        // Background refresh statistics
+        uint64_t background_successful_refreshes{0};
+        uint64_t background_failed_refreshes{0};
     };
 
     struct FailedIssuerLookup {
@@ -154,6 +157,19 @@ class MonitoringStats {
                     it = stats_obj.find("stale_key_uses");
                     if (it != stats_obj.end() && it->second.is<double>()) {
                         stats.stale_key_uses =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    // Background refresh statistics
+                    it = stats_obj.find("background_successful_refreshes");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.background_successful_refreshes =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("background_failed_refreshes");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.background_failed_refreshes =
                             static_cast<uint64_t>(it->second.get<double>());
                     }
 
@@ -1113,6 +1129,13 @@ TEST_F(IntegrationTest, MonitoringFileOutput) {
 TEST_F(IntegrationTest, BackgroundRefreshTest) {
     char *err_msg = nullptr;
 
+    // Reset monitoring stats to get a clean baseline
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
     // Set smaller intervals for testing (1 second refresh interval, 2 seconds
     // threshold)
     int rv =
@@ -1128,6 +1151,16 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
                                  &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set refresh threshold: "
                      << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Set update interval to 1 second BEFORE first verification so the
+    // cache entry will have next_update just 1 second in the future.
+    // This ensures the background thread can refresh within the test window.
+    rv = scitoken_config_set_int("keycache.update_interval_s", 1, &err_msg);
+    ASSERT_EQ(rv, 0);
     if (err_msg) {
         free(err_msg);
         err_msg = nullptr;
@@ -1203,7 +1236,6 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
     ASSERT_EQ(rv, 0) << "Failed to get cached JWKS: "
                      << (err_msg ? err_msg : "unknown error");
     ASSERT_TRUE(jwks_before != nullptr);
-    std::unique_ptr<char, decltype(&free)> jwks_before_ptr(jwks_before, free);
     if (err_msg) {
         free(err_msg);
         err_msg = nullptr;
@@ -1211,13 +1243,29 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
 
     std::cout << "Initial JWKS fetched successfully" << std::endl;
 
-    // Set update interval to 1 second so keys will need refresh soon
-    rv = scitoken_config_set_int("keycache.update_interval_s", 1, &err_msg);
-    ASSERT_EQ(rv, 0);
+    // Re-set the JWKS to force a fresh cache entry with the current
+    // update_interval (1 second). This ensures next_update is just 1 second
+    // in the future so the background thread will refresh it.
+    rv = keycache_set_jwks(issuer_url_.c_str(), jwks_before, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set JWKS: "
+                     << (err_msg ? err_msg : "unknown error");
+    free(jwks_before);
     if (err_msg) {
         free(err_msg);
         err_msg = nullptr;
     }
+
+    std::cout << "JWKS re-set with 1-second update interval" << std::endl;
+
+    // Get monitoring stats before background refresh
+    auto before_stats = getCurrentMonitoringStats();
+    auto before_issuer_stats = before_stats.getIssuerStats(issuer_url_);
+    std::cout << "Before background refresh:" << std::endl;
+    std::cout << "  background_successful_refreshes: "
+              << before_issuer_stats.background_successful_refreshes
+              << std::endl;
+    std::cout << "  background_failed_refreshes: "
+              << before_issuer_stats.background_failed_refreshes << std::endl;
 
     // Enable background refresh
     rv = keycache_set_background_refresh(1, &err_msg);
@@ -1237,10 +1285,6 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
     // thread against an actual HTTPS server
     std::cout << "Waiting 4 seconds for background refresh..." << std::endl;
     sleep(4);
-
-    // The background refresh should have occurred
-    // We can't easily verify it refreshed without instrumenting the code more,
-    // but we can verify the thread is running and didn't crash
 
     // Stop background refresh
     rv = keycache_stop_background_refresh(&err_msg);
@@ -1264,6 +1308,30 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
         free(err_msg);
         err_msg = nullptr;
     }
+
+    // Verify that background refresh statistics increased for our issuer
+    auto after_stats = getCurrentMonitoringStats();
+    auto after_issuer_stats = after_stats.getIssuerStats(issuer_url_);
+
+    std::cout << "After background refresh:" << std::endl;
+    std::cout << "  background_successful_refreshes: "
+              << after_issuer_stats.background_successful_refreshes
+              << std::endl;
+    std::cout << "  background_failed_refreshes: "
+              << after_issuer_stats.background_failed_refreshes << std::endl;
+
+    // The background thread should have performed at least one refresh
+    // for our issuer (either successful or failed)
+    uint64_t total_background_refreshes =
+        after_issuer_stats.background_successful_refreshes +
+        after_issuer_stats.background_failed_refreshes;
+    uint64_t before_total =
+        before_issuer_stats.background_successful_refreshes +
+        before_issuer_stats.background_failed_refreshes;
+
+    EXPECT_GT(total_background_refreshes, before_total)
+        << "Background refresh thread should have performed at least one "
+           "refresh attempt for our issuer";
 
     std::cout << "Test completed successfully" << std::endl;
 }

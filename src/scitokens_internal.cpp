@@ -110,19 +110,26 @@ void BackgroundRefreshManager::refresh_loop() {
 
             // If next update is within threshold, try to refresh
             if (time_until_update <= threshold) {
+                auto &stats =
+                    MonitoringStats::instance().get_issuer_stats(issuer);
                 try {
                     // Perform refresh (this will use the refresh_jwks method)
                     scitokens::Validator::refresh_jwks(issuer);
+                    stats.inc_background_successful_refresh();
                 } catch (std::exception &) {
+                    // Track failed refresh attempts
+                    stats.inc_background_failed_refresh();
                     // Silently ignore errors in background refresh to avoid
                     // disrupting the application. Background refresh is a
                     // best-effort optimization. If it fails, the next token
                     // verification will trigger a foreground refresh as usual.
-                    // TODO: In future work, track statistics (success/failure
-                    // counts) to monitor refresh health.
                 }
             }
         }
+
+        // Write monitoring file from background thread if configured
+        // This avoids writing from verify() when background thread is running
+        MonitoringStats::instance().maybe_write_monitoring_file();
     }
 }
 

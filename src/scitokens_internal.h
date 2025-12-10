@@ -122,6 +122,11 @@ class BackgroundRefreshManager {
     // Stop the background refresh thread (can be called multiple times)
     void stop();
 
+    // Check if the background refresh thread is running
+    bool is_running() const {
+        return m_running.load(std::memory_order_acquire);
+    }
+
   private:
     BackgroundRefreshManager() = default;
     ~BackgroundRefreshManager() { stop(); }
@@ -216,6 +221,10 @@ struct IssuerStats {
     std::atomic<uint64_t> failed_refreshes{0};
     std::atomic<uint64_t> stale_key_uses{0};
 
+    // Background refresh statistics (tracked by background thread)
+    std::atomic<uint64_t> background_successful_refreshes{0};
+    std::atomic<uint64_t> background_failed_refreshes{0};
+
     // Increment methods for atomic counters
     void inc_successful_validation() { successful_validations++; }
     void inc_unsuccessful_validation() { unsuccessful_validations++; }
@@ -227,6 +236,10 @@ struct IssuerStats {
     void inc_expired_key() { expired_keys++; }
     void inc_successful_key_lookup() { successful_key_lookups++; }
     void inc_failed_key_lookup() { failed_key_lookups++; }
+    void inc_background_successful_refresh() {
+        background_successful_refreshes++;
+    }
+    void inc_background_failed_refresh() { background_failed_refreshes++; }
 
     // Time setters that accept std::chrono::duration
     template <typename Rep, typename Period>
@@ -320,6 +333,13 @@ class MonitoringStats {
      * Does not throw exceptions - file write errors are silently ignored.
      */
     void maybe_write_monitoring_file() noexcept;
+
+    /**
+     * Same as maybe_write_monitoring_file(), but skips if background refresh
+     * thread is running. This should be called from verify() routines to
+     * avoid redundant writes when the background thread is handling them.
+     */
+    void maybe_write_monitoring_file_from_verify() noexcept;
 
   private:
     MonitoringStats() = default;
@@ -674,8 +694,9 @@ class Validator {
 
     void verify(const SciToken &scitoken, time_t expiry_time) {
         // Check if monitoring file should be written (fast-path, relaxed
-        // atomic)
-        internal::MonitoringStats::instance().maybe_write_monitoring_file();
+        // atomic). Skip if background thread is running.
+        internal::MonitoringStats::instance()
+            .maybe_write_monitoring_file_from_verify();
 
         std::string issuer = "";
         auto start_time = std::chrono::steady_clock::now();
@@ -770,8 +791,9 @@ class Validator {
 
     void verify(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
         // Check if monitoring file should be written (fast-path, relaxed
-        // atomic)
-        internal::MonitoringStats::instance().maybe_write_monitoring_file();
+        // atomic). Skip if background thread is running.
+        internal::MonitoringStats::instance()
+            .maybe_write_monitoring_file_from_verify();
 
         std::string issuer = "";
         auto start_time = std::chrono::steady_clock::now();
