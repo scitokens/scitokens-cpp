@@ -84,9 +84,9 @@ std::string MonitoringStats::get_json() const {
         const IssuerStats &stats = entry.second;
 
         picojson::object issuer_obj;
-        issuer_obj["successful_validations"] = picojson::value(
-            static_cast<int64_t>(stats.successful_validations.load(
-                std::memory_order_relaxed)));
+        issuer_obj["successful_validations"] =
+            picojson::value(static_cast<int64_t>(
+                stats.successful_validations.load(std::memory_order_relaxed)));
         issuer_obj["unsuccessful_validations"] = picojson::value(
             static_cast<int64_t>(stats.unsuccessful_validations.load(
                 std::memory_order_relaxed)));
@@ -110,9 +110,9 @@ std::string MonitoringStats::get_json() const {
             picojson::value(stats.get_total_time_s());
 
         // Web lookup statistics
-        issuer_obj["successful_key_lookups"] = picojson::value(
-            static_cast<int64_t>(stats.successful_key_lookups.load(
-                std::memory_order_relaxed)));
+        issuer_obj["successful_key_lookups"] =
+            picojson::value(static_cast<int64_t>(
+                stats.successful_key_lookups.load(std::memory_order_relaxed)));
         issuer_obj["failed_key_lookups"] = picojson::value(static_cast<int64_t>(
             stats.failed_key_lookups.load(std::memory_order_relaxed)));
         issuer_obj["failed_key_lookup_time_s"] =
@@ -127,10 +127,9 @@ std::string MonitoringStats::get_json() const {
             stats.stale_key_uses.load(std::memory_order_relaxed)));
 
         // Background refresh statistics
-        issuer_obj["background_successful_refreshes"] =
-            picojson::value(static_cast<int64_t>(
-                stats.background_successful_refreshes.load(
-                    std::memory_order_relaxed)));
+        issuer_obj["background_successful_refreshes"] = picojson::value(
+            static_cast<int64_t>(stats.background_successful_refreshes.load(
+                std::memory_order_relaxed)));
         issuer_obj["background_failed_refreshes"] = picojson::value(
             static_cast<int64_t>(stats.background_failed_refreshes.load(
                 std::memory_order_relaxed)));
