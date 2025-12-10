@@ -16,33 +16,8 @@ MonitoringStats &MonitoringStats::instance() {
     return instance;
 }
 
-void MonitoringStats::record_validation_success(const std::string &issuer,
-                                                double duration_s) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    auto &stats = m_issuer_stats[issuer];
-    stats.successful_validations++;
-    // Add to the total time (accumulate across all validations)
-    // No atomic needed - protected by mutex
-    stats.total_time_s += duration_s;
-}
-
-void MonitoringStats::record_validation_failure(const std::string &issuer,
-                                                double duration_s) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    auto &stats = m_issuer_stats[issuer];
-    stats.unsuccessful_validations++;
-    // Add to the total time (accumulate across all validations)
-    // No atomic needed - protected by mutex
-    stats.total_time_s += duration_s;
-}
-
-void MonitoringStats::record_expired_token(const std::string &issuer) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    auto &stats = m_issuer_stats[issuer];
-    stats.expired_tokens++;
-}
-
-void MonitoringStats::record_failed_issuer_lookup(const std::string &issuer) {
+void MonitoringStats::record_failed_issuer_lookup(const std::string &issuer,
+                                                  double duration_s) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Limit the number of failed issuer entries to prevent resource exhaustion
@@ -53,7 +28,9 @@ void MonitoringStats::record_failed_issuer_lookup(const std::string &issuer) {
     // Only track if we still have room or issuer is already tracked
     if (m_failed_issuer_lookups.size() < MAX_FAILED_ISSUERS ||
         m_failed_issuer_lookups.find(issuer) != m_failed_issuer_lookups.end()) {
-        m_failed_issuer_lookups[issuer]++;
+        auto &stats = m_failed_issuer_lookups[issuer];
+        stats.count++;
+        stats.total_time_s += duration_s;
     }
 }
 
@@ -77,7 +54,7 @@ void MonitoringStats::prune_failed_issuers() {
     // Find the minimum count
     uint64_t min_count = UINT64_MAX;
     for (const auto &entry : m_failed_issuer_lookups) {
-        uint64_t count = entry.second;
+        uint64_t count = entry.second.count;
         if (count < min_count) {
             min_count = count;
         }
@@ -86,7 +63,7 @@ void MonitoringStats::prune_failed_issuers() {
     // Remove all entries with the minimum count
     for (auto it = m_failed_issuer_lookups.begin();
          it != m_failed_issuer_lookups.end();) {
-        if (it->second == min_count) {
+        if (it->second.count == min_count) {
             it = m_failed_issuer_lookups.erase(it);
         } else {
             ++it;
@@ -112,8 +89,36 @@ std::string MonitoringStats::get_json() const {
             static_cast<double>(stats.unsuccessful_validations.load()));
         issuer_obj["expired_tokens"] =
             picojson::value(static_cast<double>(stats.expired_tokens.load()));
+
+        // Validation started counters
+        issuer_obj["sync_validations_started"] = picojson::value(
+            static_cast<double>(stats.sync_validations_started.load()));
+        issuer_obj["async_validations_started"] = picojson::value(
+            static_cast<double>(stats.async_validations_started.load()));
+
+        // Duration tracking
+        issuer_obj["sync_total_time_s"] =
+            picojson::value(stats.get_sync_time_s());
+        issuer_obj["async_total_time_s"] =
+            picojson::value(stats.get_async_time_s());
         issuer_obj["total_validation_time_s"] =
-            picojson::value(stats.total_time_s);
+            picojson::value(stats.get_total_time_s());
+
+        // Web lookup statistics
+        issuer_obj["successful_key_lookups"] = picojson::value(
+            static_cast<double>(stats.successful_key_lookups.load()));
+        issuer_obj["failed_key_lookups"] = picojson::value(
+            static_cast<double>(stats.failed_key_lookups.load()));
+        issuer_obj["failed_key_lookup_time_s"] =
+            picojson::value(stats.get_failed_key_lookup_time_s());
+
+        // Key refresh statistics
+        issuer_obj["expired_keys"] =
+            picojson::value(static_cast<double>(stats.expired_keys.load()));
+        issuer_obj["failed_refreshes"] =
+            picojson::value(static_cast<double>(stats.failed_refreshes.load()));
+        issuer_obj["stale_key_uses"] =
+            picojson::value(static_cast<double>(stats.stale_key_uses.load()));
 
         std::string sanitized_issuer = sanitize_issuer_for_json(issuer);
         issuers_obj[sanitized_issuer] = picojson::value(issuer_obj);
@@ -121,14 +126,18 @@ std::string MonitoringStats::get_json() const {
 
     root["issuers"] = picojson::value(issuers_obj);
 
-    // Add failed issuer lookups
+    // Add failed issuer lookups with duration
     if (!m_failed_issuer_lookups.empty()) {
         picojson::object failed_obj;
         for (const auto &entry : m_failed_issuer_lookups) {
             std::string sanitized_issuer =
                 sanitize_issuer_for_json(entry.first);
-            failed_obj[sanitized_issuer] =
-                picojson::value(static_cast<double>(entry.second));
+            picojson::object lookup_stats;
+            lookup_stats["count"] =
+                picojson::value(static_cast<double>(entry.second.count));
+            lookup_stats["total_time_s"] =
+                picojson::value(entry.second.total_time_s);
+            failed_obj[sanitized_issuer] = picojson::value(lookup_stats);
         }
         root["failed_issuer_lookups"] = picojson::value(failed_obj);
     }

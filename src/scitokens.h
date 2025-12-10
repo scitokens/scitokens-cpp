@@ -331,13 +331,27 @@ int scitoken_config_get_str(const char *key, char **output, char **err_msg);
 
 /**
  * Get monitoring statistics as a JSON string.
- * Returns a JSON object containing per-issuer validation statistics including:
+ * Returns a JSON object containing per-issuer validation statistics.
+ *
+ * Per-issuer statistics (under "issuers" key):
  * - successful_validations: count of successful token validations
  * - unsuccessful_validations: count of failed token validations
  * - expired_tokens: count of expired tokens encountered
- * - total_validation_time_s: total validation time in seconds
- * - failed_issuer_lookups: count of failed issuer lookups (limited to prevent
- * DDoS)
+ * - sync_validations_started: count of validations started via blocking API
+ * - async_validations_started: count of validations started via async API
+ * - sync_total_time_s: time spent in blocking verify() calls (updated every 50ms)
+ * - async_total_time_s: time spent in async validations (updated on completion)
+ * - total_validation_time_s: sum of sync and async time
+ * - successful_key_lookups: count of successful JWKS web refreshes
+ * - failed_key_lookups: count of failed JWKS web refreshes
+ * - failed_key_lookup_time_s: total time spent on failed key lookups
+ * - expired_keys: count of times keys expired before refresh completed
+ * - failed_refreshes: count of failed key refresh attempts (used cached keys)
+ * - stale_key_uses: count of times keys were used past their next_update time
+ *
+ * Failed issuer lookups (under "failed_issuer_lookups" key):
+ * - Per unknown issuer: count and total_time_s of failed lookup attempts
+ * - Limited to 100 entries to prevent resource exhaustion from DDoS attacks
  *
  * The returned string must be freed by the caller using free().
  * Returns 0 on success, nonzero on failure.

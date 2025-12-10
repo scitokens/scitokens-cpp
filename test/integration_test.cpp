@@ -24,7 +24,26 @@ class MonitoringStats {
         uint64_t successful_validations{0};
         uint64_t unsuccessful_validations{0};
         uint64_t expired_tokens{0};
+        // Validation started counters
+        uint64_t sync_validations_started{0};
+        uint64_t async_validations_started{0};
+        // Duration tracking
+        double sync_total_time_s{0.0};
+        double async_total_time_s{0.0};
         double total_validation_time_s{0.0};
+        // Key lookup statistics
+        uint64_t successful_key_lookups{0};
+        uint64_t failed_key_lookups{0};
+        double failed_key_lookup_time_s{0.0};
+        // Key refresh statistics
+        uint64_t expired_keys{0};
+        uint64_t failed_refreshes{0};
+        uint64_t stale_key_uses{0};
+    };
+
+    struct FailedIssuerLookup {
+        uint64_t count{0};
+        double total_time_s{0.0};
     };
 
     bool parse(const std::string &json) {
@@ -70,10 +89,72 @@ class MonitoringStats {
                             static_cast<uint64_t>(it->second.get<double>());
                     }
 
+                    // Validation started counters
+                    it = stats_obj.find("sync_validations_started");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.sync_validations_started =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("async_validations_started");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.async_validations_started =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    // Duration tracking
+                    it = stats_obj.find("sync_total_time_s");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.sync_total_time_s = it->second.get<double>();
+                    }
+
+                    it = stats_obj.find("async_total_time_s");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.async_total_time_s = it->second.get<double>();
+                    }
+
                     it = stats_obj.find("total_validation_time_s");
                     if (it != stats_obj.end() && it->second.is<double>()) {
                         stats.total_validation_time_s =
                             it->second.get<double>();
+                    }
+
+                    // Key lookup statistics
+                    it = stats_obj.find("successful_key_lookups");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.successful_key_lookups =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("failed_key_lookups");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.failed_key_lookups =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("failed_key_lookup_time_s");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.failed_key_lookup_time_s =
+                            it->second.get<double>();
+                    }
+
+                    // Key refresh statistics
+                    it = stats_obj.find("expired_keys");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.expired_keys =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("failed_refreshes");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.failed_refreshes =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("stale_key_uses");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.stale_key_uses =
+                            static_cast<uint64_t>(it->second.get<double>());
                     }
 
                     issuers_[issuer_entry.first] = stats;
@@ -81,16 +162,29 @@ class MonitoringStats {
             }
         }
 
-        // Parse failed issuer lookups
+        // Parse failed issuer lookups (now has count and total_time_s)
         failed_issuer_lookups_.clear();
         auto failed_it = root_obj.find("failed_issuer_lookups");
         if (failed_it != root_obj.end() &&
             failed_it->second.is<picojson::object>()) {
             auto &failed_obj = failed_it->second.get<picojson::object>();
             for (const auto &entry : failed_obj) {
-                if (entry.second.is<double>()) {
-                    failed_issuer_lookups_[entry.first] =
-                        static_cast<uint64_t>(entry.second.get<double>());
+                if (entry.second.is<picojson::object>()) {
+                    FailedIssuerLookup lookup;
+                    auto &lookup_obj = entry.second.get<picojson::object>();
+
+                    auto it = lookup_obj.find("count");
+                    if (it != lookup_obj.end() && it->second.is<double>()) {
+                        lookup.count =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = lookup_obj.find("total_time_s");
+                    if (it != lookup_obj.end() && it->second.is<double>()) {
+                        lookup.total_time_s = it->second.get<double>();
+                    }
+
+                    failed_issuer_lookups_[entry.first] = lookup;
                 }
             }
         }
@@ -106,12 +200,20 @@ class MonitoringStats {
         return IssuerStats{};
     }
 
-    uint64_t getFailedLookupCount(const std::string &issuer) const {
+    FailedIssuerLookup getFailedLookup(const std::string &issuer) const {
         auto it = failed_issuer_lookups_.find(issuer);
         if (it != failed_issuer_lookups_.end()) {
             return it->second;
         }
-        return 0;
+        return FailedIssuerLookup{};
+    }
+
+    uint64_t getFailedLookupCount(const std::string &issuer) const {
+        return getFailedLookup(issuer).count;
+    }
+
+    double getFailedLookupTime(const std::string &issuer) const {
+        return getFailedLookup(issuer).total_time_s;
     }
 
     size_t getIssuerCount() const { return issuers_.size(); }
@@ -122,7 +224,7 @@ class MonitoringStats {
 
   private:
     std::map<std::string, IssuerStats> issuers_;
-    std::map<std::string, uint64_t> failed_issuer_lookups_;
+    std::map<std::string, FailedIssuerLookup> failed_issuer_lookups_;
 };
 
 // Helper to get current monitoring stats

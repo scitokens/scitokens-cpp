@@ -828,14 +828,23 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
         std::unique_lock<std::mutex> lock(key_refresh_mutex, std::defer_lock);
         // If refresh is due *and* the key refresh mutex is free, try to update
         if (now > result->m_next_update && lock.try_lock()) {
+            // Get a reference to this issuer's statistics
+            auto &issuer_stats =
+                internal::MonitoringStats::instance().get_issuer_stats(issuer);
+            // Record that we're using a stale key (past next_update)
+            issuer_stats.inc_stale_key_use();
             try {
                 result->m_ignore_error = true;
                 result = get_public_keys_from_web(
                     issuer, internal::SimpleCurlGet::default_timeout);
                 // Hold refresh mutex in the new result
                 result->m_refresh_lock = std::move(lock);
+                // Mark that this is a refresh attempt for a known issuer
+                result->m_is_refresh = true;
             } catch (std::runtime_error &) {
                 result->m_do_store = false;
+                // Record failed refresh for known issuer
+                issuer_stats.inc_failed_refresh();
                 // ignore the exception: we have a valid set of keys already
             }
         } else {
@@ -845,7 +854,14 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
             result->m_done = true;
         }
     } else {
-        // No keys in the DB, or they are expired, so get them from the web.
+        // No keys in the DB, or they are expired
+        // Record that we had expired keys if the issuer was previously known
+        // (This is tracked by having an entry in issuer stats)
+        auto &issuer_stats =
+            internal::MonitoringStats::instance().get_issuer_stats(issuer);
+        issuer_stats.inc_expired_key();
+
+        // Get keys from the web.
         result = get_public_keys_from_web(
             issuer, internal::SimpleCurlGet::default_timeout);
     }
@@ -869,6 +885,13 @@ Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status,
         }
     }
     if (status->m_do_store) {
+        // Async web fetch completed successfully - record monitoring
+        if (status->m_is_refresh) {
+            auto &issuer_stats =
+                internal::MonitoringStats::instance().get_issuer_stats(
+                    status->m_issuer);
+            issuer_stats.inc_successful_key_lookup();
+        }
         store_public_keys(status->m_issuer, status->m_keys,
                           status->m_next_update, status->m_expires);
     }
