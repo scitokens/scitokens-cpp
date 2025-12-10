@@ -1,5 +1,10 @@
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <cctype>
+#include <cstdlib>
 #include <exception>
+#include <stdexcept>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -10,15 +15,89 @@
  * GLOBALS
  */
 
-// Cache timeout config
-std::atomic_int configurer::Configuration::m_next_update_delta{600};
-std::atomic_int configurer::Configuration::m_expiry_delta{4 * 24 * 3600};
+// These are kept for backwards compatibility but are now handled by
+// construct-on-first-use in the Configuration class accessor functions
+// See scitokens_internal.h for the new implementation
+std::atomic_int configurer::Configuration::m_next_update_delta{0};
+std::atomic_int configurer::Configuration::m_expiry_delta{0};
+std::shared_ptr<std::string> configurer::Configuration::m_cache_home;
+std::shared_ptr<std::string> configurer::Configuration::m_tls_ca_file;
 
-// SciTokens cache home config
-std::shared_ptr<std::string> configurer::Configuration::m_cache_home =
-    std::make_shared<std::string>("");
-std::shared_ptr<std::string> configurer::Configuration::m_tls_ca_file =
-    std::make_shared<std::string>("");
+namespace {
+
+// Helper function to convert string to lowercase
+std::string to_lowercase(const std::string &str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return result;
+}
+
+// Load configuration from environment variables on library initialization
+void load_config_from_environment() {
+    // List of known configuration keys with their types and corresponding env
+    // var names
+    struct ConfigMapping {
+        const char *config_key;
+        const char *env_var_suffix; // After SCITOKEN_CONFIG_
+        bool is_int;
+    };
+
+    const std::array<ConfigMapping, 6> known_configs = {
+        {{"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
+         {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S",
+          true},
+         {"keycache.cache_home", "KEYCACHE_CACHE_HOME", false},
+         {"tls.ca_file", "TLS_CA_FILE", false},
+         {"monitoring.file", "MONITORING_FILE", false},
+         {"monitoring.file_interval_s", "MONITORING_FILE_INTERVAL_S", true}}};
+
+    const char *prefix = "SCITOKEN_CONFIG_";
+
+    // Check each known configuration
+    for (const auto &config : known_configs) {
+        // Build the full environment variable name
+        std::string env_var = prefix + std::string(config.env_var_suffix);
+
+        // Also try case variations (uppercase, lowercase, mixed)
+        const char *env_value = std::getenv(env_var.c_str());
+        if (!env_value) {
+            // Try with lowercase
+            std::string env_var_lower = to_lowercase(env_var);
+            env_value = std::getenv(env_var_lower.c_str());
+        }
+
+        if (!env_value) {
+            continue; // Not set in environment
+        }
+
+        char *err_msg = nullptr;
+        if (config.is_int) {
+            try {
+                int value = std::stoi(env_value);
+                scitoken_config_set_int(config.config_key, value, &err_msg);
+            } catch (const std::invalid_argument &) {
+                // Silently ignore invalid integer format during initialization
+            } catch (const std::out_of_range &) {
+                // Silently ignore out-of-range values during initialization
+            }
+        } else {
+            scitoken_config_set_str(config.config_key, env_value, &err_msg);
+        }
+
+        // Free error message if any (we ignore errors during initialization)
+        if (err_msg) {
+            free(err_msg);
+        }
+    }
+}
+
+// Use constructor attribute to run on library load
+__attribute__((constructor)) void init_scitokens_config() {
+    load_config_from_environment();
+}
+
+} // anonymous namespace
 
 // Monitoring file config (empty string means disabled)
 // Protected by mutex; atomic flag for fast-path check
