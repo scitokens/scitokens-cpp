@@ -1014,6 +1014,98 @@ TEST_F(IntegrationTest, MonitoringDurationTracking) {
               << issuer_stats.total_validation_time_s << std::endl;
 }
 
+// Test monitoring file output during token verification
+TEST_F(IntegrationTest, MonitoringFileOutput) {
+    char *err_msg = nullptr;
+
+    // Set up a test file path and zero interval for immediate write
+    std::string test_file = "/tmp/scitokens_monitoring_integration_" +
+                            std::to_string(time(nullptr)) + ".json";
+    scitoken_config_set_str("monitoring.file", test_file.c_str(), &err_msg);
+    scitoken_config_set_int("monitoring.file_interval_s", 0, &err_msg);
+
+    // Clean up any existing file
+    std::remove(test_file.c_str());
+
+    // Reset monitoring stats
+    scitoken_reset_monitoring_stats(&err_msg);
+
+    // Create and verify a token (this should trigger file write)
+    // Use test-key-1 to match the key ID in the JWKS server
+    SciTokenKey key = scitoken_key_create("test-key-1", "ES256",
+                                          public_key_.c_str(),
+                                          private_key_.c_str(), &err_msg);
+    ASSERT_TRUE(key != nullptr);
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key_ptr(
+        key, scitoken_key_destroy);
+
+    SciToken token = scitoken_create(key);
+    ASSERT_TRUE(token != nullptr);
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token_ptr(
+        token, scitoken_destroy);
+
+    scitoken_set_claim_string(token, "iss", issuer_url_.c_str(), &err_msg);
+    scitoken_set_claim_string(token, "sub", "test-user", &err_msg);
+    scitoken_set_claim_string(token, "scope", "read:/test", &err_msg);
+
+    char *token_value = nullptr;
+    int rv = scitoken_serialize(token, &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Verify the token - this should trigger monitoring file write
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    if (rv != 0 && err_msg) {
+        std::cerr << "Token verification error: " << err_msg << std::endl;
+    }
+    ASSERT_EQ(rv, 0) << "Token verification should succeed";
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Check that the monitoring file was created
+    std::ifstream file(test_file);
+    EXPECT_TRUE(file.good()) << "Monitoring file should have been created at "
+                             << test_file;
+
+    if (file.good()) {
+        // Read and parse the file
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        std::string content = buffer.str();
+
+        EXPECT_FALSE(content.empty()) << "Monitoring file should not be empty";
+
+        // Try to parse it as JSON
+        picojson::value root;
+        std::string parse_err = picojson::parse(root, content);
+        EXPECT_TRUE(parse_err.empty())
+            << "Monitoring file should contain valid JSON: " << parse_err;
+
+        if (parse_err.empty()) {
+            // Verify it has the expected structure
+            EXPECT_TRUE(root.is<picojson::object>());
+            auto &root_obj = root.get<picojson::object>();
+            EXPECT_TRUE(root_obj.find("issuers") != root_obj.end())
+                << "Monitoring JSON should have 'issuers' key";
+        }
+
+        std::cout << "Monitoring file content:" << std::endl;
+        std::cout << content << std::endl;
+    }
+
+    // Clean up
+    scitoken_config_set_str("monitoring.file", "", &err_msg);
+    scitoken_config_set_int("monitoring.file_interval_s", 60, &err_msg);
+    std::remove(test_file.c_str());
+}
+
 } // namespace
 
 int main(int argc, char **argv) {

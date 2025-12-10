@@ -1,6 +1,7 @@
 #include "scitokens_internal.h"
 #include <algorithm>
 #include <chrono>
+#include <fstream>
 #include <sstream>
 
 #ifndef PICOJSON_USE_INT64
@@ -149,6 +150,78 @@ void MonitoringStats::reset() {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_issuer_stats.clear();
     m_failed_issuer_lookups.clear();
+}
+
+void MonitoringStats::maybe_write_monitoring_file() noexcept {
+    try {
+        // Fast path: check atomic flag first (relaxed load, no mutex)
+        if (!configurer::Configuration::is_monitoring_file_configured()) {
+            return;
+        }
+
+        // Get current time and interval (relaxed loads for fast path)
+        auto now = std::chrono::steady_clock::now();
+        auto now_seconds = std::chrono::duration_cast<std::chrono::seconds>(
+                               now.time_since_epoch())
+                               .count();
+        int64_t last_write =
+            m_last_file_write_time.load(std::memory_order_relaxed);
+        int interval = configurer::Configuration::get_monitoring_file_interval();
+
+        // Check if enough time has passed since last write
+        if (now_seconds - last_write < interval) {
+            return;
+        }
+
+        // Try to atomically claim the write (compare-and-swap)
+        // Only one thread will succeed in updating the timestamp
+        if (!m_last_file_write_time.compare_exchange_strong(
+                last_write, now_seconds, std::memory_order_acq_rel,
+                std::memory_order_relaxed)) {
+            // Another thread beat us to it, they will do the write
+            return;
+        }
+
+        // We successfully claimed the write, do it
+        write_monitoring_file_impl();
+    } catch (...) {
+        // Silently ignore any errors - this is best-effort
+    }
+}
+
+void MonitoringStats::write_monitoring_file_impl() noexcept {
+    try {
+        std::string monitoring_file =
+            configurer::Configuration::get_monitoring_file();
+        if (monitoring_file.empty()) {
+            return;
+        }
+
+        // Get the JSON content
+        std::string json_content = get_json();
+
+        // Write to a temporary file first, then rename for atomicity
+        std::string tmp_file = monitoring_file + ".tmp";
+
+        {
+            std::ofstream ofs(tmp_file, std::ios::out | std::ios::trunc);
+            if (!ofs) {
+                return; // Cannot open file, silently fail
+            }
+            ofs << json_content;
+            if (!ofs) {
+                return; // Write failed, silently fail
+            }
+        } // Close file before rename
+
+        // Atomic rename (on POSIX systems)
+        if (std::rename(tmp_file.c_str(), monitoring_file.c_str()) != 0) {
+            // Rename failed, try to clean up temp file
+            std::remove(tmp_file.c_str());
+        }
+    } catch (...) {
+        // Silently ignore any errors - this is best-effort
+    }
 }
 
 } // namespace internal

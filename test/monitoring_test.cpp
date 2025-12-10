@@ -338,6 +338,102 @@ TEST_F(MonitoringTest, DDoSProtection) {
         free(err_msg);
 }
 
+// Test monitoring file configuration API
+TEST_F(MonitoringTest, MonitoringFileConfiguration) {
+    char *err_msg = nullptr;
+    char *path = nullptr;
+    int interval = 0;
+
+    // Initially disabled (empty string)
+    int rv = scitoken_config_get_str("monitoring.file", &path, &err_msg);
+    EXPECT_EQ(rv, 0);
+    EXPECT_NE(path, nullptr);
+    EXPECT_STREQ(path, "");
+    free(path);
+    path = nullptr;
+
+    // Default interval should be 60 seconds
+    interval = scitoken_config_get_int("monitoring.file_interval_s", &err_msg);
+    EXPECT_EQ(interval, 60);
+
+    // Set a monitoring file path
+    rv = scitoken_config_set_str("monitoring.file",
+                                 "/tmp/scitokens_test_monitoring.json",
+                                 &err_msg);
+    EXPECT_EQ(rv, 0);
+
+    rv = scitoken_config_get_str("monitoring.file", &path, &err_msg);
+    EXPECT_EQ(rv, 0);
+    EXPECT_NE(path, nullptr);
+    EXPECT_STREQ(path, "/tmp/scitokens_test_monitoring.json");
+    free(path);
+    path = nullptr;
+
+    // Set a custom interval
+    rv = scitoken_config_set_int("monitoring.file_interval_s", 30, &err_msg);
+    EXPECT_EQ(rv, 0);
+
+    interval = scitoken_config_get_int("monitoring.file_interval_s", &err_msg);
+    EXPECT_EQ(interval, 30);
+
+    // Disable by setting to empty string
+    rv = scitoken_config_set_str("monitoring.file", "", &err_msg);
+    EXPECT_EQ(rv, 0);
+
+    rv = scitoken_config_get_str("monitoring.file", &path, &err_msg);
+    EXPECT_EQ(rv, 0);
+    EXPECT_NE(path, nullptr);
+    EXPECT_STREQ(path, "");
+    free(path);
+    path = nullptr;
+
+    // Disable by setting to nullptr
+    rv = scitoken_config_set_str("monitoring.file", nullptr, &err_msg);
+    EXPECT_EQ(rv, 0);
+
+    rv = scitoken_config_get_str("monitoring.file", &path, &err_msg);
+    EXPECT_EQ(rv, 0);
+    EXPECT_NE(path, nullptr);
+    EXPECT_STREQ(path, "");
+    free(path);
+    path = nullptr;
+
+    // Reset interval to default for other tests
+    scitoken_config_set_int("monitoring.file_interval_s", 60, &err_msg);
+}
+
+// Test monitoring file write with zero interval (immediate write)
+TEST_F(MonitoringTest, MonitoringFileWrite) {
+    char *err_msg = nullptr;
+
+    // Set up a test file path and zero interval for immediate write
+    std::string test_file = "/tmp/scitokens_monitoring_test_" +
+                            std::to_string(time(nullptr)) + ".json";
+    scitoken_config_set_str("monitoring.file", test_file.c_str(), &err_msg);
+    scitoken_config_set_int("monitoring.file_interval_s", 0, &err_msg);
+
+    // Clean up any existing file
+    std::remove(test_file.c_str());
+
+    // Reset stats and record something
+    scitoken_reset_monitoring_stats(&err_msg);
+
+    // The maybe_write_monitoring_file is called during verify(), but we can't
+    // easily trigger that without a valid token/issuer. However, we can test
+    // the configuration API works and that files aren't written when disabled.
+
+    // Verify file doesn't exist yet (nothing to trigger write)
+    FILE *f = fopen(test_file.c_str(), "r");
+    EXPECT_EQ(f, nullptr); // File should not exist
+
+    // Disable monitoring file
+    scitoken_config_set_str("monitoring.file", "", &err_msg);
+    scitoken_config_set_int("monitoring.file_interval_s", 60, &err_msg);
+
+    // Clean up test file if it was created
+    std::remove(test_file.c_str());
+}
+
 } // namespace
 
 int main(int argc, char **argv) {

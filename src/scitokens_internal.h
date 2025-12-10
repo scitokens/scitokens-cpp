@@ -50,11 +50,25 @@ class Configuration {
     static void set_tls_ca_file(const std::string ca_file);
     static std::string get_tls_ca_file();
 
+    // Monitoring file configuration
+    static void set_monitoring_file(const std::string &path);
+    static std::string get_monitoring_file();
+    static void set_monitoring_file_interval(int seconds);
+    static int get_monitoring_file_interval();
+    // Fast-path check: returns true if monitoring file might be configured
+    static bool is_monitoring_file_configured() {
+        return m_monitoring_file_configured.load(std::memory_order_relaxed);
+    }
+
   private:
     static std::atomic_int m_next_update_delta;
     static std::atomic_int m_expiry_delta;
     static std::shared_ptr<std::string> m_cache_home;
     static std::shared_ptr<std::string> m_tls_ca_file;
+    static std::string m_monitoring_file;
+    static std::mutex m_monitoring_file_mutex;
+    static std::atomic<bool> m_monitoring_file_configured; // Fast-path flag
+    static std::atomic_int m_monitoring_file_interval;     // In seconds, default 60
     // static bool check_dir(const std::string dir_path);
     static std::pair<bool, std::string>
     mkdir_and_parents_if_needed(const std::string dir_path);
@@ -240,6 +254,16 @@ class MonitoringStats {
     std::string get_json() const;
     void reset();
 
+    /**
+     * Check if the monitoring file should be written and write it if so.
+     * This method is thread-safe and uses relaxed atomic operations for
+     * the fast path (checking if write is needed). Only one thread will
+     * actually perform the write.
+     *
+     * Does not throw exceptions - file write errors are silently ignored.
+     */
+    void maybe_write_monitoring_file() noexcept;
+
   private:
     MonitoringStats() = default;
     ~MonitoringStats() = default;
@@ -253,8 +277,13 @@ class MonitoringStats {
     std::unordered_map<std::string, IssuerStats> m_issuer_stats;
     std::unordered_map<std::string, FailedIssuerStats> m_failed_issuer_lookups;
 
+    // Atomic timestamp for last monitoring file write (seconds since epoch)
+    // Uses relaxed memory ordering for fast-path checks
+    std::atomic<int64_t> m_last_file_write_time{0};
+
     std::string sanitize_issuer_for_json(const std::string &issuer) const;
     void prune_failed_issuers();
+    void write_monitoring_file_impl() noexcept;
 };
 
 } // namespace internal
@@ -584,6 +613,9 @@ class Validator {
     }
 
     void verify(const SciToken &scitoken, time_t expiry_time) {
+        // Check if monitoring file should be written (fast-path, relaxed atomic)
+        internal::MonitoringStats::instance().maybe_write_monitoring_file();
+
         std::string issuer = "";
         auto start_time = std::chrono::steady_clock::now();
         auto last_duration_update = start_time;
@@ -672,6 +704,9 @@ class Validator {
     }
 
     void verify(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
+        // Check if monitoring file should be written (fast-path, relaxed atomic)
+        internal::MonitoringStats::instance().maybe_write_monitoring_file();
+
         std::string issuer = "";
         auto start_time = std::chrono::steady_clock::now();
         internal::IssuerStats *issuer_stats = nullptr;

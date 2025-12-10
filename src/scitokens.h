@@ -302,6 +302,11 @@ int config_set_int(const char *key, int value, char **err_msg);
  * Takes in key/value pairs and assigns the input value to whatever
  * configuration variable is indicated by the key.
  * Returns 0 on success, and non-zero for invalid keys or values.
+ *
+ * Supported keys:
+ * - "keycache.update_interval_s": Interval between key cache updates (seconds)
+ * - "keycache.expiration_interval_s": Key cache expiration time (seconds)
+ * - "monitoring.file_interval_s": Interval between monitoring file writes (seconds, default 60)
  */
 int scitoken_config_set_int(const char *key, int value, char **err_msg);
 
@@ -313,12 +318,24 @@ int config_get_int(const char *key, char **err_msg);
  * Returns the value associated with the supplied input key on success, and -1
  * on failure. This assumes there are no keys for which a negative return value
  * is permissible.
+ *
+ * Supported keys:
+ * - "keycache.update_interval_s": Interval between key cache updates (seconds)
+ * - "keycache.expiration_interval_s": Key cache expiration time (seconds)
+ * - "monitoring.file_interval_s": Interval between monitoring file writes (seconds, default 60)
  */
 int scitoken_config_get_int(const char *key, char **err_msg);
 
 /**
  * Set current scitokens str parameters.
  * Returns 0 on success, nonzero on failure
+ *
+ * Supported keys:
+ * - "keycache.cache_home": Directory for the key cache
+ * - "tls.ca_file": Path to TLS CA certificate file
+ * - "monitoring.file": Path to write monitoring JSON (empty to disable, default disabled)
+ *                      When enabled, monitoring stats are written periodically during verify()
+ *                      calls. The write interval is controlled by "monitoring.file_interval_s".
  */
 int scitoken_config_set_str(const char *key, const char *value, char **err_msg);
 
@@ -326,6 +343,11 @@ int scitoken_config_set_str(const char *key, const char *value, char **err_msg);
  * Get current scitokens str parameters.
  * Returns 0 on success, nonzero on failure, and populates the value associated
  * with the input key to output.
+ *
+ * Supported keys:
+ * - "keycache.cache_home": Directory for the key cache
+ * - "tls.ca_file": Path to TLS CA certificate file
+ * - "monitoring.file": Path to write monitoring JSON (empty if disabled)
  */
 int scitoken_config_get_str(const char *key, char **output, char **err_msg);
 
