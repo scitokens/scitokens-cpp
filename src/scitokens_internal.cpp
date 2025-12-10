@@ -652,116 +652,133 @@ SciToken::deserialize_continue(std::unique_ptr<SciTokenAsyncStatus> status) {
 std::unique_ptr<AsyncStatus>
 Validator::get_public_keys_from_web(const std::string &issuer,
                                     unsigned timeout) {
-    std::string openid_metadata, oauth_metadata;
-    get_metadata_endpoint(issuer, openid_metadata, oauth_metadata);
+    try {
+        std::string openid_metadata, oauth_metadata;
+        get_metadata_endpoint(issuer, openid_metadata, oauth_metadata);
 
-    std::unique_ptr<AsyncStatus> status(new AsyncStatus());
-    status->m_oauth_metadata_url = oauth_metadata;
-    status->m_cget.reset(new internal::SimpleCurlGet(1024 * 1024, timeout));
-    auto cget_status = status->m_cget->perform_start(openid_metadata);
-    status->m_continue_fetch = true;
-    if (!cget_status.m_done) {
-        return status;
+        std::unique_ptr<AsyncStatus> status(new AsyncStatus());
+        status->m_oauth_metadata_url = oauth_metadata;
+        status->m_cget.reset(new internal::SimpleCurlGet(1024 * 1024, timeout));
+        auto cget_status = status->m_cget->perform_start(openid_metadata);
+        status->m_continue_fetch = true;
+        if (!cget_status.m_done) {
+            return status;
+        }
+        return get_public_keys_from_web_continue(std::move(status));
+    } catch (const CurlException &e) {
+        // Rethrow CURL errors during issuer key fetch as IssuerLookupException
+        throw IssuerLookupException(e.what());
     }
-    return get_public_keys_from_web_continue(std::move(status));
 }
 
 std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
     std::unique_ptr<AsyncStatus> status) {
-    char *buffer;
-    size_t len;
+    try {
+        char *buffer;
+        size_t len;
 
-    switch (status->m_state) {
+        switch (status->m_state) {
 
-    case AsyncStatus::DOWNLOAD_METADATA: {
-        auto cget_status = status->m_cget->perform_continue();
-        if (!cget_status.m_done) {
-            return std::move(status);
-        }
-        if (cget_status.m_status_code != 200) {
-            if (status->m_oauth_fallback) {
-                throw CurlException("Failed to retrieve metadata provider "
-                                    "information for issuer.");
-            } else {
-                status->m_oauth_fallback = true;
-                status->m_cget.reset(new internal::SimpleCurlGet());
-                cget_status =
-                    status->m_cget->perform_start(status->m_oauth_metadata_url);
-                if (!cget_status.m_done) {
-                    return std::move(status);
-                }
-                return get_public_keys_from_web_continue(std::move(status));
+        case AsyncStatus::DOWNLOAD_METADATA: {
+            auto cget_status = status->m_cget->perform_continue();
+            if (!cget_status.m_done) {
+                return std::move(status);
             }
+            if (cget_status.m_status_code != 200) {
+                if (status->m_oauth_fallback) {
+                    throw IssuerLookupException(
+                        "Failed to retrieve metadata provider "
+                        "information for issuer.");
+                } else {
+                    status->m_oauth_fallback = true;
+                    status->m_cget.reset(new internal::SimpleCurlGet());
+                    cget_status = status->m_cget->perform_start(
+                        status->m_oauth_metadata_url);
+                    if (!cget_status.m_done) {
+                        return std::move(status);
+                    }
+                    return get_public_keys_from_web_continue(std::move(status));
+                }
+            }
+            status->m_cget->get_data(buffer, len);
+            std::string metadata(buffer, len);
+            picojson::value json_obj;
+            auto err = picojson::parse(json_obj, metadata);
+            if (!err.empty()) {
+                throw JsonException("JSON parse failure when downloading from "
+                                    "the metadata URL " +
+                                    status->m_cget->get_url() + ": " + err);
+            }
+            if (!json_obj.is<picojson::object>()) {
+                throw JsonException("Metadata resource " +
+                                    status->m_cget->get_url() +
+                                    " contains "
+                                    "improperly-formatted JSON.");
+            }
+            auto top_obj = json_obj.get<picojson::object>();
+            auto iter = top_obj.find("jwks_uri");
+            if (iter == top_obj.end() || (!iter->second.is<std::string>())) {
+                throw JsonException("Metadata resource " +
+                                    status->m_cget->get_url() +
+                                    " is missing 'jwks_uri' string value");
+            }
+            auto jwks_uri = iter->second.get<std::string>();
+            status->m_has_metadata = true;
+            status->m_state = AsyncStatus::DOWNLOAD_PUBLIC_KEY;
+            status->m_cget.reset(new internal::SimpleCurlGet());
+            status->m_cget->perform_start(jwks_uri);
+            // This should also fall through the next state
         }
-        status->m_cget->get_data(buffer, len);
-        std::string metadata(buffer, len);
-        picojson::value json_obj;
-        auto err = picojson::parse(json_obj, metadata);
-        if (!err.empty()) {
-            throw JsonException(
-                "JSON parse failure when downloading from the metadata URL " +
-                status->m_cget->get_url() + ": " + err);
+
+        case AsyncStatus::DOWNLOAD_PUBLIC_KEY: {
+            auto cget_status = status->m_cget->perform_continue();
+            if (!cget_status.m_done) {
+                return std::move(status);
+            }
+            if (cget_status.m_status_code != 200) {
+                throw IssuerLookupException(
+                    "Failed to retrieve the issuer's key set");
+            }
+
+            status->m_cget->get_data(buffer, len);
+            auto metadata = std::string(buffer, len);
+            picojson::value json_obj;
+            auto err = picojson::parse(json_obj, metadata);
+            if (!err.empty()) {
+                throw JsonException(
+                    "JSON parse failure when downloading from the "
+                    " public key URL " +
+                    status->m_cget->get_url() + ": " + err);
+            }
+            status->m_cget.reset();
+
+            auto now = std::time(NULL);
+            // TODO: take expiration time from the cache-control header in the
+            // response.
+
+            int next_update_delta =
+                configurer::Configuration::get_next_update_delta();
+            int expiry_delta = configurer::Configuration::get_expiry_delta();
+            status->m_next_update = now + next_update_delta;
+            status->m_expires = now + expiry_delta;
+            status->m_keys = json_obj;
+            status->m_continue_fetch = false;
+            status->m_done = true;
+            status->m_state = AsyncStatus::DONE;
         }
-        if (!json_obj.is<picojson::object>()) {
-            throw JsonException("Metadata resource " +
-                                status->m_cget->get_url() +
-                                " contains "
-                                "improperly-formatted JSON.");
+        case AsyncStatus::DONE:
+            status->m_done = true;
+
+        } // Switch
+        return std::move(status);
+    } catch (const CurlException &e) {
+        // Rethrow CURL errors during issuer key fetch as IssuerLookupException
+        // (unless it's already an IssuerLookupException)
+        if (dynamic_cast<const IssuerLookupException *>(&e)) {
+            throw;
         }
-        auto top_obj = json_obj.get<picojson::object>();
-        auto iter = top_obj.find("jwks_uri");
-        if (iter == top_obj.end() || (!iter->second.is<std::string>())) {
-            throw JsonException("Metadata resource " +
-                                status->m_cget->get_url() +
-                                " is missing 'jwks_uri' string value");
-        }
-        auto jwks_uri = iter->second.get<std::string>();
-        status->m_has_metadata = true;
-        status->m_state = AsyncStatus::DOWNLOAD_PUBLIC_KEY;
-        status->m_cget.reset(new internal::SimpleCurlGet());
-        status->m_cget->perform_start(jwks_uri);
-        // This should also fall through the next state
+        throw IssuerLookupException(e.what());
     }
-
-    case AsyncStatus::DOWNLOAD_PUBLIC_KEY: {
-        auto cget_status = status->m_cget->perform_continue();
-        if (!cget_status.m_done) {
-            return std::move(status);
-        }
-        if (cget_status.m_status_code != 200) {
-            throw CurlException("Failed to retrieve the issuer's key set");
-        }
-
-        status->m_cget->get_data(buffer, len);
-        auto metadata = std::string(buffer, len);
-        picojson::value json_obj;
-        auto err = picojson::parse(json_obj, metadata);
-        if (!err.empty()) {
-            throw JsonException("JSON parse failure when downloading from the "
-                                " public key URL " +
-                                status->m_cget->get_url() + ": " + err);
-        }
-        status->m_cget.reset();
-
-        auto now = std::time(NULL);
-        // TODO: take expiration time from the cache-control header in the
-        // response.
-
-        int next_update_delta =
-            configurer::Configuration::get_next_update_delta();
-        int expiry_delta = configurer::Configuration::get_expiry_delta();
-        status->m_next_update = now + next_update_delta;
-        status->m_expires = now + expiry_delta;
-        status->m_keys = json_obj;
-        status->m_continue_fetch = false;
-        status->m_done = true;
-        status->m_state = AsyncStatus::DONE;
-    }
-    case AsyncStatus::DONE:
-        status->m_done = true;
-
-    } // Switch
-    return std::move(status);
 }
 
 std::string Validator::get_jwks(const std::string &issuer) {
@@ -811,14 +828,23 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
         std::unique_lock<std::mutex> lock(key_refresh_mutex, std::defer_lock);
         // If refresh is due *and* the key refresh mutex is free, try to update
         if (now > result->m_next_update && lock.try_lock()) {
+            // Get a reference to this issuer's statistics
+            auto &issuer_stats =
+                internal::MonitoringStats::instance().get_issuer_stats(issuer);
+            // Record that we're using a stale key (past next_update)
+            issuer_stats.inc_stale_key_use();
             try {
                 result->m_ignore_error = true;
                 result = get_public_keys_from_web(
                     issuer, internal::SimpleCurlGet::default_timeout);
                 // Hold refresh mutex in the new result
                 result->m_refresh_lock = std::move(lock);
+                // Mark that this is a refresh attempt for a known issuer
+                result->m_is_refresh = true;
             } catch (std::runtime_error &) {
                 result->m_do_store = false;
+                // Record failed refresh for known issuer
+                issuer_stats.inc_failed_refresh();
                 // ignore the exception: we have a valid set of keys already
             }
         } else {
@@ -828,7 +854,14 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
             result->m_done = true;
         }
     } else {
-        // No keys in the DB, or they are expired, so get them from the web.
+        // No keys in the DB, or they are expired
+        // Record that we had expired keys if the issuer was previously known
+        // (This is tracked by having an entry in issuer stats)
+        auto &issuer_stats =
+            internal::MonitoringStats::instance().get_issuer_stats(issuer);
+        issuer_stats.inc_expired_key();
+
+        // Get keys from the web.
         result = get_public_keys_from_web(
             issuer, internal::SimpleCurlGet::default_timeout);
     }
@@ -852,6 +885,13 @@ Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status,
         }
     }
     if (status->m_do_store) {
+        // Async web fetch completed successfully - record monitoring
+        if (status->m_is_refresh) {
+            auto &issuer_stats =
+                internal::MonitoringStats::instance().get_issuer_stats(
+                    status->m_issuer);
+            issuer_stats.inc_successful_key_lookup();
+        }
         store_public_keys(status->m_issuer, status->m_keys,
                           status->m_next_update, status->m_expires);
     }

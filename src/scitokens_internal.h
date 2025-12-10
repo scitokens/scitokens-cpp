@@ -1,4 +1,5 @@
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -49,6 +50,16 @@ class Configuration {
     static void set_tls_ca_file(const std::string ca_file);
     static std::string get_tls_ca_file();
 
+    // Monitoring file configuration
+    static void set_monitoring_file(const std::string &path);
+    static std::string get_monitoring_file();
+    static void set_monitoring_file_interval(int seconds);
+    static int get_monitoring_file_interval();
+    // Fast-path check: returns true if monitoring file might be configured
+    static bool is_monitoring_file_configured() {
+        return m_monitoring_file_configured.load(std::memory_order_relaxed);
+    }
+
   private:
     // Accessor functions for construct-on-first-use idiom
     static std::atomic_int &get_next_update_delta_ref() {
@@ -93,6 +104,10 @@ class Configuration {
     static std::atomic_int m_expiry_delta;
     static std::shared_ptr<std::string> m_cache_home;
     static std::shared_ptr<std::string> m_tls_ca_file;
+    static std::string m_monitoring_file;
+    static std::mutex m_monitoring_file_mutex;
+    static std::atomic<bool> m_monitoring_file_configured; // Fast-path flag
+    static std::atomic_int m_monitoring_file_interval; // In seconds, default 60
     // static bool check_dir(const std::string dir_path);
     static std::pair<bool, std::string>
     mkdir_and_parents_if_needed(const std::string dir_path);
@@ -103,6 +118,9 @@ class Configuration {
 namespace scitokens {
 
 namespace internal {
+
+// Forward declaration
+class MonitoringStats;
 
 class SimpleCurlGet {
 
@@ -149,6 +167,166 @@ class SimpleCurlGet {
                              void *userp);
 };
 
+/**
+ * Statistics for monitoring token validation per issuer.
+ * All counters are atomic for thread-safe access.
+ * Time values are stored in nanoseconds internally for atomic operations.
+ */
+struct IssuerStats {
+    // Validation result counters
+    std::atomic<uint64_t> successful_validations{0};
+    std::atomic<uint64_t> unsuccessful_validations{0};
+    std::atomic<uint64_t> expired_tokens{0};
+
+    // Validation started counters (separate from results)
+    std::atomic<uint64_t> sync_validations_started{
+        0}; // Started via blocking verify()
+    std::atomic<uint64_t> async_validations_started{
+        0}; // Started via verify_async()
+
+    // Duration tracking (nanoseconds)
+    // sync_total_time_ns is updated periodically during blocking verify()
+    std::atomic<uint64_t> sync_total_time_ns{0};
+    // async_total_time_ns is only updated on completion
+    std::atomic<uint64_t> async_total_time_ns{0};
+
+    // Key lookup statistics
+    std::atomic<uint64_t> successful_key_lookups{0};
+    std::atomic<uint64_t> failed_key_lookups{0};
+    std::atomic<uint64_t> failed_key_lookup_time_ns{0}; // In nanoseconds
+
+    // Key refresh statistics
+    std::atomic<uint64_t> expired_keys{0};
+    std::atomic<uint64_t> failed_refreshes{0};
+    std::atomic<uint64_t> stale_key_uses{0};
+
+    // Increment methods for atomic counters
+    void inc_successful_validation() { successful_validations++; }
+    void inc_unsuccessful_validation() { unsuccessful_validations++; }
+    void inc_expired_token() { expired_tokens++; }
+    void inc_sync_validation_started() { sync_validations_started++; }
+    void inc_async_validation_started() { async_validations_started++; }
+    void inc_stale_key_use() { stale_key_uses++; }
+    void inc_failed_refresh() { failed_refreshes++; }
+    void inc_expired_key() { expired_keys++; }
+    void inc_successful_key_lookup() { successful_key_lookups++; }
+    void inc_failed_key_lookup() { failed_key_lookups++; }
+
+    // Time setters that accept std::chrono::duration
+    template <typename Rep, typename Period>
+    void add_sync_time(std::chrono::duration<Rep, Period> duration) {
+        auto ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
+        sync_total_time_ns += static_cast<uint64_t>(ns.count());
+    }
+
+    template <typename Rep, typename Period>
+    void add_async_time(std::chrono::duration<Rep, Period> duration) {
+        auto ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
+        async_total_time_ns += static_cast<uint64_t>(ns.count());
+    }
+
+    template <typename Rep, typename Period>
+    void
+    add_failed_key_lookup_time(std::chrono::duration<Rep, Period> duration) {
+        auto ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
+        failed_key_lookup_time_ns += static_cast<uint64_t>(ns.count());
+    }
+
+    void inc_failed_key_lookup(std::chrono::nanoseconds duration) {
+        failed_key_lookups++;
+        failed_key_lookup_time_ns += static_cast<uint64_t>(duration.count());
+    }
+
+    // Time getters that return seconds as double
+    double get_sync_time_s() const {
+        return static_cast<double>(sync_total_time_ns.load()) / 1e9;
+    }
+
+    double get_async_time_s() const {
+        return static_cast<double>(async_total_time_ns.load()) / 1e9;
+    }
+
+    double get_total_time_s() const {
+        return get_sync_time_s() + get_async_time_s();
+    }
+
+    double get_failed_key_lookup_time_s() const {
+        return static_cast<double>(failed_key_lookup_time_ns.load()) / 1e9;
+    }
+};
+
+/**
+ * Statistics for failed (unknown) issuer lookups.
+ */
+struct FailedIssuerStats {
+    uint64_t count{0};
+    double total_time_s{0.0};
+};
+
+/**
+ * Monitoring statistics singleton.
+ * Tracks per-issuer validation statistics and protects against
+ * resource exhaustion from invalid issuers.
+ */
+class MonitoringStats {
+  public:
+    static MonitoringStats &instance();
+
+    /**
+     * Get a reference to an issuer's statistics, creating the entry if needed.
+     * The returned reference remains valid for the lifetime of the singleton.
+     * All IssuerStats fields are atomic, so concurrent access is safe.
+     */
+    IssuerStats &get_issuer_stats(const std::string &issuer) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_issuer_stats[issuer];
+    }
+
+    /**
+     * Record a failed issuer lookup (for unknown/invalid issuers).
+     * This uses a separate map with DDoS protection.
+     */
+    void record_failed_issuer_lookup(const std::string &issuer,
+                                     double duration_s);
+
+    std::string get_json() const;
+    void reset();
+
+    /**
+     * Check if the monitoring file should be written and write it if so.
+     * This method is thread-safe and uses relaxed atomic operations for
+     * the fast path (checking if write is needed). Only one thread will
+     * actually perform the write.
+     *
+     * Does not throw exceptions - file write errors are silently ignored.
+     */
+    void maybe_write_monitoring_file() noexcept;
+
+  private:
+    MonitoringStats() = default;
+    ~MonitoringStats() = default;
+    MonitoringStats(const MonitoringStats &) = delete;
+    MonitoringStats &operator=(const MonitoringStats &) = delete;
+
+    // Limit the number of failed issuer entries to prevent DDoS
+    static constexpr size_t MAX_FAILED_ISSUERS = 100;
+
+    mutable std::mutex m_mutex;
+    std::unordered_map<std::string, IssuerStats> m_issuer_stats;
+    std::unordered_map<std::string, FailedIssuerStats> m_failed_issuer_lookups;
+
+    // Atomic timestamp for last monitoring file write (seconds since epoch)
+    // Uses relaxed memory ordering for fast-path checks
+    std::atomic<int64_t> m_last_file_write_time{0};
+
+    std::string sanitize_issuer_for_json(const std::string &issuer) const;
+    void prune_failed_issuers();
+    void write_monitoring_file_impl() noexcept;
+};
+
 } // namespace internal
 
 class UnsupportedKeyException : public std::runtime_error {
@@ -166,6 +344,18 @@ class JWTVerificationException : public std::runtime_error {
 class CurlException : public std::runtime_error {
   public:
     explicit CurlException(const std::string &msg) : std::runtime_error(msg) {}
+};
+
+class IssuerLookupException : public CurlException {
+  public:
+    explicit IssuerLookupException(const std::string &msg)
+        : CurlException(msg) {}
+};
+
+class TokenExpiredException : public JWTVerificationException {
+  public:
+    explicit TokenExpiredException(const std::string &msg)
+        : JWTVerificationException(msg) {}
 };
 
 class MissingIssuerException : public std::runtime_error {
@@ -252,6 +442,7 @@ class AsyncStatus {
     bool m_do_store{true};
     bool m_has_metadata{false};
     bool m_oauth_fallback{false};
+    bool m_is_refresh{false}; // True if this is a refresh of an existing key
     AsyncState m_state{DOWNLOAD_METADATA};
     std::unique_lock<std::mutex> m_refresh_lock;
 
@@ -265,6 +456,10 @@ class AsyncStatus {
     std::string m_jwt_string;
     std::string m_public_pem;
     std::string m_algorithm;
+    std::chrono::steady_clock::time_point m_start_time;
+    bool m_monitoring_started{false};
+    bool m_is_sync{
+        false}; // True if called from blocking verify(), false for pure async
 
     struct timeval get_timeout_val(time_t expiry_time) const {
         auto now = time(NULL);
@@ -446,6 +641,9 @@ class Validator {
 
     void set_now(std::chrono::system_clock::time_point now) { m_now = now; }
 
+    // Maximum timeout for select() in microseconds for periodic checks
+    static constexpr long MAX_SELECT_TIMEOUT_US = 50000; // 50ms
+
     std::unique_ptr<AsyncStatus> verify_async(const SciToken &scitoken) {
         const jwt::decoded_jwt<jwt::traits::kazuho_picojson> *jwt_decoded =
             scitoken.m_decoded.get();
@@ -457,24 +655,156 @@ class Validator {
     }
 
     void verify(const SciToken &scitoken, time_t expiry_time) {
-        auto result = verify_async(scitoken);
-        while (!result->m_done) {
-            auto timeout_val = result->get_timeout_val(expiry_time);
-            select(result->get_max_fd() + 1, result->get_read_fd_set(),
-                   result->get_write_fd_set(), result->get_exc_fd_set(),
-                   &timeout_val);
-            if (time(NULL) >= expiry_time) {
-                throw CurlException("Timeout when loading the OIDC metadata.");
+        // Check if monitoring file should be written (fast-path, relaxed
+        // atomic)
+        internal::MonitoringStats::instance().maybe_write_monitoring_file();
+
+        std::string issuer = "";
+        auto start_time = std::chrono::steady_clock::now();
+        auto last_duration_update = start_time;
+        internal::IssuerStats *issuer_stats = nullptr;
+
+        try {
+            auto result = verify_async(scitoken);
+
+            // Extract issuer from the result's JWT string after decoding starts
+            const jwt::decoded_jwt<jwt::traits::kazuho_picojson> *jwt_decoded =
+                scitoken.m_decoded.get();
+            if (jwt_decoded && jwt_decoded->has_payload_claim("iss")) {
+                issuer = jwt_decoded->get_issuer();
+                // Record sync validation started and get stats reference
+                issuer_stats =
+                    &internal::MonitoringStats::instance().get_issuer_stats(
+                        issuer);
+                issuer_stats->inc_sync_validation_started();
             }
 
-            result = verify_async_continue(std::move(result));
+            while (!result->m_done) {
+                auto timeout_val = result->get_timeout_val(expiry_time);
+                // Limit select to MAX_SELECT_TIMEOUT_US for periodic checks
+                if (timeout_val.tv_sec > 0 ||
+                    timeout_val.tv_usec > MAX_SELECT_TIMEOUT_US) {
+                    timeout_val.tv_sec = 0;
+                    timeout_val.tv_usec = MAX_SELECT_TIMEOUT_US;
+                }
+
+                int select_result =
+                    select(result->get_max_fd() + 1, result->get_read_fd_set(),
+                           result->get_write_fd_set(), result->get_exc_fd_set(),
+                           &timeout_val);
+
+                // Update duration periodically on each select return
+                if (issuer_stats) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto delta =
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            now - last_duration_update);
+                    issuer_stats->add_sync_time(delta);
+                    last_duration_update = now;
+                }
+
+                if (time(NULL) >= expiry_time) {
+                    throw CurlException(
+                        "Timeout when loading the OIDC metadata.");
+                }
+
+                // Only continue if select returned due to I/O activity (not
+                // timeout)
+                if (select_result > 0) {
+                    result = verify_async_continue(std::move(result));
+                }
+                // If select_result == 0 (timeout) or -1 (error/interrupt),
+                // just loop back to update duration and check expiry
+            }
+
+            // Record successful validation (final duration update)
+            if (issuer_stats) {
+                auto end_time = std::chrono::steady_clock::now();
+                auto delta =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        end_time - last_duration_update);
+                issuer_stats->add_sync_time(delta);
+                issuer_stats->inc_successful_validation();
+            }
+        } catch (const std::exception &e) {
+            // Record failure (final duration update)
+            if (issuer_stats) {
+                auto end_time = std::chrono::steady_clock::now();
+                auto delta =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        end_time - last_duration_update);
+                issuer_stats->add_sync_time(delta);
+                record_validation_error_stats(*issuer_stats, e);
+            } else if (!issuer.empty()) {
+                // Issuer known but stats not yet retrieved
+                auto &stats =
+                    internal::MonitoringStats::instance().get_issuer_stats(
+                        issuer);
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - start_time);
+                stats.add_sync_time(duration);
+                record_validation_error_stats(stats, e);
+            }
+            throw;
         }
     }
 
     void verify(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
-        auto result = verify_async(jwt);
-        while (!result->m_done) {
-            result = verify_async_continue(std::move(result));
+        // Check if monitoring file should be written (fast-path, relaxed
+        // atomic)
+        internal::MonitoringStats::instance().maybe_write_monitoring_file();
+
+        std::string issuer = "";
+        auto start_time = std::chrono::steady_clock::now();
+        internal::IssuerStats *issuer_stats = nullptr;
+
+        try {
+            // Try to extract issuer for monitoring
+            if (jwt.has_payload_claim("iss")) {
+                issuer = jwt.get_issuer();
+                // Record sync validation started and get stats reference
+                issuer_stats =
+                    &internal::MonitoringStats::instance().get_issuer_stats(
+                        issuer);
+                issuer_stats->inc_sync_validation_started();
+            }
+
+            auto result = verify_async(jwt);
+            while (!result->m_done) {
+                result = verify_async_continue(std::move(result));
+            }
+
+            // Record successful validation
+            if (issuer_stats) {
+                auto end_time = std::chrono::steady_clock::now();
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        end_time - start_time);
+                issuer_stats->add_sync_time(duration);
+                issuer_stats->inc_successful_validation();
+            }
+        } catch (const std::exception &e) {
+            // Record failure if we have an issuer
+            if (issuer_stats) {
+                auto end_time = std::chrono::steady_clock::now();
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        end_time - start_time);
+                issuer_stats->add_sync_time(duration);
+                record_validation_error_stats(*issuer_stats, e);
+            } else if (!issuer.empty()) {
+                // Issuer known but stats not yet retrieved
+                auto &stats =
+                    internal::MonitoringStats::instance().get_issuer_stats(
+                        issuer);
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - start_time);
+                stats.add_sync_time(duration);
+                record_validation_error_stats(stats, e);
+            }
+            throw;
         }
     }
 
@@ -553,6 +883,12 @@ class Validator {
         status->m_jwt_string = jwt.get_token();
         status->m_public_pem = public_pem;
         status->m_algorithm = algorithm;
+        // Start monitoring timing and record async validation started
+        status->m_start_time = std::chrono::steady_clock::now();
+        status->m_monitoring_started = true;
+        auto &stats = internal::MonitoringStats::instance().get_issuer_stats(
+            jwt.get_issuer());
+        stats.inc_async_validation_started();
 
         return verify_async_continue(std::move(status));
     }
@@ -581,7 +917,17 @@ class Validator {
 
         const jwt::decoded_jwt<jwt::traits::kazuho_picojson> jwt(
             status->m_jwt_string);
-        verifier.verify(jwt);
+        try {
+            verifier.verify(jwt);
+        } catch (const std::exception &e) {
+            // Check if this is an expiration error from jwt-cpp
+            std::string error_msg = e.what();
+            if (error_msg.find("exp") != std::string::npos ||
+                error_msg.find("expir") != std::string::npos) {
+                throw TokenExpiredException(error_msg);
+            }
+            throw;
+        }
 
         bool must_verify_everything = true;
         if (jwt.has_payload_claim("ver")) {
@@ -716,6 +1062,21 @@ class Validator {
                     }
                 }
         }
+
+        // Record successful validation (only for async API, sync handles its
+        // own)
+        if (status->m_monitoring_started && !status->m_is_sync) {
+            auto end_time = std::chrono::steady_clock::now();
+            auto duration =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    end_time - status->m_start_time);
+            auto &stats =
+                internal::MonitoringStats::instance().get_issuer_stats(
+                    status->m_issuer);
+            stats.inc_successful_validation();
+            stats.add_async_time(duration);
+        }
+
         std::unique_ptr<AsyncStatus> result(new AsyncStatus());
         result->m_done = true;
         return result;
@@ -839,6 +1200,20 @@ class Validator {
             // If anything goes wrong, return a safe fallback
             return "<invalid issuer>";
         }
+    }
+
+    /**
+     * Helper method to record monitoring statistics for validation errors.
+     * This version operates on an IssuerStats reference and does NOT update
+     * time (caller is responsible for time tracking).
+     */
+    void record_validation_error_stats(internal::IssuerStats &stats,
+                                       const std::exception &e) {
+        if (dynamic_cast<const TokenExpiredException *>(&e)) {
+            stats.inc_expired_token();
+        }
+
+        stats.inc_unsuccessful_validation();
     }
 
     bool m_validate_all_claims{true};
