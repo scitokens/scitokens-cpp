@@ -6,8 +6,10 @@
 #include <unordered_map>
 
 #include <atomic>
+#include <condition_variable>
 #include <curl/curl.h>
 #include <jwt-cpp/jwt.h>
+#include <thread>
 #include <uuid/uuid.h>
 
 #if defined(__GNUC__)
@@ -60,6 +62,22 @@ class Configuration {
         return m_monitoring_file_configured.load(std::memory_order_relaxed);
     }
 
+    // Background refresh configuration
+    static void set_background_refresh_enabled(bool enabled) {
+        m_background_refresh_enabled = enabled;
+    }
+    static bool get_background_refresh_enabled() {
+        return m_background_refresh_enabled;
+    }
+    static void set_refresh_interval(int interval_ms) {
+        m_refresh_interval_ms = interval_ms;
+    }
+    static int get_refresh_interval() { return m_refresh_interval_ms; }
+    static void set_refresh_threshold(int threshold_ms) {
+        m_refresh_threshold_ms = threshold_ms;
+    }
+    static int get_refresh_threshold() { return m_refresh_threshold_ms; }
+
   private:
     // Accessor functions for construct-on-first-use idiom
     static std::atomic_int &get_next_update_delta_ref() {
@@ -108,6 +126,9 @@ class Configuration {
     static std::mutex m_monitoring_file_mutex;
     static std::atomic<bool> m_monitoring_file_configured; // Fast-path flag
     static std::atomic_int m_monitoring_file_interval; // In seconds, default 60
+    static std::atomic_bool m_background_refresh_enabled;
+    static std::atomic_int m_refresh_interval_ms;  // N milliseconds
+    static std::atomic_int m_refresh_threshold_ms; // M milliseconds
     // static bool check_dir(const std::string dir_path);
     static std::pair<bool, std::string>
     mkdir_and_parents_if_needed(const std::string dir_path);
@@ -121,6 +142,45 @@ namespace internal {
 
 // Forward declaration
 class MonitoringStats;
+
+/**
+ * Manages the background thread for refreshing JWKS.
+ * This is a singleton that starts/stops a background thread which periodically
+ * checks if any known issuers need their JWKS refreshed.
+ */
+class BackgroundRefreshManager {
+  public:
+    static BackgroundRefreshManager &get_instance() {
+        static BackgroundRefreshManager instance;
+        return instance;
+    }
+
+    // Start the background refresh thread (can be called multiple times)
+    void start();
+
+    // Stop the background refresh thread (can be called multiple times)
+    void stop();
+
+    // Check if the background refresh thread is running
+    bool is_running() const {
+        return m_running.load(std::memory_order_acquire);
+    }
+
+  private:
+    BackgroundRefreshManager() = default;
+    ~BackgroundRefreshManager() { stop(); }
+    BackgroundRefreshManager(const BackgroundRefreshManager &) = delete;
+    BackgroundRefreshManager &
+    operator=(const BackgroundRefreshManager &) = delete;
+
+    void refresh_loop();
+
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    std::unique_ptr<std::thread> m_thread;
+    std::atomic_bool m_shutdown{false};
+    std::atomic_bool m_running{false};
+};
 
 class SimpleCurlGet {
 
@@ -200,31 +260,63 @@ struct IssuerStats {
     std::atomic<uint64_t> failed_refreshes{0};
     std::atomic<uint64_t> stale_key_uses{0};
 
-    // Increment methods for atomic counters
-    void inc_successful_validation() { successful_validations++; }
-    void inc_unsuccessful_validation() { unsuccessful_validations++; }
-    void inc_expired_token() { expired_tokens++; }
-    void inc_sync_validation_started() { sync_validations_started++; }
-    void inc_async_validation_started() { async_validations_started++; }
-    void inc_stale_key_use() { stale_key_uses++; }
-    void inc_failed_refresh() { failed_refreshes++; }
-    void inc_expired_key() { expired_keys++; }
-    void inc_successful_key_lookup() { successful_key_lookups++; }
-    void inc_failed_key_lookup() { failed_key_lookups++; }
+    // Background refresh statistics (tracked by background thread)
+    std::atomic<uint64_t> background_successful_refreshes{0};
+    std::atomic<uint64_t> background_failed_refreshes{0};
 
-    // Time setters that accept std::chrono::duration
+    // Increment methods for atomic counters (use relaxed ordering for stats)
+    void inc_successful_validation() {
+        successful_validations.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_unsuccessful_validation() {
+        unsuccessful_validations.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_expired_token() {
+        expired_tokens.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_sync_validation_started() {
+        sync_validations_started.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_async_validation_started() {
+        async_validations_started.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_stale_key_use() {
+        stale_key_uses.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_failed_refresh() {
+        failed_refreshes.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_expired_key() {
+        expired_keys.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_successful_key_lookup() {
+        successful_key_lookups.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_failed_key_lookup() {
+        failed_key_lookups.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_background_successful_refresh() {
+        background_successful_refreshes.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_background_failed_refresh() {
+        background_failed_refreshes.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // Time setters that accept std::chrono::duration (use relaxed ordering)
     template <typename Rep, typename Period>
     void add_sync_time(std::chrono::duration<Rep, Period> duration) {
         auto ns =
             std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
-        sync_total_time_ns += static_cast<uint64_t>(ns.count());
+        sync_total_time_ns.fetch_add(static_cast<uint64_t>(ns.count()),
+                                     std::memory_order_relaxed);
     }
 
     template <typename Rep, typename Period>
     void add_async_time(std::chrono::duration<Rep, Period> duration) {
         auto ns =
             std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
-        async_total_time_ns += static_cast<uint64_t>(ns.count());
+        async_total_time_ns.fetch_add(static_cast<uint64_t>(ns.count()),
+                                      std::memory_order_relaxed);
     }
 
     template <typename Rep, typename Period>
@@ -232,21 +324,27 @@ struct IssuerStats {
     add_failed_key_lookup_time(std::chrono::duration<Rep, Period> duration) {
         auto ns =
             std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
-        failed_key_lookup_time_ns += static_cast<uint64_t>(ns.count());
+        failed_key_lookup_time_ns.fetch_add(static_cast<uint64_t>(ns.count()),
+                                            std::memory_order_relaxed);
     }
 
     void inc_failed_key_lookup(std::chrono::nanoseconds duration) {
-        failed_key_lookups++;
-        failed_key_lookup_time_ns += static_cast<uint64_t>(duration.count());
+        failed_key_lookups.fetch_add(1, std::memory_order_relaxed);
+        failed_key_lookup_time_ns.fetch_add(
+            static_cast<uint64_t>(duration.count()), std::memory_order_relaxed);
     }
 
-    // Time getters that return seconds as double
+    // Time getters that return seconds as double (use relaxed ordering)
     double get_sync_time_s() const {
-        return static_cast<double>(sync_total_time_ns.load()) / 1e9;
+        return static_cast<double>(
+                   sync_total_time_ns.load(std::memory_order_relaxed)) /
+               1e9;
     }
 
     double get_async_time_s() const {
-        return static_cast<double>(async_total_time_ns.load()) / 1e9;
+        return static_cast<double>(
+                   async_total_time_ns.load(std::memory_order_relaxed)) /
+               1e9;
     }
 
     double get_total_time_s() const {
@@ -254,7 +352,9 @@ struct IssuerStats {
     }
 
     double get_failed_key_lookup_time_s() const {
-        return static_cast<double>(failed_key_lookup_time_ns.load()) / 1e9;
+        return static_cast<double>(
+                   failed_key_lookup_time_ns.load(std::memory_order_relaxed)) /
+               1e9;
     }
 };
 
@@ -304,6 +404,13 @@ class MonitoringStats {
      * Does not throw exceptions - file write errors are silently ignored.
      */
     void maybe_write_monitoring_file() noexcept;
+
+    /**
+     * Same as maybe_write_monitoring_file(), but skips if background refresh
+     * thread is running. This should be called from verify() routines to
+     * avoid redundant writes when the background thread is handling them.
+     */
+    void maybe_write_monitoring_file_from_verify() noexcept;
 
   private:
     MonitoringStats() = default;
@@ -631,6 +738,8 @@ class SciToken {
 
 class Validator {
 
+    friend class internal::BackgroundRefreshManager;
+
     typedef int (*StringValidatorFunction)(const char *value, char **err_msg);
     typedef bool (*ClaimValidatorFunction)(const jwt::claim &claim_value,
                                            void *data);
@@ -660,8 +769,9 @@ class Validator {
 
     void verify(const SciToken &scitoken, time_t expiry_time) {
         // Check if monitoring file should be written (fast-path, relaxed
-        // atomic)
-        internal::MonitoringStats::instance().maybe_write_monitoring_file();
+        // atomic). Skip if background thread is running.
+        internal::MonitoringStats::instance()
+            .maybe_write_monitoring_file_from_verify();
 
         std::string issuer = "";
         auto start_time = std::chrono::steady_clock::now();
@@ -759,8 +869,9 @@ class Validator {
 
     void verify(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
         // Check if monitoring file should be written (fast-path, relaxed
-        // atomic)
-        internal::MonitoringStats::instance().maybe_write_monitoring_file();
+        // atomic). Skip if background thread is running.
+        internal::MonitoringStats::instance()
+            .maybe_write_monitoring_file_from_verify();
 
         std::string issuer = "";
         auto start_time = std::chrono::steady_clock::now();
@@ -820,6 +931,13 @@ class Validator {
 
     std::unique_ptr<AsyncStatus>
     verify_async(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
+        // Start background refresh thread if configured on first verification
+        std::call_once(m_background_refresh_once, []() {
+            if (configurer::Configuration::get_background_refresh_enabled()) {
+                internal::BackgroundRefreshManager::get_instance().start();
+            }
+        });
+
         // If token has a typ header claim (RFC8725 Section 3.11), trust that in
         // COMPAT mode.
         if (jwt.has_type()) {
@@ -1169,6 +1287,14 @@ class Validator {
      */
     static std::string get_jwks(const std::string &issuer);
 
+    /**
+     * Get all issuers from the database along with their next_update times.
+     * Returns a vector of pairs (issuer, next_update).
+     * Only returns non-expired entries.
+     */
+    static std::vector<std::pair<std::string, int64_t>>
+    get_all_issuers_from_db(int64_t now);
+
   private:
     static std::unique_ptr<AsyncStatus>
     get_public_key_pem(const std::string &issuer, const std::string &kid,
@@ -1239,6 +1365,9 @@ class Validator {
 
     std::vector<std::string> m_critical_claims;
     std::vector<std::string> m_allowed_issuers;
+
+    // Once flag for starting background refresh on first verification
+    static std::once_flag m_background_refresh_once;
 };
 
 class Enforcer {

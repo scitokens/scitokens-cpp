@@ -318,3 +318,81 @@ bool scitokens::Validator::store_public_keys(const std::string &issuer,
     sqlite3_close(db);
     return true;
 }
+
+std::vector<std::pair<std::string, int64_t>>
+scitokens::Validator::get_all_issuers_from_db(int64_t now) {
+    std::vector<std::pair<std::string, int64_t>> result;
+
+    auto cache_fname = get_cache_file();
+    if (cache_fname.size() == 0) {
+        return result;
+    }
+
+    sqlite3 *db;
+    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    if (rc) {
+        sqlite3_close(db);
+        return result;
+    }
+
+    sqlite3_stmt *stmt;
+    rc = sqlite3_prepare_v2(db, "SELECT issuer, keys FROM keycache", -1, &stmt,
+                            NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return result;
+    }
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        const unsigned char *issuer_data = sqlite3_column_text(stmt, 0);
+        const unsigned char *keys_data = sqlite3_column_text(stmt, 1);
+
+        if (!issuer_data || !keys_data) {
+            continue;
+        }
+
+        std::string issuer(reinterpret_cast<const char *>(issuer_data));
+        std::string metadata(reinterpret_cast<const char *>(keys_data));
+
+        // Parse the metadata to get next_update and check expiry
+        picojson::value json_obj;
+        auto err = picojson::parse(json_obj, metadata);
+        if (!err.empty() || !json_obj.is<picojson::object>()) {
+            continue;
+        }
+
+        auto top_obj = json_obj.get<picojson::object>();
+
+        // Get expiry time
+        auto expires_iter = top_obj.find("expires");
+        if (expires_iter == top_obj.end() ||
+            !expires_iter->second.is<int64_t>()) {
+            continue;
+        }
+        auto expiry = expires_iter->second.get<int64_t>();
+
+        // Get next_update time
+        auto next_update_iter = top_obj.find("next_update");
+        int64_t next_update;
+        if (next_update_iter == top_obj.end() ||
+            !next_update_iter->second.is<int64_t>()) {
+            // If next_update is not set, default to 4 hours before expiry
+            next_update = expiry - 4 * 3600;
+        } else {
+            next_update = next_update_iter->second.get<int64_t>();
+        }
+
+        // Include expired entries - they should be refreshed after a long
+        // downtime If expired, set next_update to now so they get refreshed
+        // immediately
+        if (now > expiry) {
+            next_update = now;
+        }
+
+        result.push_back({issuer, next_update});
+    }
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return result;
+}
