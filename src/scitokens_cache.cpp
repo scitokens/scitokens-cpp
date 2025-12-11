@@ -548,7 +548,9 @@ bool scitokens::Validator::delete_jwks(const std::string &issuer) {
     sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
     
     // Use the existing remove_issuer_entry function
+    // Note: remove_issuer_entry closes the database on error
     if (remove_issuer_entry(db, issuer, true) != 0) {
+        // Database already closed by remove_issuer_entry
         return false;
     }
     
