@@ -22,6 +22,9 @@ namespace {
 // This handles concurrent access from multiple threads/processes
 constexpr int SQLITE_BUSY_TIMEOUT_MS = 5000;
 
+// Default time before expiry when next_update should occur (4 hours)
+constexpr int64_t DEFAULT_NEXT_UPDATE_OFFSET_S = 4 * 3600;
+
 void initialize_cachedb(const std::string &keycache_file) {
 
     sqlite3 *db;
@@ -257,7 +260,7 @@ bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
         sqlite3_close(db);
         iter = top_obj.find("next_update");
         if (iter == top_obj.end() || !iter->second.is<int64_t>()) {
-            next_update = expiry - 4 * 3600;
+            next_update = expiry - DEFAULT_NEXT_UPDATE_OFFSET_S;
         } else {
             next_update = iter->second.get<int64_t>();
         }
@@ -406,7 +409,7 @@ scitokens::Validator::get_all_issuers_from_db(int64_t now) {
         if (next_update_iter == top_obj.end() ||
             !next_update_iter->second.is<int64_t>()) {
             // If next_update is not set, default to 4 hours before expiry
-            next_update = expiry - 4 * 3600;
+            next_update = expiry - DEFAULT_NEXT_UPDATE_OFFSET_S;
         } else {
             next_update = next_update_iter->second.get<int64_t>();
         }
@@ -516,7 +519,7 @@ std::string scitokens::Validator::get_jwks_metadata(const std::string &issuer) {
             next_update = iter->second.get<int64_t>();
         } else if (expires != -1) {
             // Default next_update to 4 hours before expiry
-            next_update = expires - 4 * 3600;
+            next_update = expires - DEFAULT_NEXT_UPDATE_OFFSET_S;
         }
         
         // Build metadata JSON
