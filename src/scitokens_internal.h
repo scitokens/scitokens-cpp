@@ -264,6 +264,9 @@ struct IssuerStats {
     std::atomic<uint64_t> background_successful_refreshes{0};
     std::atomic<uint64_t> background_failed_refreshes{0};
 
+    // Negative cache statistics
+    std::atomic<uint64_t> negative_cache_hits{0};
+
     // Increment methods for atomic counters (use relaxed ordering for stats)
     void inc_successful_validation() {
         successful_validations.fetch_add(1, std::memory_order_relaxed);
@@ -300,6 +303,9 @@ struct IssuerStats {
     }
     void inc_background_failed_refresh() {
         background_failed_refreshes.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_negative_cache_hit() {
+        negative_cache_hits.fetch_add(1, std::memory_order_relaxed);
     }
 
     // Time setters that accept std::chrono::duration (use relaxed ordering)
@@ -474,6 +480,14 @@ class MissingIssuerException : public std::runtime_error {
 class InvalidIssuerException : public std::runtime_error {
   public:
     InvalidIssuerException(const std::string &msg) : std::runtime_error(msg) {}
+};
+
+class NegativeCacheHitException : public InvalidIssuerException {
+  public:
+    explicit NegativeCacheHitException(const std::string &issuer)
+        : InvalidIssuerException("Issuer is in negative cache (recently failed "
+                                 "to retrieve keys): " +
+                                 issuer) {}
 };
 
 class JsonException : public std::runtime_error {
@@ -1350,6 +1364,8 @@ class Validator {
                                        const std::exception &e) {
         if (dynamic_cast<const TokenExpiredException *>(&e)) {
             stats.inc_expired_token();
+        } else if (dynamic_cast<const NegativeCacheHitException *>(&e)) {
+            stats.inc_negative_cache_hit();
         }
 
         stats.inc_unsuccessful_validation();
