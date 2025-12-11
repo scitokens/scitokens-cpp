@@ -18,6 +18,10 @@
 
 namespace {
 
+// Timeout in milliseconds to wait when database is locked
+// This handles concurrent access from multiple threads/processes
+constexpr int SQLITE_BUSY_TIMEOUT_MS = 5000;
+
 void initialize_cachedb(const std::string &keycache_file) {
 
     sqlite3 *db;
@@ -27,6 +31,8 @@ void initialize_cachedb(const std::string &keycache_file) {
         sqlite3_close(db);
         return;
     }
+    // Set busy timeout to handle concurrent access
+    sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
     char *err_msg = nullptr;
     rc = sqlite3_exec(db,
                       "CREATE TABLE IF NOT EXISTS keycache ("
@@ -161,6 +167,8 @@ bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
         sqlite3_close(db);
         return false;
     }
+    // Set busy timeout to handle concurrent access
+    sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
 
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, "SELECT keys from keycache where issuer = ?",
@@ -260,6 +268,8 @@ bool scitokens::Validator::store_public_keys(const std::string &issuer,
         sqlite3_close(db);
         return false;
     }
+    // Set busy timeout to handle concurrent access
+    sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
 
     if ((rc = sqlite3_exec(db, "BEGIN", 0, 0, 0)) != SQLITE_OK) {
         sqlite3_close(db);

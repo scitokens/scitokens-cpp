@@ -1,5 +1,6 @@
 #include "../src/scitokens.h"
 
+#include <atomic>
 #include <cmath>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -8,7 +9,9 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unistd.h>
+#include <vector>
 
 #ifndef PICOJSON_USE_INT64
 #define PICOJSON_USE_INT64
@@ -72,34 +75,34 @@ class MonitoringStats {
                         issuer_entry.second.get<picojson::object>();
 
                     auto it = stats_obj.find("successful_validations");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.successful_validations =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("unsuccessful_validations");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.unsuccessful_validations =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("expired_tokens");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.expired_tokens =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     // Validation started counters
                     it = stats_obj.find("sync_validations_started");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.sync_validations_started =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("async_validations_started");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.async_validations_started =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     // Duration tracking
@@ -121,15 +124,15 @@ class MonitoringStats {
 
                     // Key lookup statistics
                     it = stats_obj.find("successful_key_lookups");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.successful_key_lookups =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("failed_key_lookups");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.failed_key_lookups =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("failed_key_lookup_time_s");
@@ -140,21 +143,21 @@ class MonitoringStats {
 
                     // Key refresh statistics
                     it = stats_obj.find("expired_keys");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.expired_keys =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("failed_refreshes");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.failed_refreshes =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = stats_obj.find("stale_key_uses");
-                    if (it != stats_obj.end() && it->second.is<double>()) {
+                    if (it != stats_obj.end() && it->second.is<int64_t>()) {
                         stats.stale_key_uses =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     issuers_[issuer_entry.first] = stats;
@@ -174,9 +177,9 @@ class MonitoringStats {
                     auto &lookup_obj = entry.second.get<picojson::object>();
 
                     auto it = lookup_obj.find("count");
-                    if (it != lookup_obj.end() && it->second.is<double>()) {
+                    if (it != lookup_obj.end() && it->second.is<int64_t>()) {
                         lookup.count =
-                            static_cast<uint64_t>(it->second.get<double>());
+                            static_cast<uint64_t>(it->second.get<int64_t>());
                     }
 
                     it = lookup_obj.find("total_time_s");
@@ -627,9 +630,11 @@ TEST_F(IntegrationTest, MonitoringCountersIncrease) {
         err_msg = nullptr;
     }
 
-    // Get initial stats
+    // Get initial stats - should be 0 after reset
     auto initial_stats = getCurrentMonitoringStats();
     auto initial_issuer_stats = initial_stats.getIssuerStats(issuer_url_);
+    EXPECT_EQ(initial_issuer_stats.successful_validations, 0u)
+        << "successful_validations should be 0 after reset";
 
     // Create and verify a valid token
     std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
@@ -673,7 +678,8 @@ TEST_F(IntegrationTest, MonitoringCountersIncrease) {
     }
     std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
 
-    // Verify the token (should increment successful_validations)
+    // Verify the token ONCE (should increment successful_validations by exactly
+    // 1)
     std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
         scitoken_create(nullptr), scitoken_destroy);
     ASSERT_TRUE(verify_token.get() != nullptr);
@@ -686,18 +692,17 @@ TEST_F(IntegrationTest, MonitoringCountersIncrease) {
         err_msg = nullptr;
     }
 
-    // Check that counters increased
+    // Check that counter increased by exactly 1 for one deserialization
     auto after_stats = getCurrentMonitoringStats();
     auto after_issuer_stats = after_stats.getIssuerStats(issuer_url_);
 
-    EXPECT_GT(after_issuer_stats.successful_validations,
-              initial_issuer_stats.successful_validations)
-        << "successful_validations should have increased";
+    EXPECT_EQ(after_issuer_stats.successful_validations, 1u)
+        << "One deserialization should result in exactly one "
+           "successful_validation increment";
 
     // Duration should also have increased
-    EXPECT_GT(after_issuer_stats.total_validation_time_s,
-              initial_issuer_stats.total_validation_time_s)
-        << "total_validation_time_s should have increased";
+    EXPECT_GT(after_issuer_stats.total_validation_time_s, 0.0)
+        << "total_validation_time_s should be positive after validation";
 
     std::cout << "After successful validation:" << std::endl;
     std::cout << "  successful_validations: "
@@ -1104,6 +1109,486 @@ TEST_F(IntegrationTest, MonitoringFileOutput) {
     scitoken_config_set_str("monitoring.file", "", &err_msg);
     scitoken_config_set_int("monitoring.file_interval_s", 60, &err_msg);
     std::remove(test_file.c_str());
+}
+
+// Test that concurrent threads validating tokens from the same new issuer
+// all succeed even when there's no pre-existing cache entry.
+// Note: The per-issuer lock prevents the worst thundering herd scenarios
+// by serializing DB checks after initial discovery, but the current
+// implementation may still make multiple web requests if the fetch is async.
+TEST_F(IntegrationTest, ConcurrentNewIssuerLookup) {
+    char *err_msg = nullptr;
+
+    // Use a unique cache directory to ensure no cached keys exist
+    // This forces the code path where keys must be fetched from the server
+    std::string unique_cache_dir = "/tmp/scitokens_concurrent_test_" +
+                                   std::to_string(time(nullptr)) + "_" +
+                                   std::to_string(getpid());
+    int rv = scitoken_config_set_str("keycache.cache_home",
+                                     unique_cache_dir.c_str(), &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
+                     << (err_msg ? err_msg : "unknown");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Reset monitoring stats before the test
+    rv = scitoken_reset_monitoring_stats(&err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to reset monitoring stats";
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a token with the test issuer
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
+                                   &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 300);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    std::string token_str(token_value);
+    free(token_value);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Get initial counts before the concurrent test
+    auto stats_before = getCurrentMonitoringStats();
+    auto initial_successful_validations =
+        stats_before.getIssuerStats(issuer_url_).successful_validations;
+    auto initial_expired_keys =
+        stats_before.getIssuerStats(issuer_url_).expired_keys;
+    auto initial_key_lookups =
+        stats_before.getIssuerStats(issuer_url_).successful_key_lookups;
+
+    std::cout << "Using unique cache directory: " << unique_cache_dir
+              << std::endl;
+    std::cout << "Initial successful_validations: "
+              << initial_successful_validations << std::endl;
+    std::cout << "Initial expired_keys: " << initial_expired_keys << std::endl;
+    std::cout << "Initial successful_key_lookups: " << initial_key_lookups
+              << std::endl;
+
+    // Launch multiple threads to concurrently validate the same token
+    const int NUM_THREADS = 10;
+    std::vector<std::thread> threads;
+    std::atomic<int> success_count{0};
+    std::atomic<int> failure_count{0};
+
+    // Use a barrier to synchronize thread start
+    std::atomic<bool> start_flag{false};
+
+    for (int i = 0; i < NUM_THREADS; i++) {
+        threads.emplace_back([&]() {
+            // Wait for all threads to be ready
+            while (!start_flag.load()) {
+                std::this_thread::yield();
+            }
+
+            char *thread_err = nullptr;
+            std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+                scitoken_create(nullptr), scitoken_destroy);
+
+            int result = scitoken_deserialize_v2(token_str.c_str(),
+                                                 verify_token.get(), nullptr,
+                                                 &thread_err);
+            if (result == 0) {
+                success_count++;
+            } else {
+                failure_count++;
+                if (thread_err) {
+                    std::cerr << "Thread validation error: " << thread_err
+                              << std::endl;
+                }
+            }
+            if (thread_err)
+                free(thread_err);
+        });
+    }
+
+    // Signal all threads to start simultaneously
+    start_flag.store(true);
+
+    // Wait for all threads to complete
+    for (auto &t : threads) {
+        t.join();
+    }
+
+    std::cout << "Threads completed - success: " << success_count.load()
+              << ", failure: " << failure_count.load() << std::endl;
+
+    // All threads should have successfully validated
+    // This proves the per-issuer locking and caching mechanisms work correctly
+    // even under concurrent load with an empty cache
+    EXPECT_EQ(success_count.load(), NUM_THREADS)
+        << "All threads should validate successfully";
+
+    // Check monitoring stats to verify the code paths were exercised
+    auto stats_after = getCurrentMonitoringStats();
+    auto issuer_stats = stats_after.getIssuerStats(issuer_url_);
+    auto new_expired_keys = issuer_stats.expired_keys - initial_expired_keys;
+    auto new_key_lookups =
+        issuer_stats.successful_key_lookups - initial_key_lookups;
+
+    std::cout << "Final stats for issuer:" << std::endl;
+    std::cout << "  successful_validations: "
+              << issuer_stats.successful_validations << std::endl;
+    std::cout << "  expired_keys: " << issuer_stats.expired_keys << " (new: "
+              << new_expired_keys << ")" << std::endl;
+    std::cout << "  successful_key_lookups: "
+              << issuer_stats.successful_key_lookups << " (new: "
+              << new_key_lookups << ")" << std::endl;
+
+    // The per-issuer lock should ensure only ONE thread fetches keys from web.
+    // All other threads should wait for the lock, then find keys in the cache.
+    // This is the key assertion that proves the thundering herd prevention works.
+    EXPECT_EQ(new_key_lookups, 1u)
+        << "Per-issuer lock should ensure only ONE web fetch for "
+        << NUM_THREADS << " concurrent requests";
+
+    // The expired_keys counter tracks entries into the "no cached keys" path.
+    // With a fresh cache, all threads should hit this path because they all
+    // check the DB before acquiring the per-issuer lock.
+    EXPECT_EQ(new_expired_keys, static_cast<uint64_t>(NUM_THREADS))
+        << "All threads should enter the expired_keys code path";
+
+    // Cleanup: remove the temporary cache directory
+    std::string rm_cmd = "rm -rf " + unique_cache_dir;
+    (void)system(rm_cmd.c_str());
+}
+
+// Stress test: repeatedly deserialize a valid token across multiple threads
+// for a fixed duration and verify monitoring counters match actual counts
+TEST_F(IntegrationTest, StressTestValidToken) {
+    char *err_msg = nullptr;
+
+    // Reset monitoring stats before the test
+    int rv = scitoken_reset_monitoring_stats(&err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to reset monitoring stats";
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a valid token
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
+                                   &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv =
+        scitoken_set_claim_string(token.get(), "sub", "stress-test", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    std::string token_str(token_value);
+    free(token_value);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Get initial stats
+    auto stats_before = getCurrentMonitoringStats();
+    auto initial_successful =
+        stats_before.getIssuerStats(issuer_url_).successful_validations;
+    auto initial_unsuccessful =
+        stats_before.getIssuerStats(issuer_url_).unsuccessful_validations;
+    auto initial_key_lookups =
+        stats_before.getIssuerStats(issuer_url_).successful_key_lookups;
+
+    // Stress test parameters
+    const int NUM_THREADS = 10;
+    const int TEST_DURATION_MS = 5000; // 5 seconds
+
+    std::atomic<uint64_t> total_attempts{0};
+    std::atomic<uint64_t> total_successes{0};
+    std::atomic<uint64_t> total_failures{0};
+    std::atomic<bool> stop_flag{false};
+
+    std::vector<std::thread> threads;
+    for (int i = 0; i < NUM_THREADS; i++) {
+        threads.emplace_back([&]() {
+            while (!stop_flag.load()) {
+                total_attempts++;
+
+                char *thread_err = nullptr;
+                std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+                    scitoken_create(nullptr), scitoken_destroy);
+
+                int result = scitoken_deserialize_v2(
+                    token_str.c_str(), verify_token.get(), nullptr, &thread_err);
+
+                if (result == 0) {
+                    total_successes++;
+                } else {
+                    total_failures++;
+                    if (thread_err) {
+                        std::cerr << "Unexpected error: " << thread_err
+                                  << std::endl;
+                    }
+                }
+                if (thread_err)
+                    free(thread_err);
+            }
+        });
+    }
+
+    // Run for the test duration
+    std::this_thread::sleep_for(std::chrono::milliseconds(TEST_DURATION_MS));
+    stop_flag.store(true);
+
+    // Wait for all threads to complete
+    for (auto &t : threads) {
+        t.join();
+    }
+
+    // Get final stats
+    auto stats_after = getCurrentMonitoringStats();
+    auto issuer_stats = stats_after.getIssuerStats(issuer_url_);
+    auto new_successful =
+        issuer_stats.successful_validations - initial_successful;
+    auto new_unsuccessful =
+        issuer_stats.unsuccessful_validations - initial_unsuccessful;
+    auto new_key_lookups =
+        issuer_stats.successful_key_lookups - initial_key_lookups;
+
+    std::cout << "Stress test (valid token) results:" << std::endl;
+    std::cout << "  Test duration: " << TEST_DURATION_MS << " ms" << std::endl;
+    std::cout << "  Threads: " << NUM_THREADS << std::endl;
+    std::cout << "  Total attempts: " << total_attempts.load() << std::endl;
+    std::cout << "  Total successes: " << total_successes.load() << std::endl;
+    std::cout << "  Total failures: " << total_failures.load() << std::endl;
+    std::cout << "  Monitoring successful_validations: " << new_successful
+              << std::endl;
+    std::cout << "  Monitoring unsuccessful_validations: " << new_unsuccessful
+              << std::endl;
+    std::cout << "  Monitoring successful_key_lookups: " << new_key_lookups
+              << std::endl;
+
+    // Verify all attempts succeeded
+    EXPECT_EQ(total_failures.load(), 0u)
+        << "All deserializations of valid token should succeed";
+
+    // Verify monitoring counters match actual counts
+    EXPECT_EQ(new_successful, total_successes.load())
+        << "Monitoring successful_validations should match actual success "
+           "count";
+
+    EXPECT_EQ(new_unsuccessful, 0u)
+        << "There should be no unsuccessful validations for valid token";
+
+    // Verify at most one key lookup (keys should be cached after first fetch)
+    EXPECT_LE(new_key_lookups, 1u)
+        << "Should have at most one key lookup (cached after first)";
+
+    // Sanity check: we should have done a meaningful number of validations
+    EXPECT_GT(total_attempts.load(), 100u)
+        << "Should have completed at least 100 validations in " << TEST_DURATION_MS << "ms";
+}
+
+// Stress test: repeatedly deserialize a token with an invalid issuer (404)
+// across multiple threads and verify monitoring counters match actual failure counts
+TEST_F(IntegrationTest, StressTestInvalidIssuer) {
+    char *err_msg = nullptr;
+
+    // Reset monitoring stats before the test
+    int rv = scitoken_reset_monitoring_stats(&err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to reset monitoring stats";
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a token with an issuer path that returns 404
+    // The server returns 404 for paths like /nonexistent-path
+    std::string invalid_issuer = issuer_url_ + "/nonexistent-path";
+
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    rv = scitoken_set_claim_string(token.get(), "iss", invalid_issuer.c_str(),
+                                   &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv = scitoken_set_claim_string(token.get(), "sub", "stress-test-invalid",
+                                   &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    std::string token_str(token_value);
+    free(token_value);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Get initial stats for the invalid issuer
+    auto stats_before = getCurrentMonitoringStats();
+    auto initial_successful =
+        stats_before.getIssuerStats(invalid_issuer).successful_validations;
+    auto initial_unsuccessful =
+        stats_before.getIssuerStats(invalid_issuer).unsuccessful_validations;
+    auto initial_key_lookups =
+        stats_before.getIssuerStats(invalid_issuer).successful_key_lookups;
+
+    // Stress test parameters
+    const int NUM_THREADS = 10;
+    const int TEST_DURATION_MS = 5000; // 5 seconds
+
+    std::atomic<uint64_t> total_attempts{0};
+    std::atomic<uint64_t> total_successes{0};
+    std::atomic<uint64_t> total_failures{0};
+    std::atomic<bool> stop_flag{false};
+
+    std::vector<std::thread> threads;
+    for (int i = 0; i < NUM_THREADS; i++) {
+        threads.emplace_back([&]() {
+            while (!stop_flag.load()) {
+                total_attempts++;
+
+                char *thread_err = nullptr;
+                std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+                    scitoken_create(nullptr), scitoken_destroy);
+
+                int result = scitoken_deserialize_v2(
+                    token_str.c_str(), verify_token.get(), nullptr, &thread_err);
+
+                if (result == 0) {
+                    total_successes++;
+                } else {
+                    total_failures++;
+                }
+                if (thread_err)
+                    free(thread_err);
+            }
+        });
+    }
+
+    // Run for the test duration
+    std::this_thread::sleep_for(std::chrono::milliseconds(TEST_DURATION_MS));
+    stop_flag.store(true);
+
+    // Wait for all threads to complete
+    for (auto &t : threads) {
+        t.join();
+    }
+
+    // Get final stats for the invalid issuer
+    auto stats_after = getCurrentMonitoringStats();
+    auto issuer_stats = stats_after.getIssuerStats(invalid_issuer);
+    auto new_successful =
+        issuer_stats.successful_validations - initial_successful;
+    auto new_unsuccessful =
+        issuer_stats.unsuccessful_validations - initial_unsuccessful;
+    auto new_key_lookups =
+        issuer_stats.successful_key_lookups - initial_key_lookups;
+
+    std::cout << "Stress test (invalid issuer - 404) results:" << std::endl;
+    std::cout << "  Test duration: " << TEST_DURATION_MS << " ms" << std::endl;
+    std::cout << "  Threads: " << NUM_THREADS << std::endl;
+    std::cout << "  Invalid issuer: " << invalid_issuer << std::endl;
+    std::cout << "  Total attempts: " << total_attempts.load() << std::endl;
+    std::cout << "  Total successes: " << total_successes.load() << std::endl;
+    std::cout << "  Total failures: " << total_failures.load() << std::endl;
+    std::cout << "  Monitoring successful_validations: " << new_successful
+              << std::endl;
+    std::cout << "  Monitoring unsuccessful_validations: " << new_unsuccessful
+              << std::endl;
+    std::cout << "  Monitoring successful_key_lookups: " << new_key_lookups
+              << std::endl;
+
+    // Verify all attempts failed (issuer returns 404)
+    EXPECT_EQ(total_successes.load(), 0u)
+        << "All deserializations with invalid issuer should fail";
+
+    // Verify monitoring counters match actual counts
+    EXPECT_EQ(new_successful, 0u)
+        << "There should be no successful validations for invalid issuer";
+
+    EXPECT_EQ(new_unsuccessful, total_failures.load())
+        << "Monitoring unsuccessful_validations should match actual failure "
+           "count";
+
+    // No successful key lookups expected (issuer returns 404)
+    EXPECT_EQ(new_key_lookups, 0u)
+        << "Should have no successful key lookups (issuer returns 404)";
+
+    // Sanity check: we should have done a meaningful number of validations
+    EXPECT_GT(total_attempts.load(), 100u)
+        << "Should have completed at least 100 validations in " << TEST_DURATION_MS << "ms";
 }
 
 } // namespace
