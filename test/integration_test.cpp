@@ -1514,8 +1514,40 @@ TEST_F(IntegrationTest, ConcurrentNewIssuerLookup) {
 TEST_F(IntegrationTest, StressTestValidToken) {
     char *err_msg = nullptr;
 
+    // Use a unique cache directory to ensure no cached keys exist from prior
+    // tests This forces fresh key lookup and prevents background refresh
+    // interference
+    std::string unique_cache_dir = "/tmp/scitokens_stress_valid_" +
+                                   std::to_string(time(nullptr)) + "_" +
+                                   std::to_string(getpid());
+    int rv = scitoken_config_set_str("keycache.cache_home",
+                                     unique_cache_dir.c_str(), &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
+                     << (err_msg ? err_msg : "unknown");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Ensure background refresh is disabled so it doesn't interfere
+    rv = keycache_stop_background_refresh(&err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to stop background refresh";
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Reset update interval to default (600 seconds) - BackgroundRefreshTest
+    // may have set it to 1 second
+    rv = scitoken_config_set_int("keycache.update_interval_s", 600, &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set update_interval_s";
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
     // Reset monitoring stats before the test
-    int rv = scitoken_reset_monitoring_stats(&err_msg);
+    rv = scitoken_reset_monitoring_stats(&err_msg);
     ASSERT_EQ(rv, 0) << "Failed to reset monitoring stats";
     if (err_msg) {
         free(err_msg);
@@ -1656,6 +1688,7 @@ TEST_F(IntegrationTest, StressTestValidToken) {
         << "There should be no unsuccessful validations for valid token";
 
     // Verify at most one key lookup (keys should be cached after first fetch)
+    // Using a fresh cache directory ensures no interference from prior tests
     EXPECT_LE(new_key_lookups, 1u)
         << "Should have at most one key lookup (cached after first)";
 
@@ -1663,6 +1696,10 @@ TEST_F(IntegrationTest, StressTestValidToken) {
     EXPECT_GT(total_attempts.load(), 100u)
         << "Should have completed at least 100 validations in "
         << TEST_DURATION_MS << "ms";
+
+    // Cleanup: remove the temporary cache directory
+    std::string rm_cmd = "rm -rf " + unique_cache_dir;
+    (void)system(rm_cmd.c_str());
 }
 
 // Stress test: repeatedly deserialize a token with an invalid issuer (404)
@@ -1671,8 +1708,22 @@ TEST_F(IntegrationTest, StressTestValidToken) {
 TEST_F(IntegrationTest, StressTestInvalidIssuer) {
     char *err_msg = nullptr;
 
+    // Use a unique cache directory to ensure no cached keys exist from prior
+    // tests
+    std::string unique_cache_dir = "/tmp/scitokens_stress_invalid_" +
+                                   std::to_string(time(nullptr)) + "_" +
+                                   std::to_string(getpid());
+    int rv = scitoken_config_set_str("keycache.cache_home",
+                                     unique_cache_dir.c_str(), &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
+                     << (err_msg ? err_msg : "unknown");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
     // Reset monitoring stats before the test
-    int rv = scitoken_reset_monitoring_stats(&err_msg);
+    rv = scitoken_reset_monitoring_stats(&err_msg);
     ASSERT_EQ(rv, 0) << "Failed to reset monitoring stats";
     if (err_msg) {
         free(err_msg);
@@ -1821,6 +1872,10 @@ TEST_F(IntegrationTest, StressTestInvalidIssuer) {
     EXPECT_GT(total_attempts.load(), 100u)
         << "Should have completed at least 100 validations in "
         << TEST_DURATION_MS << "ms";
+
+    // Cleanup: remove the temporary cache directory
+    std::string rm_cmd = "rm -rf " + unique_cache_dir;
+    (void)system(rm_cmd.c_str());
 }
 
 } // namespace
