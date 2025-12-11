@@ -1134,6 +1134,78 @@ int keycache_stop_background_refresh(char **err_msg) {
     return keycache_set_background_refresh(0, err_msg);
 }
 
+int keycache_load_jwks(const char *issuer, char **jwks, char **err_msg) {
+    if (!issuer) {
+        if (err_msg) {
+            *err_msg = strdup("Issuer may not be a null pointer");
+        }
+        return -1;
+    }
+    if (!jwks) {
+        if (err_msg) {
+            *err_msg = strdup("JWKS output pointer may not be null.");
+        }
+        return -1;
+    }
+    try {
+        *jwks = strdup(scitokens::Validator::load_jwks(issuer).c_str());
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int keycache_get_jwks_metadata(const char *issuer, char **metadata,
+                               char **err_msg) {
+    if (!issuer) {
+        if (err_msg) {
+            *err_msg = strdup("Issuer may not be a null pointer");
+        }
+        return -1;
+    }
+    if (!metadata) {
+        if (err_msg) {
+            *err_msg = strdup("Metadata output pointer may not be null.");
+        }
+        return -1;
+    }
+    try {
+        *metadata = strdup(scitokens::Validator::get_jwks_metadata(issuer).c_str());
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int keycache_delete_jwks(const char *issuer, char **err_msg) {
+    if (!issuer) {
+        if (err_msg) {
+            *err_msg = strdup("Issuer may not be a null pointer");
+        }
+        return -1;
+    }
+    try {
+        if (!scitokens::Validator::delete_jwks(issuer)) {
+            if (err_msg) {
+                *err_msg = strdup("Failed to delete JWKS cache entry for issuer.");
+            }
+            return -1;
+        }
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
 int config_set_int(const char *key, int value, char **err_msg) {
     return scitoken_config_set_int(key, value, err_msg);
 }

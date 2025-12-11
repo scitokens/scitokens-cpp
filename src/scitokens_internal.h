@@ -1309,6 +1309,25 @@ class Validator {
     static std::vector<std::pair<std::string, int64_t>>
     get_all_issuers_from_db(int64_t now);
 
+    /**
+     * Load JWKS for a given issuer, refreshing only if needed.
+     * Returns the JWKS string. If refresh is needed and fails, throws exception.
+     */
+    static std::string load_jwks(const std::string &issuer);
+
+    /**
+     * Get metadata for a cached JWKS entry.
+     * Returns a JSON string with expires, next_update, and extra fields.
+     * Throws exception if issuer not found in cache.
+     */
+    static std::string get_jwks_metadata(const std::string &issuer);
+
+    /**
+     * Delete a JWKS entry from the keycache.
+     * Returns true on success, false on failure.
+     */
+    static bool delete_jwks(const std::string &issuer);
+
   private:
     static std::unique_ptr<AsyncStatus>
     get_public_key_pem(const std::string &issuer, const std::string &kid,
