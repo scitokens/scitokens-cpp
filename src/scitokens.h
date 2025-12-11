@@ -310,7 +310,8 @@ int keycache_set_background_refresh(int enabled, char **err_msg);
 int keycache_stop_background_refresh(char **err_msg);
 
 /**
- * Load the JWKS from the keycache for a given issuer, refreshing only if needed.
+ * Load the JWKS from the keycache for a given issuer, refreshing only if
+ * needed.
  * - Returns 0 if successful, nonzero on failure.
  * - If the existing JWKS has not expired, this will return the cached JWKS
  *   without triggering a download.
@@ -326,7 +327,6 @@ int keycache_load_jwks(const char *issuer, char **jwks, char **err_msg);
  * - `metadata` is an output variable set to a JSON string containing:
  *   - "expires": expiration time (Unix epoch seconds)
  *   - "next_update": next update time (Unix epoch seconds)
- *   - "extra": additional metadata (currently an empty JSON object)
  * - If the issuer does not exist in the cache, returns an error.
  */
 int keycache_get_jwks_metadata(const char *issuer, char **metadata,
