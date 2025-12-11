@@ -1,7 +1,7 @@
 #include "../src/scitokens.h"
+#include "test_utils.h"
 
 #include <atomic>
-#include <climits>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -21,89 +21,9 @@
 #endif
 #include <picojson/picojson.h>
 
+using scitokens_test::SecureTempDir;
+
 namespace {
-
-// Helper class to create and manage secure temporary directories
-// Uses mkdtemp for security and cleans up on destruction
-class SecureTempDir {
-  public:
-    // Create a temp directory under the specified base path
-    // If base_path is empty, uses BINARY_DIR/tests or falls back to cwd/tests
-    explicit SecureTempDir(const std::string &prefix = "scitokens_test_",
-                           const std::string &base_path = "") {
-        std::string base = base_path;
-        if (base.empty()) {
-            // Try to use build/tests directory (set by CMake)
-            const char *binary_dir = std::getenv("BINARY_DIR");
-            if (binary_dir) {
-                base = std::string(binary_dir) + "/tests";
-            } else {
-                // Fallback: use current working directory + tests
-                char cwd[PATH_MAX];
-                if (getcwd(cwd, sizeof(cwd))) {
-                    base = std::string(cwd) + "/tests";
-                } else {
-                    base = "/tmp"; // Last resort fallback
-                }
-            }
-        }
-
-        // Ensure base directory exists
-        mkdir(base.c_str(), 0700);
-
-        // Create template for mkdtemp
-        std::string tmpl = base + "/" + prefix + "XXXXXX";
-        std::vector<char> tmpl_buf(tmpl.begin(), tmpl.end());
-        tmpl_buf.push_back('\0');
-
-        char *result = mkdtemp(tmpl_buf.data());
-        if (result) {
-            path_ = result;
-        }
-    }
-
-    ~SecureTempDir() { cleanup(); }
-
-    // Delete copy constructor and assignment
-    SecureTempDir(const SecureTempDir &) = delete;
-    SecureTempDir &operator=(const SecureTempDir &) = delete;
-
-    // Allow move
-    SecureTempDir(SecureTempDir &&other) noexcept
-        : path_(std::move(other.path_)) {
-        other.path_.clear();
-    }
-
-    SecureTempDir &operator=(SecureTempDir &&other) noexcept {
-        if (this != &other) {
-            cleanup();
-            path_ = std::move(other.path_);
-            other.path_.clear();
-        }
-        return *this;
-    }
-
-    const std::string &path() const { return path_; }
-    bool valid() const { return !path_.empty(); }
-
-    // Manually trigger cleanup
-    void cleanup() {
-        if (!path_.empty()) {
-            // Remove directory contents recursively
-            remove_directory_recursive(path_);
-            path_.clear();
-        }
-    }
-
-  private:
-    std::string path_;
-
-    static void remove_directory_recursive(const std::string &path) {
-        // Use system rm -rf for simplicity and reliability
-        std::string cmd = "rm -rf '" + path + "' 2>/dev/null";
-        (void)system(cmd.c_str());
-    }
-};
 
 // Helper class to parse monitoring JSON
 class MonitoringStats {
