@@ -22,6 +22,9 @@ namespace {
 // This handles concurrent access from multiple threads/processes
 constexpr int SQLITE_BUSY_TIMEOUT_MS = 5000;
 
+// Default time before expiry when next_update should occur (4 hours)
+constexpr int64_t DEFAULT_NEXT_UPDATE_OFFSET_S = 4 * 3600;
+
 void initialize_cachedb(const std::string &keycache_file) {
 
     sqlite3 *db;
@@ -257,7 +260,7 @@ bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
         sqlite3_close(db);
         iter = top_obj.find("next_update");
         if (iter == top_obj.end() || !iter->second.is<int64_t>()) {
-            next_update = expiry - 4 * 3600;
+            next_update = expiry - DEFAULT_NEXT_UPDATE_OFFSET_S;
         } else {
             next_update = iter->second.get<int64_t>();
         }
@@ -406,7 +409,7 @@ scitokens::Validator::get_all_issuers_from_db(int64_t now) {
         if (next_update_iter == top_obj.end() ||
             !next_update_iter->second.is<int64_t>()) {
             // If next_update is not set, default to 4 hours before expiry
-            next_update = expiry - 4 * 3600;
+            next_update = expiry - DEFAULT_NEXT_UPDATE_OFFSET_S;
         } else {
             next_update = next_update_iter->second.get<int64_t>();
         }
@@ -424,4 +427,139 @@ scitokens::Validator::get_all_issuers_from_db(int64_t now) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
     return result;
+}
+
+std::string scitokens::Validator::load_jwks(const std::string &issuer) {
+    auto now = std::time(NULL);
+    picojson::value jwks;
+    int64_t next_update;
+
+    try {
+        // Try to get from cache
+        if (get_public_keys_from_db(issuer, now, jwks, next_update)) {
+            // Check if refresh is needed (expired based on next_update)
+            if (now <= next_update) {
+                // Still valid, return cached version
+                return jwks.serialize();
+            }
+            // Past next_update, need to refresh
+        }
+    } catch (const NegativeCacheHitException &) {
+        // Negative cache hit - return empty keys
+        return std::string("{\"keys\": []}");
+    }
+
+    // Either not in cache or past next_update - refresh
+    if (!refresh_jwks(issuer)) {
+        throw CurlException("Failed to load JWKS for issuer: " + issuer);
+    }
+
+    // Get the newly refreshed JWKS
+    return get_jwks(issuer);
+}
+
+std::string scitokens::Validator::get_jwks_metadata(const std::string &issuer) {
+    auto now = std::time(NULL);
+    int64_t next_update = -1;
+    int64_t expires = -1;
+
+    // Get the metadata from database without expiry check
+    auto cache_fname = get_cache_file();
+    if (cache_fname.size() == 0) {
+        throw std::runtime_error("Unable to access cache file");
+    }
+
+    sqlite3 *db;
+    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    if (rc) {
+        sqlite3_close(db);
+        throw std::runtime_error("Failed to open cache database");
+    }
+    sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
+
+    sqlite3_stmt *stmt;
+    rc = sqlite3_prepare_v2(db, "SELECT keys from keycache where issuer = ?",
+                            -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        throw std::runtime_error("Failed to prepare database query");
+    }
+
+    if (sqlite3_bind_text(stmt, 1, issuer.c_str(), issuer.size(),
+                          SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        throw std::runtime_error("Failed to bind issuer to query");
+    }
+
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        const unsigned char *data = sqlite3_column_text(stmt, 0);
+        std::string metadata(reinterpret_cast<const char *>(data));
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+
+        picojson::value json_obj;
+        auto err = picojson::parse(json_obj, metadata);
+        if (!err.empty() || !json_obj.is<picojson::object>()) {
+            throw JsonException("Invalid JSON in cache entry");
+        }
+
+        auto top_obj = json_obj.get<picojson::object>();
+
+        // Extract expires
+        auto iter = top_obj.find("expires");
+        if (iter != top_obj.end() && iter->second.is<int64_t>()) {
+            expires = iter->second.get<int64_t>();
+        }
+
+        // Extract next_update
+        iter = top_obj.find("next_update");
+        if (iter != top_obj.end() && iter->second.is<int64_t>()) {
+            next_update = iter->second.get<int64_t>();
+        } else if (expires != -1) {
+            // Default next_update to 4 hours before expiry
+            next_update = expires - DEFAULT_NEXT_UPDATE_OFFSET_S;
+        }
+
+        // Build metadata JSON (add future keys at top level if needed)
+        picojson::object metadata_obj;
+        if (expires != -1) {
+            metadata_obj["expires"] = picojson::value(expires);
+        }
+        if (next_update != -1) {
+            metadata_obj["next_update"] = picojson::value(next_update);
+        }
+
+        return picojson::value(metadata_obj).serialize();
+    } else {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        throw std::runtime_error("Issuer not found in cache");
+    }
+}
+
+bool scitokens::Validator::delete_jwks(const std::string &issuer) {
+    auto cache_fname = get_cache_file();
+    if (cache_fname.size() == 0) {
+        return false;
+    }
+
+    sqlite3 *db;
+    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    if (rc) {
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
+
+    // Use the existing remove_issuer_entry function
+    // Note: remove_issuer_entry closes the database on error
+    if (remove_issuer_entry(db, issuer, true) != 0) {
+        // Database already closed by remove_issuer_entry
+        return false;
+    }
+
+    sqlite3_close(db);
+    return true;
 }
