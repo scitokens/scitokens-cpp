@@ -1173,7 +1173,8 @@ int keycache_get_jwks_metadata(const char *issuer, char **metadata,
         return -1;
     }
     try {
-        *metadata = strdup(scitokens::Validator::get_jwks_metadata(issuer).c_str());
+        *metadata =
+            strdup(scitokens::Validator::get_jwks_metadata(issuer).c_str());
     } catch (std::exception &exc) {
         if (err_msg) {
             *err_msg = strdup(exc.what());
@@ -1193,7 +1194,8 @@ int keycache_delete_jwks(const char *issuer, char **err_msg) {
     try {
         if (!scitokens::Validator::delete_jwks(issuer)) {
             if (err_msg) {
-                *err_msg = strdup("Failed to delete JWKS cache entry for issuer.");
+                *err_msg =
+                    strdup("Failed to delete JWKS cache entry for issuer.");
             }
             return -1;
         }

@@ -1311,7 +1311,8 @@ class Validator {
 
     /**
      * Load JWKS for a given issuer, refreshing only if needed.
-     * Returns the JWKS string. If refresh is needed and fails, throws exception.
+     * Returns the JWKS string. If refresh is needed and fails, throws
+     * exception.
      */
     static std::string load_jwks(const std::string &issuer);
 
