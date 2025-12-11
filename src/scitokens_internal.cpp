@@ -921,8 +921,14 @@ std::string Validator::get_jwks(const std::string &issuer) {
     auto now = std::time(NULL);
     picojson::value jwks;
     int64_t next_update;
-    if (get_public_keys_from_db(issuer, now, jwks, next_update)) {
-        return jwks.serialize();
+    try {
+        if (get_public_keys_from_db(issuer, now, jwks, next_update)) {
+            return jwks.serialize();
+        }
+    } catch (const NegativeCacheHitException &) {
+        // Negative cache hit - return empty keys without incrementing counter
+        // (counter is incremented elsewhere for validation failures)
+        return std::string("{\"keys\": []}");
     }
     return std::string("{\"keys\": []}");
 }

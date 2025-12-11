@@ -209,6 +209,35 @@ bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
             return false;
         }
         auto keys_local = iter->second;
+
+        // Check if this is a negative cache entry (empty keys array)
+        if (keys_local.is<picojson::object>()) {
+            auto jwks_obj = keys_local.get<picojson::object>();
+            auto keys_iter = jwks_obj.find("keys");
+            if (keys_iter != jwks_obj.end() &&
+                keys_iter->second.is<picojson::array>()) {
+                auto keys_array = keys_iter->second.get<picojson::array>();
+                if (keys_array.empty()) {
+                    // Check if negative cache has expired
+                    iter = top_obj.find("expires");
+                    if (iter != top_obj.end() && iter->second.is<int64_t>()) {
+                        auto expiry = iter->second.get<int64_t>();
+                        if (now > expiry) {
+                            // Negative cache expired, remove and return false
+                            if (remove_issuer_entry(db, issuer, true) != 0) {
+                                return false;
+                            }
+                            sqlite3_close(db);
+                            return false;
+                        }
+                    }
+                    // Negative cache still valid - throw exception
+                    sqlite3_close(db);
+                    throw NegativeCacheHitException(issuer);
+                }
+            }
+        }
+
         iter = top_obj.find("expires");
         if (iter == top_obj.end() || !iter->second.is<int64_t>()) {
             if (remove_issuer_entry(db, issuer, true) != 0) {

@@ -843,6 +843,109 @@ TEST_F(KeycacheTest, RefreshExpiredTest) {
     EXPECT_EQ(jwks_str, "{\"keys\": []}");
 }
 
+TEST_F(KeycacheTest, NegativeCacheTest) {
+    // This test verifies that failed issuer lookups are cached as negative
+    // entries and that subsequent attempts fail quickly with the right counter
+    char *err_msg = nullptr;
+
+    // Reset monitoring stats for clean baseline
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a token with an issuer that will fail to lookup
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> mykey(
+        scitoken_key_create("1", "ES256", ec_public, ec_private, &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(mykey.get() != nullptr) << err_msg;
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> mytoken(
+        scitoken_create(mykey.get()), scitoken_destroy);
+    ASSERT_TRUE(mytoken.get() != nullptr);
+
+    // Use a unique issuer that doesn't exist (will fail to fetch keys)
+    // Include timestamp to avoid interference from previous test runs
+    std::string invalid_issuer = "https://invalid-issuer-negative-cache-" +
+                                 std::to_string(std::time(nullptr)) +
+                                 ".example.com";
+    auto rv = scitoken_set_claim_string(mytoken.get(), "iss",
+                                        invalid_issuer.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(mytoken.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // First attempt should fail to fetch keys (DNS failure or connection
+    // refused). This is a cache MISS (creates negative cache entry).
+    std::unique_ptr<void, decltype(&scitoken_destroy)> read_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(read_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_FALSE(rv == 0); // Should fail
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Check that a negative cache entry was created (returns empty keys)
+    char *jwks;
+    rv = keycache_get_cached_jwks(invalid_issuer.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    // Should return empty keys array (negative cache)
+    EXPECT_EQ(jwks_str, "{\"keys\": []}");
+
+    // Second attempt should fail quickly using negative cache
+    rv = scitoken_deserialize_v2(token_value, read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_FALSE(rv == 0); // Should still fail
+    ASSERT_TRUE(err_msg != nullptr);
+    std::string error_msg(err_msg);
+    free(err_msg);
+    err_msg = nullptr;
+
+    // Error message should indicate it's from negative cache
+    EXPECT_NE(error_msg.find("negative cache"), std::string::npos)
+        << "Error message should mention negative cache: " << error_msg;
+
+    // Third attempt to verify counter increments correctly
+    rv = scitoken_deserialize_v2(token_value, read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_FALSE(rv == 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Get monitoring stats and verify negative_cache_hits counter
+    char *json_out = nullptr;
+    rv = scitoken_get_monitoring_json(&json_out, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(json_out != nullptr);
+    std::string json_str(json_out);
+    free(json_out);
+
+    // Parse JSON and check negative_cache_hits
+    // Only the second and third attempts should hit the negative cache:
+    // - First attempt: creates negative cache (cache miss, not hit)
+    // - Second and third attempts: hit existing negative cache
+    EXPECT_NE(json_str.find("\"negative_cache_hits\""), std::string::npos)
+        << "JSON should contain negative_cache_hits field";
+
+    // Verify 2 negative cache hits (attempts 2 and 3 only)
+    EXPECT_NE(json_str.find("\"negative_cache_hits\":2"), std::string::npos)
+        << "Should have 2 negative cache hits. JSON: " << json_str;
+}
+
 class IssuerSecurityTest : public ::testing::Test {
   protected:
     void SetUp() override {
