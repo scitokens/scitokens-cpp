@@ -1,7 +1,9 @@
 #include "../src/scitokens.h"
 
 #include <atomic>
+#include <climits>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -9,6 +11,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
 #include <vector>
@@ -19,6 +22,88 @@
 #include <picojson/picojson.h>
 
 namespace {
+
+// Helper class to create and manage secure temporary directories
+// Uses mkdtemp for security and cleans up on destruction
+class SecureTempDir {
+  public:
+    // Create a temp directory under the specified base path
+    // If base_path is empty, uses BINARY_DIR/tests or falls back to cwd/tests
+    explicit SecureTempDir(const std::string &prefix = "scitokens_test_",
+                           const std::string &base_path = "") {
+        std::string base = base_path;
+        if (base.empty()) {
+            // Try to use build/tests directory (set by CMake)
+            const char *binary_dir = std::getenv("BINARY_DIR");
+            if (binary_dir) {
+                base = std::string(binary_dir) + "/tests";
+            } else {
+                // Fallback: use current working directory + tests
+                char cwd[PATH_MAX];
+                if (getcwd(cwd, sizeof(cwd))) {
+                    base = std::string(cwd) + "/tests";
+                } else {
+                    base = "/tmp"; // Last resort fallback
+                }
+            }
+        }
+
+        // Ensure base directory exists
+        mkdir(base.c_str(), 0700);
+
+        // Create template for mkdtemp
+        std::string tmpl = base + "/" + prefix + "XXXXXX";
+        std::vector<char> tmpl_buf(tmpl.begin(), tmpl.end());
+        tmpl_buf.push_back('\0');
+
+        char *result = mkdtemp(tmpl_buf.data());
+        if (result) {
+            path_ = result;
+        }
+    }
+
+    ~SecureTempDir() { cleanup(); }
+
+    // Delete copy constructor and assignment
+    SecureTempDir(const SecureTempDir &) = delete;
+    SecureTempDir &operator=(const SecureTempDir &) = delete;
+
+    // Allow move
+    SecureTempDir(SecureTempDir &&other) noexcept
+        : path_(std::move(other.path_)) {
+        other.path_.clear();
+    }
+
+    SecureTempDir &operator=(SecureTempDir &&other) noexcept {
+        if (this != &other) {
+            cleanup();
+            path_ = std::move(other.path_);
+            other.path_.clear();
+        }
+        return *this;
+    }
+
+    const std::string &path() const { return path_; }
+    bool valid() const { return !path_.empty(); }
+
+    // Manually trigger cleanup
+    void cleanup() {
+        if (!path_.empty()) {
+            // Remove directory contents recursively
+            remove_directory_recursive(path_);
+            path_.clear();
+        }
+    }
+
+  private:
+    std::string path_;
+
+    static void remove_directory_recursive(const std::string &path) {
+        // Use system rm -rf for simplicity and reliability
+        std::string cmd = "rm -rf '" + path + "' 2>/dev/null";
+        (void)system(cmd.c_str());
+    }
+};
 
 // Helper class to parse monitoring JSON
 class MonitoringStats {
@@ -1037,14 +1122,14 @@ TEST_F(IntegrationTest, MonitoringDurationTracking) {
 TEST_F(IntegrationTest, MonitoringFileOutput) {
     char *err_msg = nullptr;
 
+    // Create a secure temp directory for the monitoring file
+    SecureTempDir temp_dir("monitoring_test_");
+    ASSERT_TRUE(temp_dir.valid()) << "Failed to create temp directory";
+
     // Set up a test file path and zero interval for immediate write
-    std::string test_file = "/tmp/scitokens_monitoring_integration_" +
-                            std::to_string(time(nullptr)) + ".json";
+    std::string test_file = temp_dir.path() + "/monitoring.json";
     scitoken_config_set_str("monitoring.file", test_file.c_str(), &err_msg);
     scitoken_config_set_int("monitoring.file_interval_s", 0, &err_msg);
-
-    // Clean up any existing file
-    std::remove(test_file.c_str());
 
     // Reset monitoring stats
     scitoken_reset_monitoring_stats(&err_msg);
@@ -1119,10 +1204,10 @@ TEST_F(IntegrationTest, MonitoringFileOutput) {
         std::cout << content << std::endl;
     }
 
-    // Clean up
+    // Clean up - disable monitoring file
     scitoken_config_set_str("monitoring.file", "", &err_msg);
     scitoken_config_set_int("monitoring.file_interval_s", 60, &err_msg);
-    std::remove(test_file.c_str());
+    // temp_dir destructor will clean up the directory and file
 }
 
 // =============================================================================
@@ -1347,13 +1432,14 @@ TEST_F(IntegrationTest, BackgroundRefreshTest) {
 TEST_F(IntegrationTest, ConcurrentNewIssuerLookup) {
     char *err_msg = nullptr;
 
-    // Use a unique cache directory to ensure no cached keys exist
+    // Use a unique secure cache directory to ensure no cached keys exist
     // This forces the code path where keys must be fetched from the server
-    std::string unique_cache_dir = "/tmp/scitokens_concurrent_test_" +
-                                   std::to_string(time(nullptr)) + "_" +
-                                   std::to_string(getpid());
+    SecureTempDir unique_cache("concurrent_test_");
+    ASSERT_TRUE(unique_cache.valid())
+        << "Failed to create temp cache directory";
+
     int rv = scitoken_config_set_str("keycache.cache_home",
-                                     unique_cache_dir.c_str(), &err_msg);
+                                     unique_cache.path().c_str(), &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
                      << (err_msg ? err_msg : "unknown");
     if (err_msg) {
@@ -1413,7 +1499,7 @@ TEST_F(IntegrationTest, ConcurrentNewIssuerLookup) {
     auto initial_key_lookups =
         stats_before.getIssuerStats(issuer_url_).successful_key_lookups;
 
-    std::cout << "Using unique cache directory: " << unique_cache_dir
+    std::cout << "Using unique cache directory: " << unique_cache.path()
               << std::endl;
     std::cout << "Initial successful_validations: "
               << initial_successful_validations << std::endl;
@@ -1504,9 +1590,7 @@ TEST_F(IntegrationTest, ConcurrentNewIssuerLookup) {
     EXPECT_EQ(new_expired_keys, static_cast<uint64_t>(NUM_THREADS))
         << "All threads should enter the expired_keys code path";
 
-    // Cleanup: remove the temporary cache directory
-    std::string rm_cmd = "rm -rf " + unique_cache_dir;
-    (void)system(rm_cmd.c_str());
+    // unique_cache destructor will clean up the temporary cache directory
 }
 
 // Stress test: repeatedly deserialize a valid token across multiple threads
@@ -1514,14 +1598,15 @@ TEST_F(IntegrationTest, ConcurrentNewIssuerLookup) {
 TEST_F(IntegrationTest, StressTestValidToken) {
     char *err_msg = nullptr;
 
-    // Use a unique cache directory to ensure no cached keys exist from prior
-    // tests This forces fresh key lookup and prevents background refresh
-    // interference
-    std::string unique_cache_dir = "/tmp/scitokens_stress_valid_" +
-                                   std::to_string(time(nullptr)) + "_" +
-                                   std::to_string(getpid());
+    // Use a unique secure cache directory to ensure no cached keys exist from
+    // prior tests. This forces fresh key lookup and prevents background refresh
+    // interference.
+    SecureTempDir unique_cache("stress_valid_");
+    ASSERT_TRUE(unique_cache.valid())
+        << "Failed to create temp cache directory";
+
     int rv = scitoken_config_set_str("keycache.cache_home",
-                                     unique_cache_dir.c_str(), &err_msg);
+                                     unique_cache.path().c_str(), &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
                      << (err_msg ? err_msg : "unknown");
     if (err_msg) {
@@ -1564,7 +1649,6 @@ TEST_F(IntegrationTest, StressTestValidToken) {
         free(err_msg);
         err_msg = nullptr;
     }
-
     std::unique_ptr<void, decltype(&scitoken_destroy)> token(
         scitoken_create(key.get()), scitoken_destroy);
     ASSERT_TRUE(token.get() != nullptr);
@@ -1697,9 +1781,7 @@ TEST_F(IntegrationTest, StressTestValidToken) {
         << "Should have completed at least 100 validations in "
         << TEST_DURATION_MS << "ms";
 
-    // Cleanup: remove the temporary cache directory
-    std::string rm_cmd = "rm -rf " + unique_cache_dir;
-    (void)system(rm_cmd.c_str());
+    // unique_cache destructor will clean up the temporary cache directory
 }
 
 // Stress test: repeatedly deserialize a token with an invalid issuer (404)
@@ -1708,13 +1790,14 @@ TEST_F(IntegrationTest, StressTestValidToken) {
 TEST_F(IntegrationTest, StressTestInvalidIssuer) {
     char *err_msg = nullptr;
 
-    // Use a unique cache directory to ensure no cached keys exist from prior
-    // tests
-    std::string unique_cache_dir = "/tmp/scitokens_stress_invalid_" +
-                                   std::to_string(time(nullptr)) + "_" +
-                                   std::to_string(getpid());
+    // Use a unique secure cache directory to ensure no cached keys exist from
+    // prior tests
+    SecureTempDir unique_cache("stress_invalid_");
+    ASSERT_TRUE(unique_cache.valid())
+        << "Failed to create temp cache directory";
+
     int rv = scitoken_config_set_str("keycache.cache_home",
-                                     unique_cache_dir.c_str(), &err_msg);
+                                     unique_cache.path().c_str(), &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
                      << (err_msg ? err_msg : "unknown");
     if (err_msg) {
@@ -1873,9 +1956,7 @@ TEST_F(IntegrationTest, StressTestInvalidIssuer) {
         << "Should have completed at least 100 validations in "
         << TEST_DURATION_MS << "ms";
 
-    // Cleanup: remove the temporary cache directory
-    std::string rm_cmd = "rm -rf " + unique_cache_dir;
-    (void)system(rm_cmd.c_str());
+    // unique_cache destructor will clean up the temporary cache directory
 }
 
 } // namespace

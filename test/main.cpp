@@ -1,10 +1,96 @@
 #include "../src/scitokens.h"
 
+#include <climits>
+#include <cstdlib>
+#include <cstring>
 #include <gtest/gtest.h>
 #include <memory>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace {
+
+// Helper class to create and manage secure temporary directories
+// Uses mkdtemp for security and cleans up on destruction
+class SecureTempDir {
+  public:
+    // Create a temp directory under the specified base path
+    // If base_path is empty, uses build/tests or falls back to system temp
+    explicit SecureTempDir(const std::string &prefix = "scitokens_test_",
+                           const std::string &base_path = "") {
+        std::string base = base_path;
+        if (base.empty()) {
+            // Try to use build/tests directory (set by CMake)
+            const char *binary_dir = std::getenv("BINARY_DIR");
+            if (binary_dir) {
+                base = std::string(binary_dir) + "/tests";
+            } else {
+                // Fallback: use current working directory + tests
+                char cwd[PATH_MAX];
+                if (getcwd(cwd, sizeof(cwd))) {
+                    base = std::string(cwd) + "/tests";
+                } else {
+                    base = "/tmp"; // Last resort fallback
+                }
+            }
+        }
+
+        // Ensure base directory exists
+        mkdir(base.c_str(), 0700);
+
+        // Create template for mkdtemp
+        std::string tmpl = base + "/" + prefix + "XXXXXX";
+        std::vector<char> tmpl_buf(tmpl.begin(), tmpl.end());
+        tmpl_buf.push_back('\0');
+
+        char *result = mkdtemp(tmpl_buf.data());
+        if (result) {
+            path_ = result;
+        }
+    }
+
+    ~SecureTempDir() { cleanup(); }
+
+    // Delete copy constructor and assignment
+    SecureTempDir(const SecureTempDir &) = delete;
+    SecureTempDir &operator=(const SecureTempDir &) = delete;
+
+    // Allow move
+    SecureTempDir(SecureTempDir &&other) noexcept
+        : path_(std::move(other.path_)) {
+        other.path_.clear();
+    }
+
+    SecureTempDir &operator=(SecureTempDir &&other) noexcept {
+        if (this != &other) {
+            cleanup();
+            path_ = std::move(other.path_);
+            other.path_.clear();
+        }
+        return *this;
+    }
+
+    const std::string &path() const { return path_; }
+    bool valid() const { return !path_.empty(); }
+
+    // Manually trigger cleanup
+    void cleanup() {
+        if (!path_.empty()) {
+            // Remove directory contents recursively
+            remove_directory_recursive(path_);
+            path_.clear();
+        }
+    }
+
+  private:
+    std::string path_;
+
+    static void remove_directory_recursive(const std::string &path) {
+        // Use system rm -rf for simplicity and reliability
+        std::string cmd = "rm -rf '" + path + "' 2>/dev/null";
+        (void)system(cmd.c_str());
+    }
+};
 
 const char ec_private[] =
     "-----BEGIN EC PRIVATE KEY-----\n"
@@ -724,14 +810,15 @@ TEST_F(KeycacheTest, SetGetTest) {
 }
 
 TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
-    // Set cache home
-    char cache_path[FILENAME_MAX];
-    ASSERT_TRUE(getcwd(cache_path, sizeof(cache_path)) !=
-                nullptr); // Side effect gets cwd
+    // Create a secure temporary directory for the cache
+    SecureTempDir temp_cache("cache_home_test_");
+    ASSERT_TRUE(temp_cache.valid()) << "Failed to create temp directory";
+
     char *err_msg = nullptr;
     std::string key = "keycache.cache_home";
 
-    auto rv = scitoken_config_set_str(key.c_str(), cache_path, &err_msg);
+    auto rv = scitoken_config_set_str(key.c_str(), temp_cache.path().c_str(),
+                                      &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
 
     // Set the jwks at the new cache home
@@ -753,12 +840,14 @@ TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
     char *output;
     rv = scitoken_config_get_str(key.c_str(), &output, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
-    EXPECT_EQ(*output, *cache_path);
+    EXPECT_STREQ(output, temp_cache.path().c_str());
     free(output);
 
     // Reset cache home to whatever it was before by setting empty config
     rv = scitoken_config_set_str(key.c_str(), "", &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
+
+    // temp_cache destructor will clean up the directory
 }
 
 TEST_F(KeycacheTest, InvalidConfigKeyTest) {
@@ -1114,21 +1203,26 @@ TEST_F(EnvConfigTest, IntConfigFromEnv) {
 
 TEST_F(EnvConfigTest, StringConfigFromEnv) {
     // Test that we can manually set and get string config values
+    // Use a secure temp directory instead of hardcoded /tmp path
+    SecureTempDir temp_cache("env_config_test_");
+    ASSERT_TRUE(temp_cache.valid()) << "Failed to create temp directory";
+
     char *err_msg = nullptr;
-    const char *test_path = "/tmp/test_cache";
-    auto rv =
-        scitoken_config_set_str("keycache.cache_home", test_path, &err_msg);
+    auto rv = scitoken_config_set_str("keycache.cache_home",
+                                      temp_cache.path().c_str(), &err_msg);
     ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
 
     char *output = nullptr;
     rv = scitoken_config_get_str("keycache.cache_home", &output, &err_msg);
     ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
     ASSERT_TRUE(output != nullptr);
-    EXPECT_STREQ(output, test_path);
+    EXPECT_STREQ(output, temp_cache.path().c_str());
 
     free(output);
     if (err_msg)
         free(err_msg);
+
+    // temp_cache destructor will clean up the directory
 }
 
 // Test for thundering herd prevention with per-issuer locks
