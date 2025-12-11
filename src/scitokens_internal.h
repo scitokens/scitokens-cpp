@@ -552,6 +552,10 @@ class AsyncStatus {
     bool m_is_refresh{false}; // True if this is a refresh of an existing key
     AsyncState m_state{DOWNLOAD_METADATA};
     std::unique_lock<std::mutex> m_refresh_lock;
+    // Per-issuer lock to prevent thundering herd on new issuers
+    // We store both the shared_ptr (to keep mutex alive) and the lock
+    std::shared_ptr<std::mutex> m_issuer_mutex;
+    std::unique_lock<std::mutex> m_issuer_lock;
 
     int64_t m_next_update{-1};
     int64_t m_expires{-1};
@@ -776,6 +780,8 @@ class Validator {
 
         try {
             auto result = verify_async(scitoken);
+            // Note: m_is_sync flag no longer needed since counting is only done
+            // in verify_async_continue
 
             // Extract issuer from the result's JWT string after decoding starts
             const jwt::decoded_jwt<jwt::traits::kazuho_picojson> *jwt_decoded =
@@ -834,7 +840,8 @@ class Validator {
                     std::chrono::duration_cast<std::chrono::nanoseconds>(
                         end_time - last_duration_update);
                 issuer_stats->add_sync_time(delta);
-                issuer_stats->inc_successful_validation();
+                // Note: inc_successful_validation() is called in
+                // verify_async_continue
             }
         } catch (const std::exception &e) {
             // Record failure (final duration update)
@@ -882,6 +889,8 @@ class Validator {
             }
 
             auto result = verify_async(jwt);
+            // Note: m_is_sync flag no longer needed since counting is only done
+            // in verify_async_continue
             while (!result->m_done) {
                 result = verify_async_continue(std::move(result));
             }
@@ -893,7 +902,8 @@ class Validator {
                     std::chrono::duration_cast<std::chrono::nanoseconds>(
                         end_time - start_time);
                 issuer_stats->add_sync_time(duration);
-                issuer_stats->inc_successful_validation();
+                // Note: inc_successful_validation() is called in
+                // verify_async_continue
             }
         } catch (const std::exception &e) {
             // Record failure if we have an issuer
@@ -1004,6 +1014,7 @@ class Validator {
         // Start monitoring timing and record async validation started
         status->m_start_time = std::chrono::steady_clock::now();
         status->m_monitoring_started = true;
+        status->m_issuer = jwt.get_issuer();
         auto &stats = internal::MonitoringStats::instance().get_issuer_stats(
             jwt.get_issuer());
         stats.inc_async_validation_started();
@@ -1181,9 +1192,8 @@ class Validator {
                 }
         }
 
-        // Record successful validation (only for async API, sync handles its
-        // own)
-        if (status->m_monitoring_started && !status->m_is_sync) {
+        // Record successful validation
+        if (status->m_monitoring_started) {
             auto end_time = std::chrono::steady_clock::now();
             auto duration =
                 std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1195,8 +1205,11 @@ class Validator {
             stats.add_async_time(duration);
         }
 
+        // Create new result, preserving monitoring flags
         std::unique_ptr<AsyncStatus> result(new AsyncStatus());
         result->m_done = true;
+        result->m_is_sync = status->m_is_sync;
+        result->m_monitoring_started = status->m_monitoring_started;
         return result;
     }
 
