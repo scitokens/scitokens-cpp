@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 1.2.0
+Version: 1.3.0
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -66,6 +66,18 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+
+* Thu Dec 11 2025 Brian Bockelman <bbockelman@morgridge.org> - 1.3.0-1
+- Add scitokens-generate-jwks CLI for key generation.
+- Add environment variable-based configuration on library initialization.
+- Add per-issuer lock to prevent multiple concurrent queries against issuers without a known key
+- Add negative cache for failed issuer lookups (preventing frequent re-queries)
+- Add monitoring API for per-issuer validation statistics
+- Add optional background thread for JWKS refresh
+- Add keycache load, metadata, and delete APIs
+- Revert "Fix memory leak in rs256_from_coords" by @djw8605
+- Add CTest-based integration test with JWKS server and TLS infrastructure
+
 * Fri Dec 05 2025 Derek Weitzel <dweitzel@unl.edu> - 1.2.0-1
 - Fix segfault if the JSON parser cannot parse the JWKS
 - Fix float time claims issue and improve error handling
