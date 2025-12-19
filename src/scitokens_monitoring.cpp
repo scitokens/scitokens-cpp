@@ -139,6 +139,13 @@ std::string MonitoringStats::get_json() const {
             picojson::value(static_cast<int64_t>(
                 stats.negative_cache_hits.load(std::memory_order_relaxed)));
 
+        // System cache statistics
+        issuer_obj["system_cache_hits"] = picojson::value(static_cast<int64_t>(
+            stats.system_cache_hits.load(std::memory_order_relaxed)));
+        issuer_obj["system_cache_expired"] =
+            picojson::value(static_cast<int64_t>(
+                stats.system_cache_expired.load(std::memory_order_relaxed)));
+
         std::string sanitized_issuer = sanitize_issuer_for_json(issuer);
         issuers_obj[sanitized_issuer] = picojson::value(issuer_obj);
     }

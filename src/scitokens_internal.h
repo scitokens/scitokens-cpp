@@ -260,6 +260,10 @@ struct IssuerStats {
     std::atomic<uint64_t> failed_refreshes{0};
     std::atomic<uint64_t> stale_key_uses{0};
 
+    // System cache statistics
+    std::atomic<uint64_t> system_cache_hits{0};
+    std::atomic<uint64_t> system_cache_expired{0};
+
     // Background refresh statistics (tracked by background thread)
     std::atomic<uint64_t> background_successful_refreshes{0};
     std::atomic<uint64_t> background_failed_refreshes{0};
@@ -306,6 +310,12 @@ struct IssuerStats {
     }
     void inc_negative_cache_hit() {
         negative_cache_hits.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_system_cache_hit() {
+        system_cache_hits.fetch_add(1, std::memory_order_relaxed);
+    }
+    void inc_system_cache_expired() {
+        system_cache_expired.fetch_add(1, std::memory_order_relaxed);
     }
 
     // Time setters that accept std::chrono::duration (use relaxed ordering)
@@ -361,6 +371,14 @@ struct IssuerStats {
         return static_cast<double>(
                    failed_key_lookup_time_ns.load(std::memory_order_relaxed)) /
                1e9;
+    }
+
+    uint64_t get_system_cache_hits() const {
+        return system_cache_hits.load(std::memory_order_relaxed);
+    }
+
+    uint64_t get_system_cache_expired() const {
+        return system_cache_expired.load(std::memory_order_relaxed);
     }
 };
 
