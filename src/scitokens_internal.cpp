@@ -652,11 +652,11 @@ std::string rs256_from_coords(const std::string &e_str,
 #else
     std::unique_ptr<RSA, decltype(&RSA_free)> rsa(RSA_new(), RSA_free);
 #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-    rsa->e = e_bignum.get();
-    rsa->n = n_bignum.get();
+    rsa->e = e_bignum.release();
+    rsa->n = n_bignum.release();
     rsa->d = nullptr;
 #else
-    RSA_set0_key(rsa.get(), n_bignum.get(), e_bignum.get(), nullptr);
+    RSA_set0_key(rsa.get(), n_bignum.release(), e_bignum.release(), nullptr);
 #endif
     std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(EVP_PKEY_new(),
                                                              EVP_PKEY_free);
