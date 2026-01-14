@@ -51,7 +51,9 @@ jobs:
       run: |
         ./scitokens-verify --help
         echo "✓ scitokens-verify tool builds and runs correctly with OpenSSL 1.1.1"
+        echo "✓ scitokens-verify tool builds and runs correctly with OpenSSL 1.1.1"
 
+    - name: Test RSA key verification (exercises BIGNUM release fix)
     - name: Test RSA key verification (exercises BIGNUM release fix)
       working-directory: ${{github.workspace}}/build
       run: |
@@ -73,9 +75,12 @@ jobs:
         EOF
         
         # Use scitokens-create to create token with RSA key
-        ./scitokens-create --cred rsa-public.pem --key rsa-private.pem --issuer https://test.example.com --profile scitokens2 < token-payload.json > test-token.txt
+        ./scitokens-create --cred rsa-public.pem --key rsa-private.pem --keyid test-rsa-key --issuer https://test.example.com --profile scitokens2 < token-payload.json > test-token.txt
         
         # Verify the token - this exercises rs256_from_coords() with OpenSSL 1.1.1
         ./scitokens-verify --issuer https://test.example.com --cred rsa-public.pem < test-token.txt
+        # Verify the token - this exercises rs256_from_coords() with OpenSSL 1.1.1
+        ./scitokens-verify --issuer https://test.example.com --cred rsa-public.pem < test-token.txt
         
+        echo "✓ RSA token verification successful - BIGNUM release() fix works correctly with OpenSSL 1.1.1"
         echo "✓ RSA token verification successful - BIGNUM release() fix works correctly with OpenSSL 1.1.1"

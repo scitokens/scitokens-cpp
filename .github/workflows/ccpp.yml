@@ -95,7 +95,7 @@ jobs:
         EOF
         
         # Use scitokens-create to create token with RSA key
-        ./scitokens-create --cred rsa-public.pem --key rsa-private.pem --issuer https://test.example.com --profile scitokens2 < token-payload.json > test-token.txt
+        ./scitokens-create --cred rsa-public.pem --key rsa-private.pem --keyid test-rsa-key --issuer https://test.example.com --profile scitokens2 < token-payload.json > test-token.txt
         
         # Verify the token - this exercises rs256_from_coords()
         ./scitokens-verify --issuer https://test.example.com --cred rsa-public.pem < test-token.txt
