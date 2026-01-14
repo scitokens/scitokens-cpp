@@ -681,7 +681,8 @@ std::string rs256_from_coords(const std::string &e_str,
         throw UnsupportedKeyException("Failed to serialize RSA public key");
     }
 
-    // Release BIGNUMs from unique_ptr - ownership was transferred to RSA structure
+    // Release BIGNUMs from unique_ptr - ownership was transferred to RSA
+    // structure
     e_bignum.release();
     n_bignum.release();
 #endif
