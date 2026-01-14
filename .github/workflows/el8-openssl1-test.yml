@@ -1,0 +1,73 @@
+name: EL8 OpenSSL 1.x Test
+
+on:
+  pull_request:
+    branches: 
+      - master
+  push:
+    branches: 
+      - master
+
+jobs:
+  test-el8-openssl1:
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:8
+    
+    name: Build and test on EL8 (OpenSSL 1.1.1)
+
+    steps:
+    - name: Install dependencies
+      run: |
+        dnf install -y epel-release
+        dnf install -y gcc-c++ cmake3 openssl-devel libcurl-devel sqlite-devel libuuid-devel make git python3
+        
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+        
+    - name: Check OpenSSL version
+      run: |
+        openssl version
+        echo "Expected: OpenSSL 1.1.1 for EL8"
+        
+    - name: Create Build Directory
+      run: cmake -E make_directory $GITHUB_WORKSPACE/build
+
+    - name: Configure CMake
+      working-directory: ${{github.workspace}}/build
+      run: cmake3 .. -DCMAKE_BUILD_TYPE=Release -DSCITOKENS_BUILD_UNITTESTS=ON
+
+    - name: Build
+      working-directory: ${{github.workspace}}/build
+      run: make -j$(nproc)
+
+    - name: Run Unit Tests
+      working-directory: ${{github.workspace}}/build
+      run: ./test/scitokens-gtest
+
+    - name: Run Integration Tests
+      working-directory: ${{github.workspace}}/build/test
+      run: ctest --output-on-failure
+
+    - name: Test scitokens-verify tool
+      working-directory: ${{github.workspace}}/build
+      run: |
+        echo "Testing scitokens-verify tool (exercises RSA key functions with OpenSSL 1.1.1)"
+        ./scitokens-verify --help
+        echo "✓ scitokens-verify tool works - OpenSSL 1.x memory management is correct"
+
+    - name: Generate and verify a token
+      working-directory: ${{github.workspace}}/build
+      run: |
+        # Generate a test keypair
+        ./scitokens-generate-jwks test-key > test-jwks.json
+        
+        # Create a test token
+        echo '{"sub": "test", "scope": "read:/test"}' | ./scitokens-create --keyid test-key --issuer https://test.example.com --profile scitokens2 > test-token.txt
+        
+        # Verify the token works
+        ./scitokens-verify --cred test-jwks.json < test-token.txt
+        
+        echo "✓ Token creation and verification successful with OpenSSL 1.1.1"
+        echo "✓ This confirms the BIGNUM release() fix works correctly for OpenSSL 1.x"

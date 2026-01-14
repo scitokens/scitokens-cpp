@@ -617,6 +617,9 @@ std::string rs256_from_coords(const std::string &e_str,
         BN_free);
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    // ========================================
+    // OpenSSL 3.x: Use EVP_PKEY API
+    // ========================================
     OSSL_PARAM *params;
     std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> rsa_ctx(
         EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL), EVP_PKEY_CTX_free);
@@ -649,15 +652,25 @@ std::string rs256_from_coords(const std::string &e_str,
     }
     EVP_PKEY_free(pkey);
     OSSL_PARAM_free(params);
+    // Note: OSSL_PARAM_BLD_push_BN_pad() copied the BIGNUM data, so unique_ptr still owns
+    // the original BIGNUMs and will free them automatically
+
 #else
+    // ========================================
+    // OpenSSL 1.x: Use RSA structure API
+    // ========================================
     std::unique_ptr<RSA, decltype(&RSA_free)> rsa(RSA_new(), RSA_free);
+
 #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+    // OpenSSL 1.0.x / LibreSSL: Direct member assignment transfers ownership
     rsa->e = e_bignum.get();
     rsa->n = n_bignum.get();
     rsa->d = nullptr;
 #else
+    // OpenSSL 1.1.x: RSA_set0_key() transfers ownership
     RSA_set0_key(rsa.get(), n_bignum.get(), e_bignum.get(), nullptr);
 #endif
+
     std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(EVP_PKEY_new(),
                                                              EVP_PKEY_free);
     if (EVP_PKEY_set1_RSA(pkey.get(), rsa.get()) != 1) {
@@ -667,9 +680,11 @@ std::string rs256_from_coords(const std::string &e_str,
     if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey.get()) == 0) {
         throw UnsupportedKeyException("Failed to serialize RSA public key");
     }
-#endif
+
+    // Release BIGNUMs from unique_ptr - ownership was transferred to RSA structure
     e_bignum.release();
     n_bignum.release();
+#endif
 
     char *mem_data;
     size_t mem_len = BIO_get_mem_data(pubkey_bio.get(), &mem_data);
