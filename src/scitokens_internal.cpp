@@ -652,8 +652,8 @@ std::string rs256_from_coords(const std::string &e_str,
     }
     EVP_PKEY_free(pkey);
     OSSL_PARAM_free(params);
-    // Note: OSSL_PARAM_BLD_push_BN_pad() copied the BIGNUM data, so unique_ptr still owns
-    // the original BIGNUMs and will free them automatically
+    // Note: OSSL_PARAM_BLD_push_BN_pad() copied the BIGNUM data, so unique_ptr
+    // still owns the original BIGNUMs and will free them automatically
 
 #else
     // ========================================
