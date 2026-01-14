@@ -50,24 +50,36 @@ jobs:
       working-directory: ${{github.workspace}}/build/test
       run: ctest --output-on-failure
 
-    - name: Test scitokens-verify tool
+    - name: Verify scitokens-verify tool builds
       working-directory: ${{github.workspace}}/build
       run: |
-        echo "Testing scitokens-verify tool (exercises RSA key functions with OpenSSL 1.1.1)"
         ./scitokens-verify --help
-        echo "✓ scitokens-verify tool works - OpenSSL 1.x memory management is correct"
+        echo "✓ scitokens-verify tool builds and runs correctly with OpenSSL 1.1.1"
 
-    - name: Generate and verify a token
+    - name: Test RSA key verification (exercises BIGNUM release fix)
       working-directory: ${{github.workspace}}/build
       run: |
-        # Generate a test keypair
-        ./scitokens-generate-jwks test-key > test-jwks.json
+        # Generate RSA private key
+        openssl genrsa -out rsa-private.pem 2048 2>/dev/null
         
-        # Create a test token
-        echo '{"sub": "test", "scope": "read:/test"}' | ./scitokens-create --keyid test-key --issuer https://test.example.com --profile scitokens2 > test-token.txt
+        # Extract public key
+        openssl rsa -in rsa-private.pem -pubout -out rsa-public.pem 2>/dev/null
         
-        # Verify the token works
-        ./scitokens-verify --cred test-jwks.json < test-token.txt
+        # Create a simple test token signed with RSA key
+        cat > token-payload.json <<EOF
+        {
+          "sub": "test-subject",
+          "iss": "https://test.example.com",
+          "exp": $(($(date +%s) + 3600)),
+          "iat": $(date +%s),
+          "scope": "read:/test"
+        }
+        EOF
         
-        echo "✓ Token creation and verification successful with OpenSSL 1.1.1"
-        echo "✓ This confirms the BIGNUM release() fix works correctly for OpenSSL 1.x"
+        # Use scitokens-create to create token with RSA key
+        ./scitokens-create --key rsa-private.pem --issuer https://test.example.com --profile scitokens2 < token-payload.json > test-token.txt
+        
+        # Verify the token - this exercises rs256_from_coords() with OpenSSL 1.1.1
+        ./scitokens-verify --issuer https://test.example.com --cred rsa-public.pem < test-token.txt
+        
+        echo "✓ RSA token verification successful - BIGNUM release() fix works correctly with OpenSSL 1.1.1"

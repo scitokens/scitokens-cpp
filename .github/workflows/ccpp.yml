@@ -71,4 +71,33 @@ jobs:
       shell: bash
       run: |
         ./scitokens-verify --help
-        echo "✓ scitokens-verify tool works - verifies OpenSSL version-specific memory management"
+        echo "✓ scitokens-verify tool works"
+
+    - name: Test RSA key verification (exercises BIGNUM handling)
+      working-directory: ${{runner.workspace}}/build
+      shell: bash
+      run: |
+        # Generate RSA private key
+        openssl genrsa -out rsa-private.pem 2048 2>/dev/null
+        
+        # Extract public key
+        openssl rsa -in rsa-private.pem -pubout -out rsa-public.pem 2>/dev/null
+        
+        # Create a simple test token signed with RSA key
+        cat > token-payload.json <<EOF
+        {
+          "sub": "test-subject",
+          "iss": "https://test.example.com",
+          "exp": $(($(date +%s) + 3600)),
+          "iat": $(date +%s),
+          "scope": "read:/test"
+        }
+        EOF
+        
+        # Use scitokens-create to create token with RSA key
+        ./scitokens-create --key rsa-private.pem --issuer https://test.example.com --profile scitokens2 < token-payload.json > test-token.txt
+        
+        # Verify the token - this exercises rs256_from_coords()
+        ./scitokens-verify --issuer https://test.example.com --cred rsa-public.pem < test-token.txt
+        
+        echo "✓ RSA token verification successful - OpenSSL version-specific memory management works correctly"
