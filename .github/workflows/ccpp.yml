@@ -57,7 +57,7 @@ jobs:
       shell: bash
       run: |
         openssl version
-        echo "Testing with OpenSSL version above (Ubuntu 22.04 uses OpenSSL 3.x, ubuntu-latest may vary)"
+        echo "Testing with the OpenSSL version shown above (actual version depends on the selected GitHub Actions runner image, such as ubuntu-22.04 or ubuntu-latest, which may change over time)."
 
     - name: Test
       working-directory: ${{runner.workspace}}/build
