@@ -100,7 +100,12 @@ def main():
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(args.cert, args.key)
         # Set minimum TLS version to 1.2 for security
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        # Use ssl.TLSVersion for Python 3.7+, fall back to options for Python 3.6 (EL8)
+        try:
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+        except AttributeError:
+            # Python 3.6 doesn't have ssl.TLSVersion, use options instead
+            context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
         # Set cipher suites for OpenSSL 3.0.2 compatibility
         # SECLEVEL=1 allows 2048-bit RSA and SHA-1 for test certificates
         try:
