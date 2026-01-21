@@ -42,6 +42,15 @@ echo "<your_token_here>" | ./scitokens-verify
 Replace the given token above with the fresh one you just generated; using the above token should give an expired
 token error. The token must be provided via standard input (stdin).
 
+Monitoring
+----------
+
+The library can emit per-issuer monitoring statistics in JSON via `scitoken_get_monitoring_json()` (C API). Common
+fields include `successful_validations`, `unsuccessful_validations`, `successful_key_lookups`, and the filesystem
+cache counters `system_cache_hits` and `system_cache_expired` that report JWKS lookups satisfied by system cache files
+and expired cache entries that required a web fallback. Monitoring file output can be enabled with the
+`monitoring.file` and `monitoring.file_interval_s` configuration options.
+
 Generating Keys for Testing
 ----------------------------
 

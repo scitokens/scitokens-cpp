@@ -4,8 +4,13 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <iomanip>
 #include <memory>
+#include <openssl/sha.h>
+#include <sstream>
 #ifndef PICOJSON_USE_INT64
 #define PICOJSON_USE_INT64
 #endif
@@ -678,6 +683,131 @@ class KeycacheTest : public ::testing::Test {
         "\",\"y\":\"sCsFXvx7FAAklwq3CzRCBcghqZOFPB2dKUayS6LY_Lo=\"}]}";
 };
 
+namespace {
+
+class EnvGuard {
+  public:
+    EnvGuard(const std::string &name, const std::string &value) : m_name(name) {
+        const char *prev = std::getenv(name.c_str());
+        if (prev) {
+            m_prev = prev;
+            m_had_prev = true;
+        }
+        setenv(name.c_str(), value.c_str(), 1);
+    }
+
+    ~EnvGuard() {
+        if (m_had_prev) {
+            setenv(m_name.c_str(), m_prev.c_str(), 1);
+        } else {
+            unsetenv(m_name.c_str());
+        }
+    }
+
+  private:
+    std::string m_name;
+    std::string m_prev;
+    bool m_had_prev{false};
+};
+
+class ConfigStringGuard {
+  public:
+    ConfigStringGuard(const std::string &key, const std::string &value)
+        : m_key(key) {
+        char *prev = nullptr;
+        char *err = nullptr;
+        if (scitoken_config_get_str(key.c_str(), &prev, &err) == 0 && prev) {
+            m_prev = prev;
+            m_had_prev = true;
+            free(prev);
+        }
+        if (err) {
+            free(err);
+        }
+
+        char *err2 = nullptr;
+        scitoken_config_set_str(key.c_str(), value.c_str(), &err2);
+        if (err2) {
+            free(err2);
+        }
+    }
+
+    ~ConfigStringGuard() {
+        char *err = nullptr;
+        if (m_had_prev) {
+            scitoken_config_set_str(m_key.c_str(), m_prev.c_str(), &err);
+        } else {
+            scitoken_config_set_str(m_key.c_str(), "", &err);
+        }
+        if (err) {
+            free(err);
+        }
+    }
+
+  private:
+    std::string m_key;
+    std::string m_prev;
+    bool m_had_prev{false};
+};
+
+std::string hash_prefix(const std::string &issuer) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<const unsigned char *>(issuer.data()),
+           issuer.size(), hash);
+
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (int i = 0; i < 4; i++) {
+        oss << std::setw(2) << static_cast<int>(hash[i]);
+    }
+    return oss.str();
+}
+
+std::string make_cache_object(const std::string &issuer,
+                              const std::string &jwks, int64_t expiration,
+                              int64_t next_update = -1) {
+    std::ostringstream ss;
+    ss << "{\n  \"" << issuer << "\": {\n    \"expiration\": " << expiration;
+    if (next_update >= 0) {
+        ss << ",\n    \"next_update\": " << next_update;
+    }
+    ss << ",\n    \"jwks\": " << jwks << "\n  }\n}";
+    return ss.str();
+}
+
+std::string get_first_kid(const std::string &jwks) {
+    picojson::value root;
+    std::string err = picojson::parse(root, jwks);
+    if (!err.empty()) {
+        return "";
+    }
+    if (!root.is<picojson::object>()) {
+        return "";
+    }
+    auto &obj = root.get<picojson::object>();
+    auto keys_it = obj.find("keys");
+    if (keys_it == obj.end() || !keys_it->second.is<picojson::array>()) {
+        return "";
+    }
+    auto &arr = keys_it->second.get<picojson::array>();
+    if (arr.empty() || !arr[0].is<picojson::object>()) {
+        return "";
+    }
+    auto kid_it = arr[0].get<picojson::object>().find("kid");
+    if (kid_it == arr[0].get<picojson::object>().end() ||
+        !kid_it->second.is<std::string>()) {
+        return "";
+    }
+    return kid_it->second.get<std::string>();
+}
+
+void write_file(const std::string &path, const std::string &content) {
+    std::ofstream ofs(path);
+    ofs << content;
+}
+
+} // namespace
+
 TEST_F(KeycacheTest, RefreshTest) {
     char *err_msg = nullptr;
     auto rv = keycache_refresh_jwks(demo_scitokens_url.c_str(), &err_msg);
@@ -973,6 +1103,131 @@ TEST_F(KeycacheTest, NegativeCacheTest) {
     // Verify 2 negative cache hits (attempts 2 and 3 only)
     EXPECT_NE(json_str.find("\"negative_cache_hits\":2"), std::string::npos)
         << "Should have 2 negative cache hits. JSON: " << json_str;
+}
+
+TEST_F(KeycacheTest, DirectoryCacheLookup) {
+    SecureTempDir cache_dir("jwks_cache_dir_");
+    ASSERT_TRUE(cache_dir.valid());
+
+    std::string issuer = "https://directory.example";
+    auto prefix = hash_prefix(issuer);
+    std::string cache_path = cache_dir.path() + "/" + prefix + ".0";
+
+    auto now = static_cast<int64_t>(time(nullptr));
+    std::string jwks_payload = "{\"keys\":[{\"kid\":\"dir\",\"kty\":\"RSA\"}]}";
+    auto cache_obj =
+        make_cache_object(issuer, jwks_payload, now + 3600, now + 100);
+    write_file(cache_path, cache_obj);
+
+    EnvGuard env_dir("JWKS_CACHE_DIR", cache_dir.path());
+    ConfigStringGuard cache_home_guard("keycache.cache_home",
+                                       cache_dir.path() + "/sqlite_home");
+
+    char *err_msg = nullptr;
+    char *jwks = nullptr;
+    auto rv = keycache_get_cached_jwks(issuer.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+    if (err_msg)
+        free(err_msg);
+
+    EXPECT_EQ(get_first_kid(jwks_str), "dir");
+}
+
+TEST_F(KeycacheTest, CacheFileMergesObjects) {
+    SecureTempDir cache_dir("jwks_cache_file_");
+    ASSERT_TRUE(cache_dir.valid());
+    std::string cache_file = cache_dir.path() + "/cache.json";
+
+    std::string issuer = "https://file.example";
+    auto now = static_cast<int64_t>(time(nullptr));
+    std::string jwks_one = "{\"keys\":[{\"kid\":\"one\",\"kty\":\"EC\"}]}";
+    std::string jwks_two = "{\"keys\":[{\"kid\":\"two\",\"kty\":\"EC\"}]}";
+
+    auto obj_one = make_cache_object(issuer, jwks_one, now + 1000, now + 10);
+    auto obj_two = make_cache_object(issuer, jwks_two, now + 2000, now + 20);
+    write_file(cache_file, obj_one + "\n" + obj_two);
+
+    EnvGuard env_file("JWKS_CACHE_FILE", cache_file);
+    ConfigStringGuard cache_home_guard("keycache.cache_home",
+                                       cache_dir.path() + "/sqlite_home");
+
+    char *err_msg = nullptr;
+    char *jwks = nullptr;
+    auto rv = keycache_get_cached_jwks(issuer.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+    if (err_msg)
+        free(err_msg);
+
+    EXPECT_EQ(get_first_kid(jwks_str), "two");
+}
+
+TEST_F(KeycacheTest, SystemCacheBeatsDatabase) {
+    SecureTempDir cache_dir("jwks_cache_priority_");
+    ASSERT_TRUE(cache_dir.valid());
+    std::string cache_file = cache_dir.path() + "/cache.json";
+
+    std::string issuer = "https://priority.example";
+    auto now = static_cast<int64_t>(time(nullptr));
+    std::string db_jwks = "{\"keys\":[{\"kid\":\"db\",\"kty\":\"RSA\"}]}";
+    std::string sys_jwks = "{\"keys\":[{\"kid\":\"sys\",\"kty\":\"RSA\"}]}";
+
+    ConfigStringGuard cache_home_guard("keycache.cache_home",
+                                       cache_dir.path() + "/sqlite_home");
+
+    char *err_msg = nullptr;
+    auto rv = keycache_set_jwks(issuer.c_str(), db_jwks.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    if (err_msg)
+        free(err_msg);
+
+    auto obj = make_cache_object(issuer, sys_jwks, now + 3600, now + 100);
+    write_file(cache_file, obj);
+    EnvGuard env_file("JWKS_CACHE_FILE", cache_file);
+
+    char *jwks = nullptr;
+    rv = keycache_get_cached_jwks(issuer.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+    if (err_msg)
+        free(err_msg);
+
+    EXPECT_EQ(get_first_kid(jwks_str), "sys");
+}
+
+TEST_F(KeycacheTest, ExpiredSystemCacheIgnored) {
+    SecureTempDir cache_dir("jwks_cache_expired_");
+    ASSERT_TRUE(cache_dir.valid());
+    std::string cache_file = cache_dir.path() + "/cache.json";
+
+    std::string issuer = "https://expired.example";
+    auto now = static_cast<int64_t>(time(nullptr));
+    std::string jwks_payload = "{\"keys\":[{\"kid\":\"old\",\"kty\":\"RSA\"}]}";
+    auto obj = make_cache_object(issuer, jwks_payload, now - 10, now - 20);
+    write_file(cache_file, obj);
+
+    EnvGuard env_file("JWKS_CACHE_FILE", cache_file);
+    ConfigStringGuard cache_home_guard("keycache.cache_home",
+                                       cache_dir.path() + "/sqlite_home");
+
+    char *err_msg = nullptr;
+    char *jwks = nullptr;
+    auto rv = keycache_get_cached_jwks(issuer.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+    if (err_msg)
+        free(err_msg);
+
+    EXPECT_EQ(get_first_kid(jwks_str), "");
 }
 
 TEST_F(KeycacheTest, LoadJwksTest) {

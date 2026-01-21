@@ -4,12 +4,15 @@
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <sys/stat.h>
 #include <thread>
@@ -19,6 +22,7 @@
 #ifndef PICOJSON_USE_INT64
 #define PICOJSON_USE_INT64
 #endif
+#include <openssl/sha.h>
 #include <picojson/picojson.h>
 
 using scitokens_test::SecureTempDir;
@@ -50,6 +54,9 @@ class MonitoringStats {
         // Background refresh statistics
         uint64_t background_successful_refreshes{0};
         uint64_t background_failed_refreshes{0};
+        // System cache statistics
+        uint64_t system_cache_hits{0};
+        uint64_t system_cache_expired{0};
     };
 
     struct FailedIssuerLookup {
@@ -178,6 +185,19 @@ class MonitoringStats {
                     it = stats_obj.find("background_failed_refreshes");
                     if (it != stats_obj.end() && it->second.is<double>()) {
                         stats.background_failed_refreshes =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    // System cache statistics
+                    it = stats_obj.find("system_cache_hits");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.system_cache_hits =
+                            static_cast<uint64_t>(it->second.get<double>());
+                    }
+
+                    it = stats_obj.find("system_cache_expired");
+                    if (it != stats_obj.end() && it->second.is<double>()) {
+                        stats.system_cache_expired =
                             static_cast<uint64_t>(it->second.get<double>());
                     }
 
@@ -326,6 +346,54 @@ class TestEnvironment {
     bool loaded_;
     std::map<std::string, std::string> vars_;
 };
+
+// Load JWKS from the integration test fixture
+picojson::value loadFixtureJwks() {
+    auto jwks_path = TestEnvironment::getInstance().get("JWKS_FILE");
+    std::ifstream jwks_ifs(jwks_path);
+    if (!jwks_ifs.is_open()) {
+        throw std::runtime_error("Failed to open JWKS fixture file");
+    }
+
+    std::string jwks_str((std::istreambuf_iterator<char>(jwks_ifs)),
+                         std::istreambuf_iterator<char>());
+    picojson::value jwks_val;
+    std::string err = picojson::parse(jwks_val, jwks_str);
+    if (!err.empty()) {
+        throw std::runtime_error("Failed to parse JWKS fixture: " + err);
+    }
+    return jwks_val;
+}
+
+// Compute the system cache filename prefix (first 4 bytes of SHA256)
+std::string issuerHashPrefix(const std::string &issuer) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<const unsigned char *>(issuer.data()),
+           issuer.size(), hash);
+
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (int i = 0; i < 4; i++) {
+        oss << std::setw(2) << static_cast<int>(hash[i]);
+    }
+    return oss.str();
+}
+
+// Write a system cache file entry for the issuer
+void writeSystemCacheFile(const std::string &path, const std::string &issuer,
+                          const picojson::value &jwks, int64_t expiration,
+                          int64_t next_update) {
+    picojson::object entry;
+    entry["jwks"] = jwks;
+    entry["expiration"] = picojson::value(static_cast<int64_t>(expiration));
+    entry["next_update"] = picojson::value(static_cast<int64_t>(next_update));
+
+    picojson::object root;
+    root[issuer] = picojson::value(entry);
+
+    std::ofstream ofs(path);
+    ofs << picojson::value(root).serialize();
+}
 
 class IntegrationTest : public ::testing::Test {
   protected:
@@ -1036,6 +1104,194 @@ TEST_F(IntegrationTest, MonitoringDurationTracking) {
               << issuer_stats.successful_validations << std::endl;
     std::cout << "  total_validation_time_s: "
               << issuer_stats.total_validation_time_s << std::endl;
+}
+
+TEST_F(IntegrationTest, SystemCacheFileHitAndCounters) {
+    char *err_msg = nullptr;
+
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    SecureTempDir cache_home("system_cache_file_home_");
+    ASSERT_TRUE(cache_home.valid());
+    int rv = scitoken_config_set_str("keycache.cache_home",
+                                     cache_home.path().c_str(), &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    SecureTempDir system_cache_dir("system_cache_file_");
+    ASSERT_TRUE(system_cache_dir.valid());
+    std::string cache_file = system_cache_dir.path() + "/cache.json";
+
+    auto jwks_val = loadFixtureJwks();
+    auto now = std::time(nullptr);
+    writeSystemCacheFile(cache_file, issuer_url_, jwks_val, now + 3600,
+                         now + 1800);
+
+    setenv("JWKS_CACHE_FILE", cache_file.c_str(), 1);
+    unsetenv("JWKS_CACHE_DIR");
+
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
+                                   &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    auto stats = getCurrentMonitoringStats();
+    auto issuer_stats = stats.getIssuerStats(issuer_url_);
+
+    EXPECT_GT(issuer_stats.system_cache_hits, 0u)
+        << "System cache file should be used before web fetch";
+    EXPECT_EQ(issuer_stats.system_cache_expired, 0u)
+        << "System cache should not be marked expired";
+
+    unsetenv("JWKS_CACHE_FILE");
+    unsetenv("JWKS_CACHE_DIR");
+    scitoken_config_set_str("keycache.cache_home", "", &err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+}
+
+TEST_F(IntegrationTest, SystemCacheDirExpiredFallsBackToWeb) {
+    char *err_msg = nullptr;
+
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    SecureTempDir cache_home("system_cache_dir_home_");
+    ASSERT_TRUE(cache_home.valid());
+    int rv = scitoken_config_set_str("keycache.cache_home",
+                                     cache_home.path().c_str(), &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    SecureTempDir system_cache_dir("system_cache_dir_");
+    ASSERT_TRUE(system_cache_dir.valid());
+    auto prefix = issuerHashPrefix(issuer_url_);
+    std::string cache_file = system_cache_dir.path() + "/" + prefix + ".0";
+
+    auto jwks_val = loadFixtureJwks();
+    auto now = std::time(nullptr);
+    writeSystemCacheFile(cache_file, issuer_url_, jwks_val, now - 10, now - 20);
+
+    setenv("JWKS_CACHE_DIR", system_cache_dir.path().c_str(), 1);
+    unsetenv("JWKS_CACHE_FILE");
+
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
+                                   &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    auto stats = getCurrentMonitoringStats();
+    auto issuer_stats = stats.getIssuerStats(issuer_url_);
+
+    EXPECT_EQ(issuer_stats.system_cache_hits, 0u)
+        << "Expired system cache entry should not count as hit";
+    EXPECT_GT(issuer_stats.system_cache_expired, 0u)
+        << "Expired system cache entry should be recorded";
+    EXPECT_GT(issuer_stats.successful_key_lookups, 0u)
+        << "Key lookup should have succeeded via web fallback";
+
+    unsetenv("JWKS_CACHE_DIR");
+    unsetenv("JWKS_CACHE_FILE");
+    scitoken_config_set_str("keycache.cache_home", "", &err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
 }
 
 // Test monitoring file output during token verification
