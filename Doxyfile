@@ -1,0 +1,51 @@
+# Doxyfile configuration for SciTokens C++ library
+
+# Project related configuration options
+PROJECT_NAME           = "SciTokens C++"
+PROJECT_NUMBER         = "1.0.2"
+PROJECT_BRIEF          = "A C++ Library to interface to scitokens"
+OUTPUT_DIRECTORY       = docs/_build/doxygen
+
+# Build related configuration options
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = NO
+
+# Configuration options related to the input files
+INPUT                  = src/scitokens.h
+FILE_PATTERNS          = *.h *.hpp *.cpp
+RECURSIVE              = NO
+EXCLUDE_PATTERNS       = */vendor/* */build/* */_build/*
+
+# Configuration options related to source browsing
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = YES
+
+# Configuration options related to the alphabetical class index
+ALPHABETICAL_INDEX     = YES
+
+# Configuration options related to the HTML output
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+
+# Configuration options related to the preprocessor
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = NO
+SEARCH_INCLUDES        = YES
+INCLUDE_PATH           = src/
+PREDEFINED             = __cplusplus
+
+# Configuration options related to external references
+TAGFILES               =
+GENERATE_TAGFILE       =
+
+# Configuration options related to the dot tool
+HAVE_DOT               = NO
+
+# Configuration options related to the search engine
+SEARCHENGINE           = NO
