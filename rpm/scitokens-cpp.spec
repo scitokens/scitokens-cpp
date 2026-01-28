@@ -77,6 +77,7 @@ Requires: %{name}%{?_isa} = %{version}
 - Add keycache load, metadata, and delete APIs
 - Revert "Fix memory leak in rs256_from_coords" by @djw8605
 - Add CTest-based integration test with JWKS server and TLS infrastructure
+- Fix memory leak in scitokens_verify by freeing the token string
 
 * Fri Dec 05 2025 Derek Weitzel <dweitzel@unl.edu> - 1.2.0-1
 - Fix segfault if the JSON parser cannot parse the JWKS
