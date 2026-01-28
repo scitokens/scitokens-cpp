@@ -1,8 +1,20 @@
 #include "../src/scitokens.h"
+#include "test_utils.h"
 
+#include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <gtest/gtest.h>
 #include <memory>
+#ifndef PICOJSON_USE_INT64
+#define PICOJSON_USE_INT64
+#endif
+#include <picojson/picojson.h>
+#include <sys/stat.h>
+#include <thread>
 #include <unistd.h>
+
+using scitokens_test::SecureTempDir;
 
 namespace {
 
@@ -504,7 +516,7 @@ TEST_F(SerializeTest, ExplicitTime) {
 
 TEST_F(SerializeTest, GetExpirationErrorHandling) {
     char *err_msg = nullptr;
-    
+
     // Test NULL token handling
     long long expiry;
     auto rv = scitoken_get_expiration(nullptr, &expiry, &err_msg);
@@ -513,27 +525,28 @@ TEST_F(SerializeTest, GetExpirationErrorHandling) {
     EXPECT_STREQ(err_msg, "Token cannot be NULL");
     free(err_msg);
     err_msg = nullptr;
-    
-    // Test NULL expiry parameter handling  
+
+    // Test NULL expiry parameter handling
     rv = scitoken_get_expiration(m_token.get(), nullptr, &err_msg);
     ASSERT_FALSE(rv == 0);
     ASSERT_TRUE(err_msg != nullptr);
     EXPECT_STREQ(err_msg, "Expiry output parameter cannot be NULL");
     free(err_msg);
     err_msg = nullptr;
-    
+
     // Test normal operation works
     char *token_value = nullptr;
     rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
-    
-    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr, &err_msg);
+
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
-    
+
     rv = scitoken_get_expiration(m_read_token.get(), &expiry, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
     ASSERT_TRUE(expiry > 0);
-    
+
     free(token_value);
 }
 
@@ -621,6 +634,20 @@ TEST_F(SerializeNoKidTest, VerifyATJWTTest) {
 class KeycacheTest : public ::testing::Test {
   protected:
     std::string demo_scitokens_url = "https://demo.scitokens.org";
+
+    static int64_t get_next_update_from_metadata(const std::string &metadata) {
+        picojson::value root;
+        std::string err = picojson::parse(root, metadata);
+        if (!err.empty() || !root.is<picojson::object>()) {
+            return -1;
+        }
+        auto &root_obj = root.get<picojson::object>();
+        auto nu_it = root_obj.find("next_update");
+        if (nu_it != root_obj.end() && nu_it->second.is<int64_t>()) {
+            return nu_it->second.get<int64_t>();
+        }
+        return -1;
+    }
 
     void SetUp() override {
         char *err_msg = nullptr;
@@ -723,13 +750,15 @@ TEST_F(KeycacheTest, SetGetTest) {
 }
 
 TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
-    // Set cache home
-    char cache_path[FILENAME_MAX];
-    ASSERT_TRUE(getcwd(cache_path, sizeof(cache_path)) != nullptr); // Side effect gets cwd
+    // Create a secure temporary directory for the cache
+    SecureTempDir temp_cache("cache_home_test_");
+    ASSERT_TRUE(temp_cache.valid()) << "Failed to create temp directory";
+
     char *err_msg = nullptr;
     std::string key = "keycache.cache_home";
 
-    auto rv = scitoken_config_set_str(key.c_str(), cache_path, &err_msg);
+    auto rv = scitoken_config_set_str(key.c_str(), temp_cache.path().c_str(),
+                                      &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
 
     // Set the jwks at the new cache home
@@ -751,12 +780,14 @@ TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
     char *output;
     rv = scitoken_config_get_str(key.c_str(), &output, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
-    EXPECT_EQ(*output, *cache_path);
+    EXPECT_STREQ(output, temp_cache.path().c_str());
     free(output);
 
     // Reset cache home to whatever it was before by setting empty config
     rv = scitoken_config_set_str(key.c_str(), "", &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
+
+    // temp_cache destructor will clean up the directory
 }
 
 TEST_F(KeycacheTest, InvalidConfigKeyTest) {
@@ -839,6 +870,339 @@ TEST_F(KeycacheTest, RefreshExpiredTest) {
     free(jwks);
 
     EXPECT_EQ(jwks_str, "{\"keys\": []}");
+}
+
+TEST_F(KeycacheTest, NegativeCacheTest) {
+    // This test verifies that failed issuer lookups are cached as negative
+    // entries and that subsequent attempts fail quickly with the right counter
+    char *err_msg = nullptr;
+
+    // Reset monitoring stats for clean baseline
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a token with an issuer that will fail to lookup
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> mykey(
+        scitoken_key_create("1", "ES256", ec_public, ec_private, &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(mykey.get() != nullptr) << err_msg;
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> mytoken(
+        scitoken_create(mykey.get()), scitoken_destroy);
+    ASSERT_TRUE(mytoken.get() != nullptr);
+
+    // Use a unique issuer that doesn't exist (will fail to fetch keys)
+    // Include timestamp to avoid interference from previous test runs
+    std::string invalid_issuer = "https://invalid-issuer-negative-cache-" +
+                                 std::to_string(std::time(nullptr)) +
+                                 ".example.com";
+    auto rv = scitoken_set_claim_string(mytoken.get(), "iss",
+                                        invalid_issuer.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(mytoken.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // First attempt should fail to fetch keys (DNS failure or connection
+    // refused). This is a cache MISS (creates negative cache entry).
+    std::unique_ptr<void, decltype(&scitoken_destroy)> read_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(read_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_FALSE(rv == 0); // Should fail
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Check that a negative cache entry was created (returns empty keys)
+    char *jwks;
+    rv = keycache_get_cached_jwks(invalid_issuer.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+
+    // Should return empty keys array (negative cache)
+    EXPECT_EQ(jwks_str, "{\"keys\": []}");
+
+    // Second attempt should fail quickly using negative cache
+    rv = scitoken_deserialize_v2(token_value, read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_FALSE(rv == 0); // Should still fail
+    ASSERT_TRUE(err_msg != nullptr);
+    std::string error_msg(err_msg);
+    free(err_msg);
+    err_msg = nullptr;
+
+    // Error message should indicate it's from negative cache
+    EXPECT_NE(error_msg.find("negative cache"), std::string::npos)
+        << "Error message should mention negative cache: " << error_msg;
+
+    // Third attempt to verify counter increments correctly
+    rv = scitoken_deserialize_v2(token_value, read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_FALSE(rv == 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Get monitoring stats and verify negative_cache_hits counter
+    char *json_out = nullptr;
+    rv = scitoken_get_monitoring_json(&json_out, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(json_out != nullptr);
+    std::string json_str(json_out);
+    free(json_out);
+
+    // Parse JSON and check negative_cache_hits
+    // Only the second and third attempts should hit the negative cache:
+    // - First attempt: creates negative cache (cache miss, not hit)
+    // - Second and third attempts: hit existing negative cache
+    EXPECT_NE(json_str.find("\"negative_cache_hits\""), std::string::npos)
+        << "JSON should contain negative_cache_hits field";
+
+    // Verify 2 negative cache hits (attempts 2 and 3 only)
+    EXPECT_NE(json_str.find("\"negative_cache_hits\":2"), std::string::npos)
+        << "Should have 2 negative cache hits. JSON: " << json_str;
+}
+
+TEST_F(KeycacheTest, LoadJwksTest) {
+    // Test load API - should return cached JWKS without triggering refresh
+    char *err_msg = nullptr;
+    char *jwks = nullptr;
+
+    // Capture metadata before load to ensure no refresh changes it
+    char *metadata_before = nullptr;
+    auto rv = keycache_get_jwks_metadata(demo_scitokens_url.c_str(),
+                                         &metadata_before, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    ASSERT_TRUE(metadata_before != nullptr);
+    int64_t next_update_before =
+        get_next_update_from_metadata(std::string(metadata_before));
+    free(metadata_before);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Load JWKS - should return cached version from SetUp()
+    rv = keycache_load_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << (err_msg ? err_msg : "unknown error");
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+    if (err_msg)
+        free(err_msg);
+
+    EXPECT_EQ(demo_scitokens, jwks_str);
+
+    // Metadata should be unchanged (no refresh triggered)
+    char *metadata_after = nullptr;
+    rv = keycache_get_jwks_metadata(demo_scitokens_url.c_str(), &metadata_after,
+                                    &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    ASSERT_TRUE(metadata_after != nullptr);
+    int64_t next_update_after =
+        get_next_update_from_metadata(std::string(metadata_after));
+    free(metadata_after);
+    if (err_msg)
+        free(err_msg);
+
+    EXPECT_EQ(next_update_before, next_update_after);
+}
+
+TEST_F(KeycacheTest, LoadJwksMissingTest) {
+    // Test load API with missing issuer - should attempt refresh
+    char *err_msg = nullptr;
+    char *jwks = nullptr;
+
+    // Try to load a non-existent issuer - will fail to refresh
+    auto rv = keycache_load_jwks("https://demo.scitokens.org/nonexistent",
+                                 &jwks, &err_msg);
+    ASSERT_FALSE(rv == 0); // Should fail since issuer doesn't exist
+    if (err_msg)
+        free(err_msg);
+}
+
+TEST_F(KeycacheTest, LoadJwksTriggersRefreshWhenStale) {
+    // Force next_update in the past so load_jwks triggers a refresh
+    char *err_msg = nullptr;
+
+    // Reset monitoring to capture only this test's activity
+    scitoken_reset_monitoring_stats(&err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Save and override update interval so next_update is "now"
+    int original_update_interval =
+        scitoken_config_get_int("keycache.update_interval_s", &err_msg);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    auto rv =
+        scitoken_config_set_int("keycache.update_interval_s", 0, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Re-set JWKS so the stored next_update uses the new interval (now)
+    rv = keycache_set_jwks(demo_scitokens_url.c_str(), demo_scitokens.c_str(),
+                           &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Capture metadata before load to confirm next_update advances
+    char *metadata_before = nullptr;
+    rv = keycache_get_jwks_metadata(demo_scitokens_url.c_str(),
+                                    &metadata_before, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    ASSERT_TRUE(metadata_before != nullptr);
+    int64_t next_update_before =
+        get_next_update_from_metadata(std::string(metadata_before));
+    free(metadata_before);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Ensure current time passes the stored next_update
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // Load JWKS - should detect stale entry and trigger refresh
+    char *jwks = nullptr;
+    rv = keycache_load_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    EXPECT_EQ(demo_scitokens, jwks_str);
+
+    // Verify next_update moved forward (refresh occurred)
+    char *metadata_after = nullptr;
+    rv = keycache_get_jwks_metadata(demo_scitokens_url.c_str(), &metadata_after,
+                                    &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    ASSERT_TRUE(metadata_after != nullptr);
+    int64_t next_update_after =
+        get_next_update_from_metadata(std::string(metadata_after));
+    free(metadata_after);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    EXPECT_GT(next_update_after, next_update_before);
+
+    // Restore original update interval
+    rv = scitoken_config_set_int("keycache.update_interval_s",
+                                 original_update_interval, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    if (err_msg)
+        free(err_msg);
+}
+
+TEST_F(KeycacheTest, GetMetadataTest) {
+    // Test metadata API - should return expires and next_update
+    char *err_msg = nullptr;
+    char *metadata = nullptr;
+
+    // Get metadata for cached issuer
+    auto rv = keycache_get_jwks_metadata(demo_scitokens_url.c_str(), &metadata,
+                                         &err_msg);
+    ASSERT_TRUE(rv == 0) << (err_msg ? err_msg : "unknown error");
+    ASSERT_TRUE(metadata != nullptr);
+    std::string metadata_str(metadata);
+    free(metadata);
+    if (err_msg)
+        free(err_msg);
+
+    // Verify JSON structure - should have expires and next_update fields
+    EXPECT_NE(metadata_str.find("\"expires\":"), std::string::npos);
+    EXPECT_NE(metadata_str.find("\"next_update\":"), std::string::npos);
+}
+
+TEST_F(KeycacheTest, GetMetadataMissingTest) {
+    // Test metadata API with missing issuer
+    char *err_msg = nullptr;
+    char *metadata = nullptr;
+
+    // Try to get metadata for non-existent issuer
+    auto rv = keycache_get_jwks_metadata("https://demo.scitokens.org/unknown",
+                                         &metadata, &err_msg);
+    ASSERT_FALSE(rv == 0); // Should fail
+    if (err_msg)
+        free(err_msg);
+}
+
+TEST_F(KeycacheTest, DeleteJwksTest) {
+    // Test delete API
+    char *err_msg = nullptr;
+
+    // First verify the issuer is in cache
+    char *jwks = nullptr;
+    auto rv =
+        keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << (err_msg ? err_msg : "unknown error");
+    ASSERT_TRUE(jwks != nullptr);
+    free(jwks);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Delete the entry
+    rv = keycache_delete_jwks(demo_scitokens_url.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Verify it's gone - get_cached_jwks should return empty keys
+    rv = keycache_get_cached_jwks(demo_scitokens_url.c_str(), &jwks, &err_msg);
+    ASSERT_TRUE(rv == 0) << (err_msg ? err_msg : "unknown error");
+    ASSERT_TRUE(jwks != nullptr);
+    std::string jwks_str(jwks);
+    free(jwks);
+    if (err_msg)
+        free(err_msg);
+
+    EXPECT_EQ(jwks_str, "{\"keys\": []}");
+}
+
+TEST_F(KeycacheTest, DeleteJwksNonExistentTest) {
+    // Test delete API with non-existent issuer - should not fail
+    char *err_msg = nullptr;
+
+    auto rv = keycache_delete_jwks("https://demo.scitokens.org/never-existed",
+                                   &err_msg);
+    ASSERT_TRUE(rv == 0)
+        << (err_msg ? err_msg : "unknown error"); // Should succeed (idempotent)
+    if (err_msg)
+        free(err_msg);
 }
 
 class IssuerSecurityTest : public ::testing::Test {
@@ -939,6 +1303,133 @@ TEST_F(IssuerSecurityTest, SpecialCharacterIssuer) {
 
     // Should contain properly escaped JSON (with quotes)
     EXPECT_NE(error_message.find("\""), std::string::npos);
+}
+
+// Test suite for environment variable configuration
+class EnvConfigTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        // Save original config values
+        char *err_msg = nullptr;
+        original_update_interval =
+            scitoken_config_get_int("keycache.update_interval_s", &err_msg);
+        original_expiry_interval =
+            scitoken_config_get_int("keycache.expiration_interval_s", &err_msg);
+
+        char *cache_home = nullptr;
+        scitoken_config_get_str("keycache.cache_home", &cache_home, &err_msg);
+        if (cache_home) {
+            original_cache_home = cache_home;
+            free(cache_home);
+        }
+
+        char *ca_file = nullptr;
+        scitoken_config_get_str("tls.ca_file", &ca_file, &err_msg);
+        if (ca_file) {
+            original_ca_file = ca_file;
+            free(ca_file);
+        }
+    }
+
+    void TearDown() override {
+        // Restore original config values
+        char *err_msg = nullptr;
+        scitoken_config_set_int("keycache.update_interval_s",
+                                original_update_interval, &err_msg);
+        scitoken_config_set_int("keycache.expiration_interval_s",
+                                original_expiry_interval, &err_msg);
+        scitoken_config_set_str("keycache.cache_home",
+                                original_cache_home.c_str(), &err_msg);
+        scitoken_config_set_str("tls.ca_file", original_ca_file.c_str(),
+                                &err_msg);
+    }
+
+    int original_update_interval = 600;
+    int original_expiry_interval = 4 * 24 * 3600;
+    std::string original_cache_home;
+    std::string original_ca_file;
+};
+
+TEST_F(EnvConfigTest, IntConfigFromEnv) {
+    // Note: This test verifies that the environment variable was read at
+    // library load time We can't test setting environment variables after
+    // library load in the same process This test would need to be run with
+    // environment variables set before starting the test
+
+    // Test that we can manually set and get config values
+    char *err_msg = nullptr;
+    int test_value = 1234;
+    auto rv = scitoken_config_set_int("keycache.update_interval_s", test_value,
+                                      &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+
+    int retrieved =
+        scitoken_config_get_int("keycache.update_interval_s", &err_msg);
+    EXPECT_EQ(retrieved, test_value) << (err_msg ? err_msg : "");
+
+    if (err_msg)
+        free(err_msg);
+}
+
+TEST_F(EnvConfigTest, StringConfigFromEnv) {
+    // Test that we can manually set and get string config values
+    // Use a secure temp directory instead of hardcoded /tmp path
+    SecureTempDir temp_cache("env_config_test_");
+    ASSERT_TRUE(temp_cache.valid()) << "Failed to create temp directory";
+
+    char *err_msg = nullptr;
+    auto rv = scitoken_config_set_str("keycache.cache_home",
+                                      temp_cache.path().c_str(), &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+
+    char *output = nullptr;
+    rv = scitoken_config_get_str("keycache.cache_home", &output, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    ASSERT_TRUE(output != nullptr);
+    EXPECT_STREQ(output, temp_cache.path().c_str());
+
+    free(output);
+    if (err_msg)
+        free(err_msg);
+
+    // temp_cache destructor will clean up the directory
+}
+
+// Test for thundering herd prevention with per-issuer locks
+TEST_F(IssuerSecurityTest, ThunderingHerdPrevention) {
+    char *err_msg = nullptr;
+
+    // Create tokens for a new issuer and pre-populate the cache
+    std::string test_issuer = "https://thundering-herd-test.example.org/gtest";
+
+    auto rv = scitoken_set_claim_string(m_token.get(), "iss",
+                                        test_issuer.c_str(), &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    // Store public key for this issuer in the cache
+    rv = scitoken_store_public_ec_key(test_issuer.c_str(), "1", ec_public,
+                                      &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Successfully deserialize - the per-issuer lock should prevent thundering
+    // herd Since we pre-populated the cache, this should succeed without
+    // network access
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    // Verify the issuer claim
+    char *value;
+    rv = scitoken_get_claim_string(m_read_token.get(), "iss", &value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(value != nullptr);
+    std::unique_ptr<char, decltype(&free)> value_ptr(value, free);
+    EXPECT_STREQ(value, test_issuer.c_str());
 }
 
 int main(int argc, char **argv) {

@@ -1,5 +1,10 @@
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <cctype>
+#include <cstdlib>
 #include <exception>
+#include <stdexcept>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -10,15 +15,128 @@
  * GLOBALS
  */
 
-// Cache timeout config
-std::atomic_int configurer::Configuration::m_next_update_delta{600};
-std::atomic_int configurer::Configuration::m_expiry_delta{4 * 24 * 3600};
+// These are kept for backwards compatibility but are now handled by
+// construct-on-first-use in the Configuration class accessor functions
+// See scitokens_internal.h for the new implementation
+std::atomic_int configurer::Configuration::m_next_update_delta{0};
+std::atomic_int configurer::Configuration::m_expiry_delta{0};
+std::shared_ptr<std::string> configurer::Configuration::m_cache_home;
+std::shared_ptr<std::string> configurer::Configuration::m_tls_ca_file;
 
-// SciTokens cache home config
-std::shared_ptr<std::string> configurer::Configuration::m_cache_home =
-    std::make_shared<std::string>("");
-std::shared_ptr<std::string> configurer::Configuration::m_tls_ca_file =
-    std::make_shared<std::string>("");
+namespace {
+
+// Helper function to convert string to lowercase
+std::string to_lowercase(const std::string &str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return result;
+}
+
+// Load configuration from environment variables on library initialization
+void load_config_from_environment() {
+    // List of known configuration keys with their types and corresponding env
+    // var names
+    struct ConfigMapping {
+        const char *config_key;
+        const char *env_var_suffix; // After SCITOKEN_CONFIG_
+        bool is_int;
+    };
+
+    const std::array<ConfigMapping, 8> known_configs = {
+        {{"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
+         {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S",
+          true},
+         {"keycache.cache_home", "KEYCACHE_CACHE_HOME", false},
+         {"tls.ca_file", "TLS_CA_FILE", false},
+         {"monitoring.file", "MONITORING_FILE", false},
+         {"monitoring.file_interval_s", "MONITORING_FILE_INTERVAL_S", true},
+         {"keycache.refresh_interval_ms", "KEYCACHE_REFRESH_INTERVAL_MS", true},
+         {"keycache.refresh_threshold_ms", "KEYCACHE_REFRESH_THRESHOLD_MS",
+          true}}};
+
+    const char *prefix = "SCITOKEN_CONFIG_";
+
+    // Check each known configuration
+    for (const auto &config : known_configs) {
+        // Build the full environment variable name
+        std::string env_var = prefix + std::string(config.env_var_suffix);
+
+        // Also try case variations (uppercase, lowercase, mixed)
+        const char *env_value = std::getenv(env_var.c_str());
+        if (!env_value) {
+            // Try with lowercase
+            std::string env_var_lower = to_lowercase(env_var);
+            env_value = std::getenv(env_var_lower.c_str());
+        }
+
+        if (!env_value) {
+            continue; // Not set in environment
+        }
+
+        char *err_msg = nullptr;
+        if (config.is_int) {
+            try {
+                int value = std::stoi(env_value);
+                scitoken_config_set_int(config.config_key, value, &err_msg);
+            } catch (const std::invalid_argument &) {
+                // Silently ignore invalid integer format during initialization
+            } catch (const std::out_of_range &) {
+                // Silently ignore out-of-range values during initialization
+            }
+        } else {
+            scitoken_config_set_str(config.config_key, env_value, &err_msg);
+        }
+
+        // Free error message if any (we ignore errors during initialization)
+        if (err_msg) {
+            free(err_msg);
+        }
+    }
+}
+
+// Use constructor attribute to run on library load
+__attribute__((constructor)) void init_scitokens_config() {
+    load_config_from_environment();
+}
+
+} // anonymous namespace
+
+// Monitoring file config (empty string means disabled)
+// Protected by mutex; atomic flag for fast-path check
+std::string configurer::Configuration::m_monitoring_file;
+std::mutex configurer::Configuration::m_monitoring_file_mutex;
+std::atomic<bool> configurer::Configuration::m_monitoring_file_configured{
+    false};
+std::atomic_int configurer::Configuration::m_monitoring_file_interval{60};
+
+void configurer::Configuration::set_monitoring_file(const std::string &path) {
+    std::lock_guard<std::mutex> lock(m_monitoring_file_mutex);
+    m_monitoring_file = path;
+    // Update the atomic flag after setting the string
+    m_monitoring_file_configured.store(!path.empty(),
+                                       std::memory_order_release);
+}
+
+std::string configurer::Configuration::get_monitoring_file() {
+    std::lock_guard<std::mutex> lock(m_monitoring_file_mutex);
+    return m_monitoring_file;
+}
+
+void configurer::Configuration::set_monitoring_file_interval(int seconds) {
+    m_monitoring_file_interval = seconds;
+}
+
+int configurer::Configuration::get_monitoring_file_interval() {
+    return m_monitoring_file_interval;
+}
+
+// Background refresh config
+std::atomic_bool configurer::Configuration::m_background_refresh_enabled{false};
+std::atomic_int configurer::Configuration::m_refresh_interval_ms{
+    60000}; // 60 seconds
+std::atomic_int configurer::Configuration::m_refresh_threshold_ms{
+    600000}; // 10 minutes
 
 SciTokenKey scitoken_key_create(const char *key_id, const char *alg,
                                 const char *public_contents,
@@ -246,10 +364,12 @@ int scitoken_get_expiration(const SciToken token, long long *expiry,
             // Float value - convert to integer (truncate)
             // Float value - convert to integer using std::floor().
             // This ensures expiration is not extended by fractional seconds.
-            result = static_cast<long long>(std::floor(claim_value.get<double>()));
+            result =
+                static_cast<long long>(std::floor(claim_value.get<double>()));
         } else {
             if (err_msg) {
-                *err_msg = strdup("'exp' claim must be a number (integer or float)");
+                *err_msg =
+                    strdup("'exp' claim must be a number (integer or float)");
             }
             return -1;
         }
@@ -989,6 +1109,105 @@ int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg) {
     return 0;
 }
 
+int keycache_set_background_refresh(int enabled, char **err_msg) {
+    try {
+        bool enable = (enabled != 0);
+        configurer::Configuration::set_background_refresh_enabled(enable);
+
+        if (enable) {
+            scitokens::internal::BackgroundRefreshManager::get_instance()
+                .start();
+        } else {
+            scitokens::internal::BackgroundRefreshManager::get_instance()
+                .stop();
+        }
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int keycache_stop_background_refresh(char **err_msg) {
+    return keycache_set_background_refresh(0, err_msg);
+}
+
+int keycache_load_jwks(const char *issuer, char **jwks, char **err_msg) {
+    if (!issuer) {
+        if (err_msg) {
+            *err_msg = strdup("Issuer may not be a null pointer");
+        }
+        return -1;
+    }
+    if (!jwks) {
+        if (err_msg) {
+            *err_msg = strdup("JWKS output pointer may not be null.");
+        }
+        return -1;
+    }
+    try {
+        *jwks = strdup(scitokens::Validator::load_jwks(issuer).c_str());
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int keycache_get_jwks_metadata(const char *issuer, char **metadata,
+                               char **err_msg) {
+    if (!issuer) {
+        if (err_msg) {
+            *err_msg = strdup("Issuer may not be a null pointer");
+        }
+        return -1;
+    }
+    if (!metadata) {
+        if (err_msg) {
+            *err_msg = strdup("Metadata output pointer may not be null.");
+        }
+        return -1;
+    }
+    try {
+        *metadata =
+            strdup(scitokens::Validator::get_jwks_metadata(issuer).c_str());
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int keycache_delete_jwks(const char *issuer, char **err_msg) {
+    if (!issuer) {
+        if (err_msg) {
+            *err_msg = strdup("Issuer may not be a null pointer");
+        }
+        return -1;
+    }
+    try {
+        if (!scitokens::Validator::delete_jwks(issuer)) {
+            if (err_msg) {
+                *err_msg =
+                    strdup("Failed to delete JWKS cache entry for issuer.");
+            }
+            return -1;
+        }
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
 int config_set_int(const char *key, int value, char **err_msg) {
     return scitoken_config_set_int(key, value, err_msg);
 }
@@ -1024,6 +1243,39 @@ int scitoken_config_set_int(const char *key, int value, char **err_msg) {
         return 0;
     }
 
+    else if (_key == "monitoring.file_interval_s") {
+        if (value < 0) {
+            if (err_msg) {
+                *err_msg = strdup("Interval cannot be negative.");
+            }
+            return -1;
+        }
+        configurer::Configuration::set_monitoring_file_interval(value);
+        return 0;
+    }
+
+    else if (_key == "keycache.refresh_interval_ms") {
+        if (value < 0) {
+            if (err_msg) {
+                *err_msg = strdup("Refresh interval must be positive.");
+            }
+            return -1;
+        }
+        configurer::Configuration::set_refresh_interval(value);
+        return 0;
+    }
+
+    else if (_key == "keycache.refresh_threshold_ms") {
+        if (value < 0) {
+            if (err_msg) {
+                *err_msg = strdup("Refresh threshold must be positive.");
+            }
+            return -1;
+        }
+        configurer::Configuration::set_refresh_threshold(value);
+        return 0;
+    }
+
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
@@ -1053,6 +1305,18 @@ int scitoken_config_get_int(const char *key, char **err_msg) {
         return configurer::Configuration::get_expiry_delta();
     }
 
+    else if (_key == "monitoring.file_interval_s") {
+        return configurer::Configuration::get_monitoring_file_interval();
+    }
+
+    else if (_key == "keycache.refresh_interval_ms") {
+        return configurer::Configuration::get_refresh_interval();
+    }
+
+    else if (_key == "keycache.refresh_threshold_ms") {
+        return configurer::Configuration::get_refresh_threshold();
+    }
+
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
@@ -1080,9 +1344,12 @@ int scitoken_config_set_str(const char *key, const char *value,
             return -1;
         }
     } else if (_key == "tls.ca_file") {
-       configurer::Configuration::set_tls_ca_file(value ? std::string(value) : "");
-    }
-    else {
+        configurer::Configuration::set_tls_ca_file(value ? std::string(value)
+                                                         : "");
+    } else if (_key == "monitoring.file") {
+        configurer::Configuration::set_monitoring_file(
+            value ? std::string(value) : "");
+    } else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
         }
@@ -1104,11 +1371,46 @@ int scitoken_config_get_str(const char *key, char **output, char **err_msg) {
         *output = strdup(configurer::Configuration::get_cache_home().c_str());
     } else if (_key == "tls.ca_file") {
         *output = strdup(configurer::Configuration::get_tls_ca_file().c_str());
+    } else if (_key == "monitoring.file") {
+        *output =
+            strdup(configurer::Configuration::get_monitoring_file().c_str());
     }
 
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int scitoken_get_monitoring_json(char **json_out, char **err_msg) {
+    if (!json_out) {
+        if (err_msg) {
+            *err_msg = strdup("JSON output pointer may not be null.");
+        }
+        return -1;
+    }
+    try {
+        std::string json =
+            scitokens::internal::MonitoringStats::instance().get_json();
+        *json_out = strdup(json.c_str());
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int scitoken_reset_monitoring_stats(char **err_msg) {
+    try {
+        scitokens::internal::MonitoringStats::instance().reset();
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
         }
         return -1;
     }

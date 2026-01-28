@@ -1,5 +1,5 @@
 Name: scitokens-cpp
-Version: 1.1.3
+Version: 1.3.0
 Release: 1%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
@@ -66,6 +66,34 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+
+* Thu Dec 11 2025 Brian Bockelman <bbockelman@morgridge.org> - 1.3.0-1
+- Add scitokens-generate-jwks CLI for key generation.
+- Add environment variable-based configuration on library initialization.
+- Add per-issuer lock to prevent multiple concurrent queries against issuers without a known key
+- Add negative cache for failed issuer lookups (preventing frequent re-queries)
+- Add monitoring API for per-issuer validation statistics
+- Add optional background thread for JWKS refresh
+- Add keycache load, metadata, and delete APIs
+- Revert "Fix memory leak in rs256_from_coords" by @djw8605
+- Add CTest-based integration test with JWKS server and TLS infrastructure
+
+* Fri Dec 05 2025 Derek Weitzel <dweitzel@unl.edu> - 1.2.0-1
+- Fix segfault if the JSON parser cannot parse the JWKS
+- Fix float time claims issue and improve error handling
+- Fix security issue with malicious issuer handling in error messages
+- Improve JWTVerificationException message to include the invalid issuer
+- Update usage on verify command to make the TOKENFILE explicit
+- Read token for scitokens-verify from stdin
+- Set CURLOPT_NOSIGNAL option in SimpleCurlGet to prevent signal interruptions
+- Adding asan value to the job name
+- Turn off building unit tests by default.
+- Add cmake option SCITOKENS_WITH_ASAN which enables memory checking with the address sanitizer.  Also enable this in CI, so that tests fail if they hit a memory leak or other memory problem.
+- Fix memory leak in store_public_ec_key
+- Fix memory leaks in the unit tests
+- Fix memory leak in rs256_from_coords
+- Fix memory leak in scitokens_verify
+
 * Mon Feb 24 2025 Derek Weitzel <dweitzel@unl.edu> - 1.1.3-1
 - Include cstdint import for jwt library to support newer compilers
 

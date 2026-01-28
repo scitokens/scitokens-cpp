@@ -19,3 +19,82 @@ add_test(
   COMMAND
     ${CMAKE_CURRENT_BINARY_DIR}/scitokens-gtest
   )
+
+# Environment variable configuration test executable
+add_executable(scitokens-env-test test_env_config.cpp)
+target_link_libraries(scitokens-env-test SciTokens)
+
+# Environment variable configuration test
+add_test(
+  NAME
+    env_config
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/scitokens-env-test
+)
+
+set_tests_properties(env_config
+  PROPERTIES
+    ENVIRONMENT "SCITOKEN_CONFIG_KEYCACHE_UPDATE_INTERVAL_S=1234;SCITOKEN_CONFIG_KEYCACHE_EXPIRATION_INTERVAL_S=5678;SCITOKEN_CONFIG_KEYCACHE_CACHE_HOME=/tmp/test_scitoken_cache;SCITOKEN_CONFIG_TLS_CA_FILE=/tmp/test_ca.pem"
+)
+# Monitoring unit tests
+add_executable(scitokens-monitoring-test monitoring_test.cpp)
+if( NOT SCITOKENS_EXTERNAL_GTEST )
+    add_dependencies(scitokens-monitoring-test gtest)
+endif()
+target_link_libraries(scitokens-monitoring-test SciTokens "${LIBGTEST}" pthread)
+
+add_test(
+  NAME
+    monitoring
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/scitokens-monitoring-test
+  )
+
+# Integration test executable
+add_executable(scitokens-integration-test integration_test.cpp)
+if( NOT SCITOKENS_EXTERNAL_GTEST )
+    add_dependencies(scitokens-integration-test gtest)
+endif()
+target_link_libraries(scitokens-integration-test SciTokens "${LIBGTEST}" pthread)
+
+# Integration test fixture - setup
+add_test(
+  NAME
+    integration::setup
+  COMMAND
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration-test-setup.sh integration
+)
+
+set_tests_properties(integration::setup
+  PROPERTIES
+    FIXTURES_SETUP integration
+    ENVIRONMENT "BINARY_DIR=${CMAKE_BINARY_DIR};SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+)
+
+# Integration test fixture - teardown
+add_test(
+  NAME
+    integration::teardown
+  COMMAND
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration-test-teardown.sh integration
+)
+
+set_tests_properties(integration::teardown
+  PROPERTIES
+    FIXTURES_CLEANUP integration
+    ENVIRONMENT "BINARY_DIR=${CMAKE_BINARY_DIR}"
+)
+
+# Integration test
+add_test(
+  NAME
+    integration::test
+  COMMAND
+    ${CMAKE_CURRENT_BINARY_DIR}/scitokens-integration-test
+)
+
+set_tests_properties(integration::test
+  PROPERTIES
+    FIXTURES_REQUIRED integration
+    ENVIRONMENT "BINARY_DIR=${CMAKE_BINARY_DIR};CURL_CA_BUNDLE=${CMAKE_BINARY_DIR}/tests/integration/current/ca-cert.pem"
+)

@@ -1,3 +1,37 @@
+scitokens-cpp (1.3.0-1) unstable; urgency=medium
+
+  * Add scitokens-generate-jwks CLI for key generation in https://github.com/scitokens/scitokens-cpp/pull/186
+  * Add environment variable configuration loading on library initialization in https://github.com/scitokens/scitokens-cpp/pull/190
+  * Add per-issuer lock to prevent multiple concurrent queries against issuers without a known key in https://github.com/scitokens/scitokens-cpp/pull/180
+  * Add negative cache for failed issuer lookups (preventing frequent re-queries) in https://github.com/scitokens/scitokens-cpp/pull/178
+  * Add monitoring API for per-issuer validation statistics in https://github.com/scitokens/scitokens-cpp/pull/182
+  * Add optional background thread for JWKS refresh in https://github.com/scitokens/scitokens-cpp/pull/192
+  * Add keycache load, metadata, and delete APIs in https://github.com/scitokens/scitokens-cpp/pull/194
+  * Revert "Fix memory leak in rs256_from_coords" by @djw8605 in https://github.com/scitokens/scitokens-cpp/pull/162
+  * Add CTest-based integration test with JWKS server and TLS infrastructure by @Copilot in https://github.com/scitokens/scitokens-cpp/pull/184
+  * Add devcontainer configuration for GitHub Codespaces by @Copilot in https://github.com/scitokens/scitokens-cpp/pull/188
+
+ -- Brian Bockelman <bbockelman@morgridge.org> Thu, 11 Dec 2025 16:10:00 -0600
+
+scitokens-cpp (1.2.0-1) unstable; urgency=medium
+
+  * Fix segfault if the JSON parser cannot parse the JWKS
+  * Fix float time claims issue and improve error handling
+  * Fix security issue with malicious issuer handling in error messages
+  * Improve JWTVerificationException message to include the invalid issuer
+  * Update usage on verify command to make the TOKENFILE explicit
+  * Read token for scitokens-verify from stdin
+  * Set CURLOPT_NOSIGNAL option in SimpleCurlGet to prevent signal interruptions
+  * Add asan value to the job name
+  * Turn off building unit tests by default
+  * Add cmake option SCITOKENS_WITH_ASAN which enables memory checking with the address sanitizer. Also enable this in CI so tests fail if they hit a memory leak or other memory problem
+  * Fix memory leak in store_public_ec_key
+  * Fix memory leaks in the unit tests
+  * Fix memory leak in rs256_from_coords
+  * Fix memory leak in scitokens_verify
+
+ -- Derek Weitzel <dweitzel@unl.edu>  Fri, 05 Dec 2025 00:00:00 +0000
+
 scitokens-cpp (1.1.3-1) stable; urgency=medium
 
   * Include cstdint import for jwt library to support newer compilers

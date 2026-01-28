@@ -1,8 +1,10 @@
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <sstream>
 #include <sys/stat.h>
+#include <unordered_map>
 
 #include <jwt-cpp/base.h>
 #include <jwt-cpp/jwt.h>
@@ -33,11 +35,145 @@ CurlRaii myCurl;
 
 std::mutex key_refresh_mutex;
 
+// Per-issuer mutex map for preventing thundering herd on new issuers
+std::mutex issuer_mutex_map_lock;
+std::unordered_map<std::string, std::shared_ptr<std::mutex>> issuer_mutexes;
+constexpr size_t MAX_ISSUER_MUTEXES = 1000;
+
+// Get or create a mutex for a specific issuer
+std::shared_ptr<std::mutex> get_issuer_mutex(const std::string &issuer) {
+    std::lock_guard<std::mutex> guard(issuer_mutex_map_lock);
+
+    auto it = issuer_mutexes.find(issuer);
+    if (it != issuer_mutexes.end()) {
+        return it->second;
+    }
+
+    // Prevent resource exhaustion: limit the number of cached mutexes
+    if (issuer_mutexes.size() >= MAX_ISSUER_MUTEXES) {
+        // Remove mutexes that are no longer in use
+        // Since we hold issuer_mutex_map_lock, no other thread can acquire
+        // a reference to these mutexes, making this check safe
+        for (auto iter = issuer_mutexes.begin();
+             iter != issuer_mutexes.end();) {
+            if (iter->second.use_count() == 1) {
+                // Only we hold a reference, safe to remove
+                iter = issuer_mutexes.erase(iter);
+            } else {
+                ++iter;
+            }
+        }
+
+        // If still at capacity after cleanup, fail rather than unbounded growth
+        if (issuer_mutexes.size() >= MAX_ISSUER_MUTEXES) {
+            throw std::runtime_error(
+                "Too many concurrent issuers - resource exhaustion prevented");
+        }
+    }
+
+    auto mutex_ptr = std::make_shared<std::mutex>();
+    issuer_mutexes[issuer] = mutex_ptr;
+    return mutex_ptr;
+}
+
 } // namespace
 
 namespace scitokens {
 
+// Define the static once_flag for Validator
+std::once_flag Validator::m_background_refresh_once;
+
 namespace internal {
+
+// BackgroundRefreshManager implementation
+void BackgroundRefreshManager::start() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_running.load(std::memory_order_acquire)) {
+        return; // Already running
+    }
+    m_shutdown.store(false, std::memory_order_release);
+    m_running.store(true, std::memory_order_release);
+    m_thread = std::make_unique<std::thread>(
+        &BackgroundRefreshManager::refresh_loop, this);
+}
+
+void BackgroundRefreshManager::stop() {
+    std::unique_ptr<std::thread> thread_to_join;
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_running.load(std::memory_order_acquire)) {
+            return; // Not running
+        }
+
+        m_shutdown.store(true, std::memory_order_release);
+        m_running.store(false, std::memory_order_release);
+        thread_to_join = std::move(m_thread);
+    }
+
+    m_cv.notify_all();
+
+    if (thread_to_join && thread_to_join->joinable()) {
+        thread_to_join->join();
+    }
+}
+
+void BackgroundRefreshManager::refresh_loop() {
+    while (!m_shutdown.load(std::memory_order_acquire)) {
+        auto interval = configurer::Configuration::get_refresh_interval();
+        auto threshold = configurer::Configuration::get_refresh_threshold();
+
+        // Wait for the interval or until shutdown
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_cv.wait_for(lock, std::chrono::milliseconds(interval), [this]() {
+                return m_shutdown.load(std::memory_order_acquire);
+            });
+        }
+
+        if (m_shutdown.load(std::memory_order_acquire)) {
+            break;
+        }
+
+        // Get list of issuers from the database
+        auto now = std::time(NULL);
+        auto issuers = scitokens::Validator::get_all_issuers_from_db(now);
+
+        for (const auto &issuer_pair : issuers) {
+            if (m_shutdown.load(std::memory_order_acquire)) {
+                break;
+            }
+
+            const auto &issuer = issuer_pair.first;
+            const auto &next_update = issuer_pair.second;
+
+            // Calculate time until next_update in milliseconds
+            int64_t time_until_update = (next_update - now) * 1000;
+
+            // If next update is within threshold, try to refresh
+            if (time_until_update <= threshold) {
+                auto &stats =
+                    MonitoringStats::instance().get_issuer_stats(issuer);
+                try {
+                    // Perform refresh (this will use the refresh_jwks method)
+                    scitokens::Validator::refresh_jwks(issuer);
+                    stats.inc_background_successful_refresh();
+                } catch (std::exception &) {
+                    // Track failed refresh attempts
+                    stats.inc_background_failed_refresh();
+                    // Silently ignore errors in background refresh to avoid
+                    // disrupting the application. Background refresh is a
+                    // best-effort optimization. If it fails, the next token
+                    // verification will trigger a foreground refresh as usual.
+                }
+            }
+        }
+
+        // Write monitoring file from background thread if configured
+        // This avoids writing from verify() when background thread is running
+        MonitoringStats::instance().maybe_write_monitoring_file();
+    }
+}
 
 SimpleCurlGet::GetStatus SimpleCurlGet::perform_start(const std::string &url) {
     m_len = 0;
@@ -481,6 +617,9 @@ std::string rs256_from_coords(const std::string &e_str,
         BN_free);
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    // ========================================
+    // OpenSSL 3.x: Use EVP_PKEY API
+    // ========================================
     OSSL_PARAM *params;
     std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> rsa_ctx(
         EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL), EVP_PKEY_CTX_free);
@@ -513,15 +652,25 @@ std::string rs256_from_coords(const std::string &e_str,
     }
     EVP_PKEY_free(pkey);
     OSSL_PARAM_free(params);
+    // Note: OSSL_PARAM_BLD_push_BN_pad() copied the BIGNUM data, so unique_ptr
+    // still owns the original BIGNUMs and will free them automatically
+
 #else
+    // ========================================
+    // OpenSSL 1.x: Use RSA structure API
+    // ========================================
     std::unique_ptr<RSA, decltype(&RSA_free)> rsa(RSA_new(), RSA_free);
+
 #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+    // OpenSSL 1.0.x / LibreSSL: Direct member assignment transfers ownership
     rsa->e = e_bignum.get();
     rsa->n = n_bignum.get();
     rsa->d = nullptr;
 #else
+    // OpenSSL 1.1.x: RSA_set0_key() transfers ownership
     RSA_set0_key(rsa.get(), n_bignum.get(), e_bignum.get(), nullptr);
 #endif
+
     std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(EVP_PKEY_new(),
                                                              EVP_PKEY_free);
     if (EVP_PKEY_set1_RSA(pkey.get(), rsa.get()) != 1) {
@@ -531,6 +680,11 @@ std::string rs256_from_coords(const std::string &e_str,
     if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey.get()) == 0) {
         throw UnsupportedKeyException("Failed to serialize RSA public key");
     }
+
+    // Release BIGNUMs from unique_ptr - ownership was transferred to RSA
+    // structure
+    e_bignum.release();
+    n_bignum.release();
 #endif
 
     char *mem_data;
@@ -650,124 +804,147 @@ SciToken::deserialize_continue(std::unique_ptr<SciTokenAsyncStatus> status) {
 std::unique_ptr<AsyncStatus>
 Validator::get_public_keys_from_web(const std::string &issuer,
                                     unsigned timeout) {
-    std::string openid_metadata, oauth_metadata;
-    get_metadata_endpoint(issuer, openid_metadata, oauth_metadata);
+    try {
+        std::string openid_metadata, oauth_metadata;
+        get_metadata_endpoint(issuer, openid_metadata, oauth_metadata);
 
-    std::unique_ptr<AsyncStatus> status(new AsyncStatus());
-    status->m_oauth_metadata_url = oauth_metadata;
-    status->m_cget.reset(new internal::SimpleCurlGet(1024 * 1024, timeout));
-    auto cget_status = status->m_cget->perform_start(openid_metadata);
-    status->m_continue_fetch = true;
-    if (!cget_status.m_done) {
-        return status;
+        std::unique_ptr<AsyncStatus> status(new AsyncStatus());
+        status->m_oauth_metadata_url = oauth_metadata;
+        status->m_cget.reset(new internal::SimpleCurlGet(1024 * 1024, timeout));
+        auto cget_status = status->m_cget->perform_start(openid_metadata);
+        status->m_continue_fetch = true;
+        if (!cget_status.m_done) {
+            return status;
+        }
+        return get_public_keys_from_web_continue(std::move(status));
+    } catch (const CurlException &e) {
+        // Rethrow CURL errors during issuer key fetch as IssuerLookupException
+        throw IssuerLookupException(e.what());
     }
-    return get_public_keys_from_web_continue(std::move(status));
 }
 
 std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
     std::unique_ptr<AsyncStatus> status) {
-    char *buffer;
-    size_t len;
+    try {
+        char *buffer;
+        size_t len;
 
-    switch (status->m_state) {
+        switch (status->m_state) {
 
-    case AsyncStatus::DOWNLOAD_METADATA: {
-        auto cget_status = status->m_cget->perform_continue();
-        if (!cget_status.m_done) {
-            return std::move(status);
-        }
-        if (cget_status.m_status_code != 200) {
-            if (status->m_oauth_fallback) {
-                throw CurlException("Failed to retrieve metadata provider "
-                                    "information for issuer.");
-            } else {
-                status->m_oauth_fallback = true;
-                status->m_cget.reset(new internal::SimpleCurlGet());
-                cget_status =
-                    status->m_cget->perform_start(status->m_oauth_metadata_url);
-                if (!cget_status.m_done) {
-                    return std::move(status);
-                }
-                return get_public_keys_from_web_continue(std::move(status));
+        case AsyncStatus::DOWNLOAD_METADATA: {
+            auto cget_status = status->m_cget->perform_continue();
+            if (!cget_status.m_done) {
+                return std::move(status);
             }
+            if (cget_status.m_status_code != 200) {
+                if (status->m_oauth_fallback) {
+                    throw IssuerLookupException(
+                        "Failed to retrieve metadata provider "
+                        "information for issuer.");
+                } else {
+                    status->m_oauth_fallback = true;
+                    status->m_cget.reset(new internal::SimpleCurlGet());
+                    cget_status = status->m_cget->perform_start(
+                        status->m_oauth_metadata_url);
+                    if (!cget_status.m_done) {
+                        return std::move(status);
+                    }
+                    return get_public_keys_from_web_continue(std::move(status));
+                }
+            }
+            status->m_cget->get_data(buffer, len);
+            std::string metadata(buffer, len);
+            picojson::value json_obj;
+            auto err = picojson::parse(json_obj, metadata);
+            if (!err.empty()) {
+                throw JsonException("JSON parse failure when downloading from "
+                                    "the metadata URL " +
+                                    status->m_cget->get_url() + ": " + err);
+            }
+            if (!json_obj.is<picojson::object>()) {
+                throw JsonException("Metadata resource " +
+                                    status->m_cget->get_url() +
+                                    " contains "
+                                    "improperly-formatted JSON.");
+            }
+            auto top_obj = json_obj.get<picojson::object>();
+            auto iter = top_obj.find("jwks_uri");
+            if (iter == top_obj.end() || (!iter->second.is<std::string>())) {
+                throw JsonException("Metadata resource " +
+                                    status->m_cget->get_url() +
+                                    " is missing 'jwks_uri' string value");
+            }
+            auto jwks_uri = iter->second.get<std::string>();
+            status->m_has_metadata = true;
+            status->m_state = AsyncStatus::DOWNLOAD_PUBLIC_KEY;
+            status->m_cget.reset(new internal::SimpleCurlGet());
+            status->m_cget->perform_start(jwks_uri);
+            // This should also fall through the next state
         }
-        status->m_cget->get_data(buffer, len);
-        std::string metadata(buffer, len);
-        picojson::value json_obj;
-        auto err = picojson::parse(json_obj, metadata);
-        if (!err.empty()) {
-            throw JsonException(
-                "JSON parse failure when downloading from the metadata URL " +
-                status->m_cget->get_url() + ": " + err);
+
+        case AsyncStatus::DOWNLOAD_PUBLIC_KEY: {
+            auto cget_status = status->m_cget->perform_continue();
+            if (!cget_status.m_done) {
+                return std::move(status);
+            }
+            if (cget_status.m_status_code != 200) {
+                throw IssuerLookupException(
+                    "Failed to retrieve the issuer's key set");
+            }
+
+            status->m_cget->get_data(buffer, len);
+            auto metadata = std::string(buffer, len);
+            picojson::value json_obj;
+            auto err = picojson::parse(json_obj, metadata);
+            if (!err.empty()) {
+                throw JsonException(
+                    "JSON parse failure when downloading from the "
+                    " public key URL " +
+                    status->m_cget->get_url() + ": " + err);
+            }
+            status->m_cget.reset();
+
+            auto now = std::time(NULL);
+            // TODO: take expiration time from the cache-control header in the
+            // response.
+
+            int next_update_delta =
+                configurer::Configuration::get_next_update_delta();
+            int expiry_delta = configurer::Configuration::get_expiry_delta();
+            status->m_next_update = now + next_update_delta;
+            status->m_expires = now + expiry_delta;
+            status->m_keys = json_obj;
+            status->m_continue_fetch = false;
+            status->m_done = true;
+            status->m_state = AsyncStatus::DONE;
         }
-        if (!json_obj.is<picojson::object>()) {
-            throw JsonException("Metadata resource " +
-                                status->m_cget->get_url() +
-                                " contains "
-                                "improperly-formatted JSON.");
+        case AsyncStatus::DONE:
+            status->m_done = true;
+
+        } // Switch
+        return std::move(status);
+    } catch (const CurlException &e) {
+        // Rethrow CURL errors during issuer key fetch as IssuerLookupException
+        // (unless it's already an IssuerLookupException)
+        if (dynamic_cast<const IssuerLookupException *>(&e)) {
+            throw;
         }
-        auto top_obj = json_obj.get<picojson::object>();
-        auto iter = top_obj.find("jwks_uri");
-        if (iter == top_obj.end() || (!iter->second.is<std::string>())) {
-            throw JsonException("Metadata resource " +
-                                status->m_cget->get_url() +
-                                " is missing 'jwks_uri' string value");
-        }
-        auto jwks_uri = iter->second.get<std::string>();
-        status->m_has_metadata = true;
-        status->m_state = AsyncStatus::DOWNLOAD_PUBLIC_KEY;
-        status->m_cget.reset(new internal::SimpleCurlGet());
-        status->m_cget->perform_start(jwks_uri);
-        // This should also fall through the next state
+        throw IssuerLookupException(e.what());
     }
-
-    case AsyncStatus::DOWNLOAD_PUBLIC_KEY: {
-        auto cget_status = status->m_cget->perform_continue();
-        if (!cget_status.m_done) {
-            return std::move(status);
-        }
-        if (cget_status.m_status_code != 200) {
-            throw CurlException("Failed to retrieve the issuer's key set");
-        }
-
-        status->m_cget->get_data(buffer, len);
-        auto metadata = std::string(buffer, len);
-        picojson::value json_obj;
-        auto err = picojson::parse(json_obj, metadata);
-        status->m_cget.reset();
-        if (!err.empty()) {
-            throw JsonException("JSON parse failure when downloading from the "
-                                " public key URL " +
-                                status->m_cget->get_url() + ": " + err);
-        }
-
-        auto now = std::time(NULL);
-        // TODO: take expiration time from the cache-control header in the
-        // response.
-
-        int next_update_delta =
-            configurer::Configuration::get_next_update_delta();
-        int expiry_delta = configurer::Configuration::get_expiry_delta();
-        status->m_next_update = now + next_update_delta;
-        status->m_expires = now + expiry_delta;
-        status->m_keys = json_obj;
-        status->m_continue_fetch = false;
-        status->m_done = true;
-        status->m_state = AsyncStatus::DONE;
-    }
-    case AsyncStatus::DONE:
-        status->m_done = true;
-
-    } // Switch
-    return std::move(status);
 }
 
 std::string Validator::get_jwks(const std::string &issuer) {
     auto now = std::time(NULL);
     picojson::value jwks;
     int64_t next_update;
-    if (get_public_keys_from_db(issuer, now, jwks, next_update)) {
-        return jwks.serialize();
+    try {
+        if (get_public_keys_from_db(issuer, now, jwks, next_update)) {
+            return jwks.serialize();
+        }
+    } catch (const NegativeCacheHitException &) {
+        // Negative cache hit - return empty keys without incrementing counter
+        // (counter is incremented elsewhere for validation failures)
+        return std::string("{\"keys\": []}");
     }
     return std::string("{\"keys\": []}");
 }
@@ -809,14 +986,23 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
         std::unique_lock<std::mutex> lock(key_refresh_mutex, std::defer_lock);
         // If refresh is due *and* the key refresh mutex is free, try to update
         if (now > result->m_next_update && lock.try_lock()) {
+            // Get a reference to this issuer's statistics
+            auto &issuer_stats =
+                internal::MonitoringStats::instance().get_issuer_stats(issuer);
+            // Record that we're using a stale key (past next_update)
+            issuer_stats.inc_stale_key_use();
             try {
                 result->m_ignore_error = true;
                 result = get_public_keys_from_web(
                     issuer, internal::SimpleCurlGet::default_timeout);
                 // Hold refresh mutex in the new result
                 result->m_refresh_lock = std::move(lock);
+                // Mark that this is a refresh attempt for a known issuer
+                result->m_is_refresh = true;
             } catch (std::runtime_error &) {
                 result->m_do_store = false;
+                // Record failed refresh for known issuer
+                issuer_stats.inc_failed_refresh();
                 // ignore the exception: we have a valid set of keys already
             }
         } else {
@@ -827,8 +1013,35 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
         }
     } else {
         // No keys in the DB, or they are expired, so get them from the web.
-        result = get_public_keys_from_web(
-            issuer, internal::SimpleCurlGet::default_timeout);
+        // Record that we had expired keys if the issuer was previously known
+        auto &issuer_stats =
+            internal::MonitoringStats::instance().get_issuer_stats(issuer);
+        issuer_stats.inc_expired_key();
+
+        // Use per-issuer lock to prevent thundering herd for new issuers
+        auto issuer_mutex = get_issuer_mutex(issuer);
+        std::unique_lock<std::mutex> issuer_lock(*issuer_mutex);
+
+        // Check again if keys are now in DB (another thread may have fetched
+        // them while we were waiting for the lock)
+        if (get_public_keys_from_db(issuer, now, result->m_keys,
+                                    result->m_next_update)) {
+            // Keys are now available, use them
+            result->m_continue_fetch = false;
+            result->m_do_store = false;
+            result->m_done = true;
+            // Lock released here - no need to hold it
+        } else {
+            // Still no keys, fetch them from the web
+            result = get_public_keys_from_web(
+                issuer, internal::SimpleCurlGet::default_timeout);
+
+            // Transfer ownership of the lock to the async status
+            // The lock will be held until keys are stored in
+            // get_public_key_pem_continue
+            result->m_issuer_mutex = issuer_mutex;
+            result->m_issuer_lock = std::move(issuer_lock);
+        }
     }
     result->m_issuer = issuer;
     result->m_kid = kid;
@@ -844,14 +1057,56 @@ Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status,
                                        std::string &algorithm) {
 
     if (status->m_continue_fetch) {
-        status = get_public_keys_from_web_continue(std::move(status));
-        if (status->m_continue_fetch) {
-            return std::move(status);
+        // Save issuer and lock info before potentially moving status
+        std::string issuer = status->m_issuer;
+        auto issuer_mutex = status->m_issuer_mutex;
+        std::unique_lock<std::mutex> issuer_lock(
+            std::move(status->m_issuer_lock));
+
+        try {
+            status = get_public_keys_from_web_continue(std::move(status));
+            if (status->m_continue_fetch) {
+                // Restore the lock to status before returning
+                status->m_issuer_mutex = issuer_mutex;
+                status->m_issuer_lock = std::move(issuer_lock);
+                return std::move(status);
+            }
+            // Success - restore the lock to status for later release
+            status->m_issuer_mutex = issuer_mutex;
+            status->m_issuer_lock = std::move(issuer_lock);
+        } catch (...) {
+            // Web fetch failed - store empty keys as negative cache entry
+            // This prevents thundering herd on repeated failed lookups
+            if (issuer_lock.owns_lock()) {
+                // Store empty keys with short TTL for negative caching
+                auto now = std::time(NULL);
+                int negative_cache_ttl =
+                    configurer::Configuration::get_next_update_delta();
+                picojson::value empty_keys;
+                picojson::object keys_obj;
+                keys_obj["keys"] = picojson::value(picojson::array());
+                empty_keys = picojson::value(keys_obj);
+                store_public_keys(issuer, empty_keys, now + negative_cache_ttl,
+                                  now + negative_cache_ttl);
+                issuer_lock.unlock();
+            }
+            throw; // Re-throw the original exception
         }
     }
     if (status->m_do_store) {
+        // Async web fetch completed successfully - record monitoring
+        // This counts both initial fetches and refreshes
+        auto &issuer_stats =
+            internal::MonitoringStats::instance().get_issuer_stats(
+                status->m_issuer);
+        issuer_stats.inc_successful_key_lookup();
         store_public_keys(status->m_issuer, status->m_keys,
                           status->m_next_update, status->m_expires);
+        // Release the per-issuer lock now that keys are stored
+        // Other threads waiting on this issuer can now proceed
+        if (status->m_issuer_lock.owns_lock()) {
+            status->m_issuer_lock.unlock();
+        }
     }
     status->m_done = true;
 
@@ -1129,7 +1384,9 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
     // If setting to "", then we should treat as though it is unsetting the
     // config
     if (dir_path.length() == 0) { // User is configuring to empty string
-        m_cache_home = std::make_shared<std::string>(dir_path);
+        std::lock_guard<std::mutex> lock(get_cache_home_mutex());
+        get_cache_home_string() = dir_path;
+        get_cache_home_set().store(false, std::memory_order_relaxed);
         return std::make_pair(true, "");
     }
 
@@ -1152,20 +1409,38 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
 
     // Now it exists and we can write to it, set the value and let
     // scitokens_cache handle the rest
-    m_cache_home = std::make_shared<std::string>(cleaned_dir_path);
+    {
+        std::lock_guard<std::mutex> lock(get_cache_home_mutex());
+        get_cache_home_string() = cleaned_dir_path;
+        get_cache_home_set().store(true, std::memory_order_relaxed);
+    }
     return std::make_pair(true, "");
 }
 
 void configurer::Configuration::set_tls_ca_file(const std::string ca_file) {
-    m_tls_ca_file = std::make_shared<std::string>(ca_file);
+    std::lock_guard<std::mutex> lock(get_tls_ca_file_mutex());
+    get_tls_ca_file_string() = ca_file;
+    get_tls_ca_file_set().store(!ca_file.empty(), std::memory_order_relaxed);
 }
 
 std::string configurer::Configuration::get_cache_home() {
-    return *m_cache_home;
+    // Fast path: check if the value has been set
+    if (!get_cache_home_set().load(std::memory_order_relaxed)) {
+        return "";
+    }
+    // Slow path: acquire lock and read the value
+    std::lock_guard<std::mutex> lock(get_cache_home_mutex());
+    return get_cache_home_string();
 }
 
 std::string configurer::Configuration::get_tls_ca_file() {
-    return *m_tls_ca_file;
+    // Fast path: check if the value has been set
+    if (!get_tls_ca_file_set().load(std::memory_order_relaxed)) {
+        return "";
+    }
+    // Slow path: acquire lock and read the value
+    std::lock_guard<std::mutex> lock(get_tls_ca_file_mutex());
+    return get_tls_ca_file_string();
 }
 
 // bool configurer::Configuration::check_dir(const std::string dir_path) {

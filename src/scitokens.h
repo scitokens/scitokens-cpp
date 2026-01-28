@@ -442,6 +442,55 @@ int keycache_get_cached_jwks(const char *issuer, char **jwks, char **err_msg);
 int keycache_set_jwks(const char *issuer, const char *jwks, char **err_msg);
 
 /**
+ * Enable or disable the background refresh thread for JWKS.
+ * - When enabled, a background thread will periodically check if any known
+ *   issuers need their JWKS refreshed based on the configured refresh interval
+ *   and threshold.
+ * - If enabled=1 and the thread is not running, it will be started.
+ * - If enabled=0 and the thread is running, it will be stopped gracefully.
+ * - Returns 0 on success, nonzero on failure.
+ */
+int keycache_set_background_refresh(int enabled, char **err_msg);
+
+/**
+ * Stop the background refresh thread if it is running.
+ * - This is a convenience function equivalent to
+ *   keycache_set_background_refresh(0, err_msg).
+ * - Returns 0 on success, nonzero on failure.
+ */
+int keycache_stop_background_refresh(char **err_msg);
+
+/**
+ * Load the JWKS from the keycache for a given issuer, refreshing only if
+ * needed.
+ * - Returns 0 if successful, nonzero on failure.
+ * - If the existing JWKS has not expired, this will return the cached JWKS
+ *   without triggering a download.
+ * - If the JWKS has expired or does not exist, this will attempt to refresh
+ *   it from the issuer.
+ * - `jwks` is an output variable set to the contents of the JWKS.
+ */
+int keycache_load_jwks(const char *issuer, char **jwks, char **err_msg);
+
+/**
+ * Get metadata for a cached JWKS entry.
+ * - Returns 0 if successful, nonzero on failure.
+ * - `metadata` is an output variable set to a JSON string containing:
+ *   - "expires": expiration time (Unix epoch seconds)
+ *   - "next_update": next update time (Unix epoch seconds)
+ * - If the issuer does not exist in the cache, returns an error.
+ */
+int keycache_get_jwks_metadata(const char *issuer, char **metadata,
+                               char **err_msg);
+
+/**
+ * Delete a JWKS entry from the keycache.
+ * - Returns 0 if successful, nonzero on failure.
+ * - If the issuer does not exist in the cache, this is not considered an error.
+ */
+int keycache_delete_jwks(const char *issuer, char **err_msg);
+
+/**
  * APIs for managing scitokens configuration parameters.
  */
 
@@ -453,6 +502,16 @@ int config_set_int(const char *key, int value, char **err_msg);
  * Takes in key/value pairs and assigns the input value to whatever
  * configuration variable is indicated by the key.
  * Returns 0 on success, and non-zero for invalid keys or values.
+ *
+ * Supported keys:
+ * - "keycache.update_interval_s": Interval between key cache updates (seconds)
+ * - "keycache.expiration_interval_s": Key cache expiration time (seconds)
+ * - "monitoring.file_interval_s": Interval between monitoring file writes
+ * (seconds, default 60)
+ * - "keycache.refresh_interval_ms": Background refresh thread check interval
+ * (milliseconds, default 60000)
+ * - "keycache.refresh_threshold_ms": Time before next_update when background
+ * refresh triggers (milliseconds, default 600000)
  */
 int scitoken_config_set_int(const char *key, int value, char **err_msg);
 
@@ -464,12 +523,30 @@ int config_get_int(const char *key, char **err_msg);
  * Returns the value associated with the supplied input key on success, and -1
  * on failure. This assumes there are no keys for which a negative return value
  * is permissible.
+ *
+ * Supported keys:
+ * - "keycache.update_interval_s": Interval between key cache updates (seconds)
+ * - "keycache.expiration_interval_s": Key cache expiration time (seconds)
+ * - "monitoring.file_interval_s": Interval between monitoring file writes
+ * (seconds, default 60)
+ * - "keycache.refresh_interval_ms": Background refresh thread check interval
+ * (milliseconds, default 60000)
+ * - "keycache.refresh_threshold_ms": Time before next_update when background
+ * refresh triggers (milliseconds, default 600000)
  */
 int scitoken_config_get_int(const char *key, char **err_msg);
 
 /**
  * Set current scitokens str parameters.
  * Returns 0 on success, nonzero on failure
+ *
+ * Supported keys:
+ * - "keycache.cache_home": Directory for the key cache
+ * - "tls.ca_file": Path to TLS CA certificate file
+ * - "monitoring.file": Path to write monitoring JSON (empty to disable, default
+ * disabled) When enabled, monitoring stats are written periodically during
+ * verify() calls. The write interval is controlled by
+ * "monitoring.file_interval_s".
  */
 int scitoken_config_set_str(const char *key, const char *value, char **err_msg);
 
@@ -477,8 +554,49 @@ int scitoken_config_set_str(const char *key, const char *value, char **err_msg);
  * Get current scitokens str parameters.
  * Returns 0 on success, nonzero on failure, and populates the value associated
  * with the input key to output.
+ *
+ * Supported keys:
+ * - "keycache.cache_home": Directory for the key cache
+ * - "tls.ca_file": Path to TLS CA certificate file
+ * - "monitoring.file": Path to write monitoring JSON (empty if disabled)
  */
 int scitoken_config_get_str(const char *key, char **output, char **err_msg);
+
+/**
+ * Get monitoring statistics as a JSON string.
+ * Returns a JSON object containing per-issuer validation statistics.
+ *
+ * Per-issuer statistics (under "issuers" key):
+ * - successful_validations: count of successful token validations
+ * - unsuccessful_validations: count of failed token validations
+ * - expired_tokens: count of expired tokens encountered
+ * - sync_validations_started: count of validations started via blocking API
+ * - async_validations_started: count of validations started via async API
+ * - sync_total_time_s: time spent in blocking verify() calls (updated every
+ * 50ms)
+ * - async_total_time_s: time spent in async validations (updated on completion)
+ * - total_validation_time_s: sum of sync and async time
+ * - successful_key_lookups: count of successful JWKS web refreshes
+ * - failed_key_lookups: count of failed JWKS web refreshes
+ * - failed_key_lookup_time_s: total time spent on failed key lookups
+ * - expired_keys: count of times keys expired before refresh completed
+ * - failed_refreshes: count of failed key refresh attempts (used cached keys)
+ * - stale_key_uses: count of times keys were used past their next_update time
+ *
+ * Failed issuer lookups (under "failed_issuer_lookups" key):
+ * - Per unknown issuer: count and total_time_s of failed lookup attempts
+ * - Limited to 100 entries to prevent resource exhaustion from DDoS attacks
+ *
+ * The returned string must be freed by the caller using free().
+ * Returns 0 on success, nonzero on failure.
+ */
+int scitoken_get_monitoring_json(char **json_out, char **err_msg);
+
+/**
+ * Reset all monitoring statistics.
+ * Returns 0 on success, nonzero on failure.
+ */
+int scitoken_reset_monitoring_stats(char **err_msg);
 
 #ifdef __cplusplus
 }

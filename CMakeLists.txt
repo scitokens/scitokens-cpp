@@ -44,11 +44,14 @@ pkg_check_modules(SQLITE REQUIRED sqlite3)
 
 endif()
 
-add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp)
+add_library(SciTokens SHARED src/scitokens.cpp src/scitokens_internal.cpp src/scitokens_cache.cpp src/scitokens_monitoring.cpp)
 target_compile_features(SciTokens PUBLIC cxx_std_11) # Use at least C++11 for building and when linking to scitokens
 target_include_directories(SciTokens PUBLIC ${JWT_CPP_INCLUDES} "${PROJECT_SOURCE_DIR}/src" PRIVATE ${CURL_INCLUDE_DIRS} ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS} ${SQLITE_INCLUDE_DIRS}  ${UUID_INCLUDE_DIRS})
 
-target_link_libraries(SciTokens PUBLIC ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES})
+# Find threading library
+find_package(Threads REQUIRED)
+
+target_link_libraries(SciTokens PUBLIC ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES} Threads::Threads)
 if (UNIX)
 # pkg_check_modules fails to return an absolute path on RHEL7.  Set the
 # link directories accordingly.
@@ -74,6 +77,11 @@ target_link_libraries(scitokens-list-access SciTokens)
 
 add_executable(scitokens-create src/create.cpp)
 target_link_libraries(scitokens-create SciTokens)
+
+
+add_executable(scitokens-generate-jwks src/generate_jwks.cpp)
+target_include_directories(scitokens-generate-jwks PRIVATE ${OPENSSL_INCLUDE_DIRS} ${LIBCRYPTO_INCLUDE_DIRS})
+target_link_libraries(scitokens-generate-jwks ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES})
 
 get_directory_property(TARGETS BUILDSYSTEM_TARGETS)
 install(

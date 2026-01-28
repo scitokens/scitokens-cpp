@@ -1,7 +1,7 @@
 # created by obsupdate.sh, do not edit by hand
-Debtransform-Tar: scitokens-cpp-1.1.3.tar.gz
+Debtransform-Tar: scitokens-cpp-1.3.0.tar.gz
 Format: 3.0
-Version: 1.1.3.1-2
+Version: 1.3.0.1-1
 Binary: scitokens-cpp
 Source: scitokens-cpp
 Section: science
