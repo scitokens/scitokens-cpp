@@ -1,0 +1,30 @@
+@PACKAGE_INIT@
+
+# Compute paths
+get_filename_component(SCITOKENS_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+
+# Dependencies
+include(CMakeFindDependencyMacro)
+find_dependency(CURL REQUIRED)
+find_dependency(Threads REQUIRED)
+
+if(APPLE)
+  find_dependency(OpenSSL REQUIRED)
+  find_dependency(Sqlite3 REQUIRED)
+else()
+  include(FindPkgConfig)
+  pkg_check_modules(LIBCRYPTO REQUIRED IMPORTED_TARGET libcrypto)
+  pkg_check_modules(OPENSSL REQUIRED IMPORTED_TARGET openssl)
+  pkg_check_modules(SQLITE REQUIRED IMPORTED_TARGET sqlite3)
+endif()
+
+# Import targets
+if(NOT TARGET SciTokens::SciTokens)
+  include("${SCITOKENS_CMAKE_DIR}/SciTokensTargets.cmake")
+endif()
+
+# Legacy variables for backward compatibility
+set(SCITOKENS_LIBRARIES SciTokens::SciTokens)
+set(SCITOKENS_INCLUDE_DIRS "@PACKAGE_INCLUDE_INSTALL_DIR@")
+
+check_required_components(SciTokens)
