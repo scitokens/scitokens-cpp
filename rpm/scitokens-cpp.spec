@@ -64,6 +64,7 @@ Requires: %{name}%{?_isa} = %{version}
 %{_libdir}/libSciTokens.so
 %{_includedir}/scitokens/scitokens.h
 %dir %{_includedir}/scitokens
+%{_libdir}/cmake/SciTokens/
 
 %changelog
 
