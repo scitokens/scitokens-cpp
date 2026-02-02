@@ -51,11 +51,12 @@ add_test(
   )
 
 # Integration test executable
+find_package( Atomic REQUIRED )
 add_executable(scitokens-integration-test integration_test.cpp)
 if( NOT SCITOKENS_EXTERNAL_GTEST )
     add_dependencies(scitokens-integration-test gtest)
 endif()
-target_link_libraries(scitokens-integration-test SciTokens "${LIBGTEST}" pthread)
+target_link_libraries(scitokens-integration-test SciTokens "${LIBGTEST}" pthread std::atomic)
 
 # Integration test fixture - setup
 add_test(
