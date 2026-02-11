@@ -1,7 +1,13 @@
 
+#include <cctype>
 #include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <iomanip>
 #include <memory>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include <pwd.h>
 #include <stdlib.h>
@@ -14,6 +20,9 @@
 #include <picojson/picojson.h>
 #include <sqlite3.h>
 
+#include <cmath>
+#include <openssl/sha.h>
+
 #include "scitokens_internal.h"
 
 namespace {
@@ -24,6 +33,290 @@ constexpr int SQLITE_BUSY_TIMEOUT_MS = 5000;
 
 // Default time before expiry when next_update should occur (4 hours)
 constexpr int64_t DEFAULT_NEXT_UPDATE_OFFSET_S = 4 * 3600;
+
+enum class CacheLookupResult { Found, NotFound, ParseError, Expired };
+
+bool json_to_int64(const picojson::value &val, int64_t &out) {
+    if (val.is<int64_t>()) {
+        out = val.get<int64_t>();
+        return true;
+    }
+    if (val.is<double>()) {
+        out = static_cast<int64_t>(std::floor(val.get<double>()));
+        return true;
+    }
+    return false;
+}
+
+std::string issuer_hash_prefix(const std::string &issuer) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256(reinterpret_cast<const unsigned char *>(issuer.data()),
+           issuer.size(), hash);
+
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (int i = 0; i < 4; i++) {
+        oss << std::setw(2) << static_cast<int>(hash[i]);
+    }
+    return oss.str();
+}
+
+bool extract_json_objects(const std::string &content,
+                          std::vector<std::string> &objects) {
+    size_t idx = 0;
+    const size_t len = content.size();
+
+    while (idx < len) {
+        while (idx < len && isspace(static_cast<unsigned char>(content[idx]))) {
+            idx++;
+        }
+        if (idx >= len) {
+            break;
+        }
+        if (content[idx] != '{') {
+            break; // Non-whitespace outside JSON terminates parsing
+        }
+
+        size_t start = idx;
+        int depth = 0;
+        bool in_string = false;
+        bool escape = false;
+        for (; idx < len; idx++) {
+            char c = content[idx];
+            if (in_string) {
+                if (escape) {
+                    escape = false;
+                    continue;
+                }
+                if (c == '\\') {
+                    escape = true;
+                } else if (c == '"') {
+                    in_string = false;
+                }
+            } else {
+                if (c == '"') {
+                    in_string = true;
+                } else if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0) {
+                        objects.emplace_back(
+                            content.substr(start, idx - start + 1));
+                        idx++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (depth != 0) {
+            return false; // Unbalanced braces
+        }
+    }
+    return true;
+}
+
+CacheLookupResult parse_cache_object_for_issuer(const picojson::value &val,
+                                                const std::string &issuer,
+                                                int64_t now,
+                                                picojson::value &keys,
+                                                int64_t &next_update) {
+    if (!val.is<picojson::object>()) {
+        return CacheLookupResult::ParseError;
+    }
+
+    const auto &root = val.get<picojson::object>();
+    auto issuer_it = root.find(issuer);
+    if (issuer_it == root.end()) {
+        return CacheLookupResult::NotFound;
+    }
+
+    if (!issuer_it->second.is<picojson::object>()) {
+        return CacheLookupResult::ParseError;
+    }
+
+    const auto &entry_obj = issuer_it->second.get<picojson::object>();
+
+    auto exp_it = entry_obj.find("expiration");
+    if (exp_it == entry_obj.end()) {
+        return CacheLookupResult::ParseError;
+    }
+
+    int64_t expiration;
+    if (!json_to_int64(exp_it->second, expiration)) {
+        return CacheLookupResult::ParseError;
+    }
+
+    auto jwks_it = entry_obj.find("jwks");
+    if (jwks_it == entry_obj.end() || !jwks_it->second.is<picojson::object>()) {
+        return CacheLookupResult::ParseError;
+    }
+
+    if (now > expiration) {
+        return CacheLookupResult::Expired;
+    }
+
+    int64_t nu_value = expiration - DEFAULT_NEXT_UPDATE_OFFSET_S;
+    auto nu_it = entry_obj.find("next_update");
+    if (nu_it != entry_obj.end()) {
+        int64_t tmp;
+        if (!json_to_int64(nu_it->second, tmp)) {
+            return CacheLookupResult::ParseError;
+        }
+        nu_value = tmp;
+    }
+
+    keys = jwks_it->second;
+    next_update = nu_value;
+    return CacheLookupResult::Found;
+}
+
+CacheLookupResult parse_cache_file_for_issuer(const std::string &path,
+                                              const std::string &issuer,
+                                              int64_t now,
+                                              picojson::value &keys,
+                                              int64_t &next_update) {
+    std::ifstream infile(path);
+    if (!infile) {
+        return CacheLookupResult::NotFound;
+    }
+
+    std::stringstream buffer;
+    buffer << infile.rdbuf();
+    std::string content = buffer.str();
+
+    std::vector<std::string> objects;
+    if (!extract_json_objects(content, objects)) {
+        return CacheLookupResult::ParseError;
+    }
+
+    CacheLookupResult status = CacheLookupResult::NotFound;
+    for (const auto &obj_str : objects) {
+        picojson::value val;
+        std::string err = picojson::parse(val, obj_str);
+        if (!err.empty()) {
+            return CacheLookupResult::ParseError;
+        }
+
+        auto res =
+            parse_cache_object_for_issuer(val, issuer, now, keys, next_update);
+        if (res == CacheLookupResult::ParseError) {
+            return res;
+        }
+        if (res == CacheLookupResult::Found) {
+            status = CacheLookupResult::Found;
+        } else if (res == CacheLookupResult::Expired &&
+                   status == CacheLookupResult::NotFound) {
+            status = CacheLookupResult::Expired;
+        }
+    }
+
+    return status;
+}
+
+CacheLookupResult parse_cache_dir_for_issuer(const std::string &dir,
+                                             const std::string &issuer,
+                                             int64_t now, picojson::value &keys,
+                                             int64_t &next_update) {
+    bool expired_seen = false;
+    auto prefix = issuer_hash_prefix(issuer);
+    for (int idx = 0;; idx++) {
+        std::ostringstream fname;
+        fname << dir << "/" << prefix << "." << idx;
+
+        struct stat st;
+        if (stat(fname.str().c_str(), &st) != 0) {
+            break; // First missing file terminates search
+        }
+        if (!S_ISREG(st.st_mode)) {
+            continue;
+        }
+
+        auto res = parse_cache_file_for_issuer(fname.str(), issuer, now, keys,
+                                               next_update);
+        if (res == CacheLookupResult::Found ||
+            res == CacheLookupResult::ParseError) {
+            return res;
+        }
+        if (res == CacheLookupResult::Expired) {
+            expired_seen = true;
+        }
+    }
+
+    if (expired_seen) {
+        return CacheLookupResult::Expired;
+    }
+    return CacheLookupResult::NotFound;
+}
+
+bool get_public_keys_from_system_cache(const std::string &issuer, int64_t now,
+                                       picojson::value &keys,
+                                       int64_t &next_update,
+                                       bool &expired_hit) {
+
+    expired_hit = false;
+
+    struct Location {
+        enum class Type { Dir, File } type;
+        std::string path;
+    };
+
+    std::vector<Location> search_order;
+    const char *env_dir = getenv("JWKS_CACHE_DIR");
+    const char *env_file = getenv("JWKS_CACHE_FILE");
+
+    if (env_dir && strlen(env_dir) > 0) {
+        search_order.push_back({Location::Type::Dir, env_dir});
+    }
+    if (env_file && strlen(env_file) > 0) {
+        search_order.push_back({Location::Type::File, env_file});
+    }
+
+    search_order.push_back({Location::Type::Dir, "/etc/jwks"});
+    search_order.push_back({Location::Type::File, "/etc/jwks/cache.json"});
+    search_order.push_back({Location::Type::Dir, "/var/cache/jwks"});
+    search_order.push_back(
+        {Location::Type::File, "/var/cache/jwks/cache.json"});
+
+    for (const auto &loc : search_order) {
+        struct stat st;
+        if (stat(loc.path.c_str(), &st) != 0) {
+            continue;
+        }
+
+        CacheLookupResult res = CacheLookupResult::NotFound;
+        if (loc.type == Location::Type::Dir) {
+            if (!S_ISDIR(st.st_mode)) {
+                continue;
+            }
+            res = parse_cache_dir_for_issuer(loc.path, issuer, now, keys,
+                                             next_update);
+        } else {
+            if (!S_ISREG(st.st_mode)) {
+                continue;
+            }
+            res = parse_cache_file_for_issuer(loc.path, issuer, now, keys,
+                                              next_update);
+        }
+
+        if (res == CacheLookupResult::Found) {
+            auto &stats = scitokens::internal::MonitoringStats::instance()
+                              .get_issuer_stats(issuer);
+            stats.inc_system_cache_hit();
+            return true;
+        }
+        if (res == CacheLookupResult::ParseError) {
+            throw scitokens::JsonException("Failed to parse JWKS cache at " +
+                                           loc.path);
+        }
+        if (res == CacheLookupResult::Expired) {
+            expired_hit = true;
+        }
+    }
+
+    return false;
+}
 
 void initialize_cachedb(const std::string &keycache_file) {
 
@@ -159,6 +452,23 @@ bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
                                                    int64_t now,
                                                    picojson::value &keys,
                                                    int64_t &next_update) {
+    bool expired_hit = false;
+    try {
+        if (get_public_keys_from_system_cache(issuer, now, keys, next_update,
+                                              expired_hit)) {
+            return true;
+        }
+    } catch (const JsonException &) {
+        throw;
+    }
+
+    if (expired_hit) {
+        auto &stats =
+            scitokens::internal::MonitoringStats::instance().get_issuer_stats(
+                issuer);
+        stats.inc_system_cache_expired();
+    }
+
     auto cache_fname = get_cache_file();
     if (cache_fname.size() == 0) {
         return false;
