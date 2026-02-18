@@ -30,6 +30,11 @@ constexpr int64_t DEFAULT_NEXT_UPDATE_OFFSET_S = 4 * 3600;
 const std::string IN_MEMORY_DB_URI =
     "file:scitokens_keycache?mode=memory&cache=shared";
 
+// Persistent connection that keeps the shared in-memory database alive.
+// Without this anchor, the database would be destroyed when the last
+// connection is closed between cache operations.
+sqlite3 *g_inmem_anchor = nullptr;
+
 // Open a SQLite database, using URI mode so that shared in-memory
 // databases are supported.
 int open_cachedb(const std::string &db_path, sqlite3 **db) {
@@ -37,6 +42,31 @@ int open_cachedb(const std::string &db_path, sqlite3 **db) {
                            SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |
                                SQLITE_OPEN_URI,
                            nullptr);
+}
+
+// Ensure the in-memory anchor connection is open and the table exists.
+void ensure_inmem_anchor() {
+    if (g_inmem_anchor) {
+        return;
+    }
+    int rc = open_cachedb(IN_MEMORY_DB_URI, &g_inmem_anchor);
+    if (rc != SQLITE_OK) {
+        if (g_inmem_anchor) {
+            sqlite3_close(g_inmem_anchor);
+            g_inmem_anchor = nullptr;
+        }
+        return;
+    }
+    sqlite3_busy_timeout(g_inmem_anchor, SQLITE_BUSY_TIMEOUT_MS);
+    char *err_msg = nullptr;
+    rc = sqlite3_exec(g_inmem_anchor,
+                      "CREATE TABLE IF NOT EXISTS keycache ("
+                      "issuer text UNIQUE PRIMARY KEY NOT NULL,"
+                      "keys text NOT NULL)",
+                      NULL, 0, &err_msg);
+    if (rc) {
+        sqlite3_free(err_msg);
+    }
 }
 
 void initialize_cachedb(const std::string &keycache_file) {
@@ -101,7 +131,7 @@ std::string get_cache_file() {
 
     if (cache_dir.size() == 0) {
         if (configurer::Configuration::get_allow_in_memory()) {
-            initialize_cachedb(IN_MEMORY_DB_URI);
+            ensure_inmem_anchor();
             return IN_MEMORY_DB_URI;
         }
         return "";
@@ -110,7 +140,7 @@ std::string get_cache_file() {
     int r = mkdir(cache_dir.c_str(), 0700);
     if ((r < 0) && errno != EEXIST) {
         if (configurer::Configuration::get_allow_in_memory()) {
-            initialize_cachedb(IN_MEMORY_DB_URI);
+            ensure_inmem_anchor();
             return IN_MEMORY_DB_URI;
         }
         return "";
@@ -120,7 +150,7 @@ std::string get_cache_file() {
     r = mkdir(keycache_dir.c_str(), 0700);
     if ((r < 0) && errno != EEXIST) {
         if (configurer::Configuration::get_allow_in_memory()) {
-            initialize_cachedb(IN_MEMORY_DB_URI);
+            ensure_inmem_anchor();
             return IN_MEMORY_DB_URI;
         }
         return "";
