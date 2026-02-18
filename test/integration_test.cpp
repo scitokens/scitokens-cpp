@@ -1893,18 +1893,29 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
         err_msg = nullptr;
     }
 
-    // Create a temporary directory, then make it non-writable
+    // Create a temporary directory, then a cache directory with no
+    // permissions. This matches common deployment misconfiguration cases.
     SecureTempDir temp_cache("unwritable_cache_");
     ASSERT_TRUE(temp_cache.valid())
         << "Failed to create temp cache directory";
+    std::string restricted_cache = temp_cache.path() + "/restricted_cache";
+    ASSERT_EQ(mkdir(restricted_cache.c_str(), 0700), 0)
+        << "Failed to create restricted cache directory";
+    ASSERT_EQ(chmod(restricted_cache.c_str(), 0000), 0)
+        << "Failed to remove permissions from cache directory";
 
-    // Remove all permissions so mkdir inside get_cache_file() will fail
-    int chmod_rv = chmod(temp_cache.path().c_str(), 0000);
-    ASSERT_EQ(chmod_rv, 0) << "Failed to chmod temp directory";
+    // If we can still write/lookup despite 0000 perms, we're likely running as
+    // a privileged user and this permission-based test is not meaningful.
+    if (access(restricted_cache.c_str(), W_OK | X_OK) == 0) {
+        chmod(restricted_cache.c_str(), 0700);
+        GTEST_SKIP() << "Permission-denied cache test requires non-privileged "
+                        "execution (directory with mode 0000 is still "
+                        "accessible).";
+    }
 
-    // Point the keycache at the non-writable directory
-    rv = scitoken_config_set_str("keycache.cache_home",
-                                 temp_cache.path().c_str(), &err_msg);
+    // Point the keycache at the non-writable directory.
+    rv = scitoken_config_set_str("keycache.cache_home", restricted_cache.c_str(),
+                                 &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
                      << (err_msg ? err_msg : "unknown");
     if (err_msg) {
@@ -1979,8 +1990,8 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
     EXPECT_NE(error_str.find("keycache"), std::string::npos)
         << "Error message should mention 'keycache', got: " << error_str;
 
-    // Restore permissions so SecureTempDir destructor can clean up
-    chmod(temp_cache.path().c_str(), 0700);
+    // Restore permissions so SecureTempDir destructor can clean up.
+    chmod(restricted_cache.c_str(), 0700);
 
     // Reset cache_home to default
     rv = scitoken_config_set_str("keycache.cache_home", "", &err_msg);
@@ -2003,17 +2014,29 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
         err_msg = nullptr;
     }
 
-    // Create a temporary directory, then make it non-writable
+    // Create a temporary directory, then a cache directory with no
+    // permissions. This matches common deployment misconfiguration cases.
     SecureTempDir temp_cache("inmem_cache_");
     ASSERT_TRUE(temp_cache.valid())
         << "Failed to create temp cache directory";
+    std::string restricted_cache = temp_cache.path() + "/restricted_cache";
+    ASSERT_EQ(mkdir(restricted_cache.c_str(), 0700), 0)
+        << "Failed to create restricted cache directory";
+    ASSERT_EQ(chmod(restricted_cache.c_str(), 0000), 0)
+        << "Failed to remove permissions from cache directory";
 
-    int chmod_rv = chmod(temp_cache.path().c_str(), 0000);
-    ASSERT_EQ(chmod_rv, 0) << "Failed to chmod temp directory";
+    // If we can still write/lookup despite 0000 perms, we're likely running as
+    // a privileged user and this permission-based test is not meaningful.
+    if (access(restricted_cache.c_str(), W_OK | X_OK) == 0) {
+        chmod(restricted_cache.c_str(), 0700);
+        GTEST_SKIP() << "Permission-denied cache fallback test requires "
+                        "non-privileged execution (directory with mode 0000 "
+                        "is still accessible).";
+    }
 
-    // Point the keycache at the non-writable directory
-    rv = scitoken_config_set_str("keycache.cache_home",
-                                 temp_cache.path().c_str(), &err_msg);
+    // Point the keycache at the non-writable directory.
+    rv = scitoken_config_set_str("keycache.cache_home", restricted_cache.c_str(),
+                                 &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
                      << (err_msg ? err_msg : "unknown");
     if (err_msg) {
@@ -2091,8 +2114,8 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
     EXPECT_EQ(std::string(value), issuer_url_);
     free(value);
 
-    // Restore permissions so SecureTempDir destructor can clean up
-    chmod(temp_cache.path().c_str(), 0700);
+    // Restore permissions so SecureTempDir destructor can clean up.
+    chmod(restricted_cache.c_str(), 0700);
 
     // Disable in-memory fallback and reset cache_home
     rv = scitoken_config_set_str("keycache.allow_in_memory", "false", &err_msg);
