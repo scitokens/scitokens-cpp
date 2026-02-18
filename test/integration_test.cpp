@@ -1879,6 +1879,107 @@ TEST_F(IntegrationTest, StressTestInvalidIssuer) {
     // unique_cache destructor will clean up the temporary cache directory
 }
 
+// Test that token verification fails with a clear keycache error message
+// when the cache directory is not writable.
+TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
+    char *err_msg = nullptr;
+
+    // Create a temporary directory, then make it non-writable
+    SecureTempDir temp_cache("unwritable_cache_");
+    ASSERT_TRUE(temp_cache.valid())
+        << "Failed to create temp cache directory";
+
+    // Remove all permissions so mkdir inside get_cache_file() will fail
+    int chmod_rv = chmod(temp_cache.path().c_str(), 0000);
+    ASSERT_EQ(chmod_rv, 0) << "Failed to chmod temp directory";
+
+    // Point the keycache at the non-writable directory
+    int rv = scitoken_config_set_str("keycache.cache_home",
+                                     temp_cache.path().c_str(), &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
+                     << (err_msg ? err_msg : "unknown");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a valid token that would normally verify successfully
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
+                                   &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv = scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv = scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Attempt to verify the token — should fail because the keycache is not
+    // writable and the library cannot read/write cached keys
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_NE(rv, 0) << "Deserialization should fail with unwritable cache dir";
+    ASSERT_TRUE(err_msg != nullptr) << "Error message should be set";
+    std::string error_str(err_msg);
+    free(err_msg);
+    err_msg = nullptr;
+
+    // The error message must mention "keycache" so operators can diagnose
+    // the problem (instead of a misleading "Timeout when loading OIDC metadata")
+    EXPECT_NE(error_str.find("keycache"), std::string::npos)
+        << "Error message should mention 'keycache', got: " << error_str;
+
+    // Restore permissions so SecureTempDir destructor can clean up
+    chmod(temp_cache.path().c_str(), 0700);
+
+    // Reset cache_home to default
+    rv = scitoken_config_set_str("keycache.cache_home", "", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg)
+        free(err_msg);
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
