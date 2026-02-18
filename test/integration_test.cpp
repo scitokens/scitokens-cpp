@@ -1885,8 +1885,8 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
     char *err_msg = nullptr;
 
     // Ensure allow_in_memory is disabled
-    int rv = scitoken_config_set_str("keycache.allow_in_memory", "false",
-                                     &err_msg);
+    int rv =
+        scitoken_config_set_str("keycache.allow_in_memory", "false", &err_msg);
     ASSERT_EQ(rv, 0);
     if (err_msg) {
         free(err_msg);
@@ -1896,8 +1896,7 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
     // Create a temporary directory, then a cache directory with no
     // permissions. This matches common deployment misconfiguration cases.
     SecureTempDir temp_cache("unwritable_cache_");
-    ASSERT_TRUE(temp_cache.valid())
-        << "Failed to create temp cache directory";
+    ASSERT_TRUE(temp_cache.valid()) << "Failed to create temp cache directory";
     std::string restricted_cache = temp_cache.path() + "/restricted_cache";
     ASSERT_EQ(mkdir(restricted_cache.c_str(), 0700), 0)
         << "Failed to create restricted cache directory";
@@ -1914,8 +1913,8 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
     }
 
     // Point the keycache at the non-writable directory.
-    rv = scitoken_config_set_str("keycache.cache_home", restricted_cache.c_str(),
-                                 &err_msg);
+    rv = scitoken_config_set_str("keycache.cache_home",
+                                 restricted_cache.c_str(), &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
                      << (err_msg ? err_msg : "unknown");
     if (err_msg) {
@@ -1946,14 +1945,16 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
         err_msg = nullptr;
     }
 
-    rv = scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
+    rv =
+        scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
     ASSERT_EQ(rv, 0);
     if (err_msg) {
         free(err_msg);
         err_msg = nullptr;
     }
 
-    rv = scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
+    rv =
+        scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
     ASSERT_EQ(rv, 0);
     if (err_msg) {
         free(err_msg);
@@ -1986,7 +1987,8 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
     err_msg = nullptr;
 
     // The error message must mention "keycache" so operators can diagnose
-    // the problem (instead of a misleading "Timeout when loading OIDC metadata")
+    // the problem (instead of a misleading "Timeout when loading OIDC
+    // metadata")
     EXPECT_NE(error_str.find("keycache"), std::string::npos)
         << "Error message should mention 'keycache', got: " << error_str;
 
@@ -2006,8 +2008,8 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
     char *err_msg = nullptr;
 
     // Enable in-memory keycache fallback
-    int rv = scitoken_config_set_str("keycache.allow_in_memory", "true",
-                                     &err_msg);
+    int rv =
+        scitoken_config_set_str("keycache.allow_in_memory", "true", &err_msg);
     ASSERT_EQ(rv, 0);
     if (err_msg) {
         free(err_msg);
@@ -2017,8 +2019,7 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
     // Create a temporary directory, then a cache directory with no
     // permissions. This matches common deployment misconfiguration cases.
     SecureTempDir temp_cache("inmem_cache_");
-    ASSERT_TRUE(temp_cache.valid())
-        << "Failed to create temp cache directory";
+    ASSERT_TRUE(temp_cache.valid()) << "Failed to create temp cache directory";
     std::string restricted_cache = temp_cache.path() + "/restricted_cache";
     ASSERT_EQ(mkdir(restricted_cache.c_str(), 0700), 0)
         << "Failed to create restricted cache directory";
@@ -2035,8 +2036,8 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
     }
 
     // Point the keycache at the non-writable directory.
-    rv = scitoken_config_set_str("keycache.cache_home", restricted_cache.c_str(),
-                                 &err_msg);
+    rv = scitoken_config_set_str("keycache.cache_home",
+                                 restricted_cache.c_str(), &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
                      << (err_msg ? err_msg : "unknown");
     if (err_msg) {
@@ -2067,14 +2068,16 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
         err_msg = nullptr;
     }
 
-    rv = scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
+    rv =
+        scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
     ASSERT_EQ(rv, 0);
     if (err_msg) {
         free(err_msg);
         err_msg = nullptr;
     }
 
-    rv = scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
+    rv =
+        scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
     ASSERT_EQ(rv, 0);
     if (err_msg) {
         free(err_msg);

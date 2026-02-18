@@ -1376,9 +1376,9 @@ int scitoken_config_get_str(const char *key, char **output, char **err_msg) {
     if (_key == "keycache.cache_home") {
         *output = strdup(configurer::Configuration::get_cache_home().c_str());
     } else if (_key == "keycache.allow_in_memory") {
-        *output = strdup(configurer::Configuration::get_allow_in_memory()
-                             ? "true"
-                             : "false");
+        *output =
+            strdup(configurer::Configuration::get_allow_in_memory() ? "true"
+                                                                    : "false");
     } else if (_key == "tls.ca_file") {
         *output = strdup(configurer::Configuration::get_tls_ca_file().c_str());
     } else if (_key == "monitoring.file") {

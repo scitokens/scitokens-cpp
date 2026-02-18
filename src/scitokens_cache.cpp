@@ -38,10 +38,9 @@ sqlite3 *g_inmem_anchor = nullptr;
 // Open a SQLite database, using URI mode so that shared in-memory
 // databases are supported.
 int open_cachedb(const std::string &db_path, sqlite3 **db) {
-    return sqlite3_open_v2(db_path.c_str(), db,
-                           SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |
-                               SQLITE_OPEN_URI,
-                           nullptr);
+    return sqlite3_open_v2(
+        db_path.c_str(), db,
+        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_URI, nullptr);
 }
 
 // Ensure the in-memory anchor connection is open and the table exists.
@@ -361,8 +360,8 @@ bool scitokens::Validator::store_public_keys(const std::string &issuer,
     int rc = open_cachedb(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
-        throw std::runtime_error(
-            "Failed to open the keycache for writing at " + cache_fname);
+        throw std::runtime_error("Failed to open the keycache for writing at " +
+                                 cache_fname);
     }
     // Set busy timeout to handle concurrent access
     sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
