@@ -1086,8 +1086,14 @@ Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status,
                 picojson::object keys_obj;
                 keys_obj["keys"] = picojson::value(picojson::array());
                 empty_keys = picojson::value(keys_obj);
-                store_public_keys(issuer, empty_keys, now + negative_cache_ttl,
-                                  now + negative_cache_ttl);
+                try {
+                    store_public_keys(issuer, empty_keys,
+                                      now + negative_cache_ttl,
+                                      now + negative_cache_ttl);
+                } catch (...) {
+                    // Ignore cache write errors during cleanup to avoid
+                    // masking the original exception
+                }
                 issuer_lock.unlock();
             }
             throw; // Re-throw the original exception

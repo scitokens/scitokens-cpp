@@ -161,14 +161,17 @@ bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
                                                    int64_t &next_update) {
     auto cache_fname = get_cache_file();
     if (cache_fname.size() == 0) {
-        return false;
+        throw std::runtime_error(
+            "Failed to open the keycache; unable to determine the "
+            "cache directory");
     }
 
     sqlite3 *db;
     int rc = sqlite3_open(cache_fname.c_str(), &db);
     if (rc) {
         sqlite3_close(db);
-        return false;
+        throw std::runtime_error("Failed to open the keycache at " +
+                                 cache_fname);
     }
     // Set busy timeout to handle concurrent access
     sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
@@ -291,14 +294,17 @@ bool scitokens::Validator::store_public_keys(const std::string &issuer,
 
     auto cache_fname = get_cache_file();
     if (cache_fname.size() == 0) {
-        return false;
+        throw std::runtime_error(
+            "Failed to open the keycache for writing; unable to determine the "
+            "cache directory");
     }
 
     sqlite3 *db;
     int rc = sqlite3_open(cache_fname.c_str(), &db);
     if (rc) {
         sqlite3_close(db);
-        return false;
+        throw std::runtime_error(
+            "Failed to open the keycache for writing at " + cache_fname);
     }
     // Set busy timeout to handle concurrent access
     sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
@@ -466,14 +472,17 @@ std::string scitokens::Validator::get_jwks_metadata(const std::string &issuer) {
     // Get the metadata from database without expiry check
     auto cache_fname = get_cache_file();
     if (cache_fname.size() == 0) {
-        throw std::runtime_error("Unable to access cache file");
+        throw std::runtime_error(
+            "Failed to open the keycache; unable to determine the "
+            "cache directory");
     }
 
     sqlite3 *db;
     int rc = sqlite3_open(cache_fname.c_str(), &db);
     if (rc) {
         sqlite3_close(db);
-        throw std::runtime_error("Failed to open cache database");
+        throw std::runtime_error("Failed to open the keycache at " +
+                                 cache_fname);
     }
     sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
 
