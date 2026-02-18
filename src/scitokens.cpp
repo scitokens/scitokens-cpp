@@ -43,11 +43,12 @@ void load_config_from_environment() {
         bool is_int;
     };
 
-    const std::array<ConfigMapping, 8> known_configs = {
+    const std::array<ConfigMapping, 9> known_configs = {
         {{"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
          {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S",
           true},
          {"keycache.cache_home", "KEYCACHE_CACHE_HOME", false},
+         {"keycache.allow_in_memory", "KEYCACHE_ALLOW_IN_MEMORY", false},
          {"tls.ca_file", "TLS_CA_FILE", false},
          {"monitoring.file", "MONITORING_FILE", false},
          {"monitoring.file_interval_s", "MONITORING_FILE_INTERVAL_S", true},
@@ -133,6 +134,7 @@ int configurer::Configuration::get_monitoring_file_interval() {
 
 // Background refresh config
 std::atomic_bool configurer::Configuration::m_background_refresh_enabled{false};
+std::atomic_bool configurer::Configuration::m_allow_in_memory{false};
 std::atomic_int configurer::Configuration::m_refresh_interval_ms{
     60000}; // 60 seconds
 std::atomic_int configurer::Configuration::m_refresh_threshold_ms{
@@ -1343,6 +1345,10 @@ int scitoken_config_set_str(const char *key, const char *value,
             }
             return -1;
         }
+    } else if (_key == "keycache.allow_in_memory") {
+        std::string val = value ? value : "";
+        bool enabled = (val == "1" || val == "true" || val == "yes");
+        configurer::Configuration::set_allow_in_memory(enabled);
     } else if (_key == "tls.ca_file") {
         configurer::Configuration::set_tls_ca_file(value ? std::string(value)
                                                          : "");
@@ -1369,6 +1375,10 @@ int scitoken_config_get_str(const char *key, char **output, char **err_msg) {
     std::string _key = key;
     if (_key == "keycache.cache_home") {
         *output = strdup(configurer::Configuration::get_cache_home().c_str());
+    } else if (_key == "keycache.allow_in_memory") {
+        *output = strdup(configurer::Configuration::get_allow_in_memory()
+                             ? "true"
+                             : "false");
     } else if (_key == "tls.ca_file") {
         *output = strdup(configurer::Configuration::get_tls_ca_file().c_str());
     } else if (_key == "monitoring.file") {

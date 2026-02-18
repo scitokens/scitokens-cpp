@@ -62,6 +62,14 @@ class Configuration {
         return m_monitoring_file_configured.load(std::memory_order_relaxed);
     }
 
+    // In-memory keycache fallback configuration
+    static void set_allow_in_memory(bool enabled) {
+        m_allow_in_memory.store(enabled, std::memory_order_relaxed);
+    }
+    static bool get_allow_in_memory() {
+        return m_allow_in_memory.load(std::memory_order_relaxed);
+    }
+
     // Background refresh configuration
     static void set_background_refresh_enabled(bool enabled) {
         m_background_refresh_enabled = enabled;
@@ -127,6 +135,7 @@ class Configuration {
     static std::atomic<bool> m_monitoring_file_configured; // Fast-path flag
     static std::atomic_int m_monitoring_file_interval; // In seconds, default 60
     static std::atomic_bool m_background_refresh_enabled;
+    static std::atomic_bool m_allow_in_memory;
     static std::atomic_int m_refresh_interval_ms;  // N milliseconds
     static std::atomic_int m_refresh_threshold_ms; // M milliseconds
     // static bool check_dir(const std::string dir_path);

@@ -25,10 +25,24 @@ constexpr int SQLITE_BUSY_TIMEOUT_MS = 5000;
 // Default time before expiry when next_update should occur (4 hours)
 constexpr int64_t DEFAULT_NEXT_UPDATE_OFFSET_S = 4 * 3600;
 
+// URI for the shared in-memory SQLite database used as fallback when
+// the file-based keycache is not writable
+const std::string IN_MEMORY_DB_URI =
+    "file:scitokens_keycache?mode=memory&cache=shared";
+
+// Open a SQLite database, using URI mode so that shared in-memory
+// databases are supported.
+int open_cachedb(const std::string &db_path, sqlite3 **db) {
+    return sqlite3_open_v2(db_path.c_str(), db,
+                           SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |
+                               SQLITE_OPEN_URI,
+                           nullptr);
+}
+
 void initialize_cachedb(const std::string &keycache_file) {
 
     sqlite3 *db;
-    int rc = sqlite3_open(keycache_file.c_str(), &db);
+    int rc = open_cachedb(keycache_file, &db);
     if (rc != SQLITE_OK) {
         std::cerr << "SQLite key cache creation failed." << std::endl;
         sqlite3_close(db);
@@ -55,6 +69,8 @@ void initialize_cachedb(const std::string &keycache_file) {
  *  2. $XDG_CACHE_HOME
  *  3. .cache subdirectory of home directory as returned by the password
  * database
+ *  4. If all of the above fail and keycache.allow_in_memory is true,
+ *     fall back to a shared in-memory SQLite database
  */
 std::string get_cache_file() {
 
@@ -84,17 +100,29 @@ std::string get_cache_file() {
     }
 
     if (cache_dir.size() == 0) {
+        if (configurer::Configuration::get_allow_in_memory()) {
+            initialize_cachedb(IN_MEMORY_DB_URI);
+            return IN_MEMORY_DB_URI;
+        }
         return "";
     }
 
     int r = mkdir(cache_dir.c_str(), 0700);
     if ((r < 0) && errno != EEXIST) {
+        if (configurer::Configuration::get_allow_in_memory()) {
+            initialize_cachedb(IN_MEMORY_DB_URI);
+            return IN_MEMORY_DB_URI;
+        }
         return "";
     }
 
     std::string keycache_dir = cache_dir + "/scitokens";
     r = mkdir(keycache_dir.c_str(), 0700);
     if ((r < 0) && errno != EEXIST) {
+        if (configurer::Configuration::get_allow_in_memory()) {
+            initialize_cachedb(IN_MEMORY_DB_URI);
+            return IN_MEMORY_DB_URI;
+        }
         return "";
     }
 
@@ -167,7 +195,7 @@ bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
     }
 
     sqlite3 *db;
-    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    int rc = open_cachedb(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
         throw std::runtime_error("Failed to open the keycache at " +
@@ -300,7 +328,7 @@ bool scitokens::Validator::store_public_keys(const std::string &issuer,
     }
 
     sqlite3 *db;
-    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    int rc = open_cachedb(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
         throw std::runtime_error(
@@ -367,7 +395,7 @@ scitokens::Validator::get_all_issuers_from_db(int64_t now) {
     }
 
     sqlite3 *db;
-    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    int rc = open_cachedb(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
         return result;
@@ -478,7 +506,7 @@ std::string scitokens::Validator::get_jwks_metadata(const std::string &issuer) {
     }
 
     sqlite3 *db;
-    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    int rc = open_cachedb(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
         throw std::runtime_error("Failed to open the keycache at " +
@@ -555,7 +583,7 @@ bool scitokens::Validator::delete_jwks(const std::string &issuer) {
     }
 
     sqlite3 *db;
-    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    int rc = open_cachedb(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
         return false;
