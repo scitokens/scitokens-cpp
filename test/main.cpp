@@ -790,6 +790,43 @@ TEST_F(KeycacheTest, SetGetConfiguredCacheHome) {
     // temp_cache destructor will clean up the directory
 }
 
+TEST_F(KeycacheTest, GetKeycacheLocation) {
+    SecureTempDir temp_cache("cache_location_test_");
+    ASSERT_TRUE(temp_cache.valid()) << "Failed to create temp directory";
+
+    char *err_msg = nullptr;
+    auto rv = scitoken_config_set_str("keycache.cache_home",
+                                      temp_cache.path().c_str(), &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    char *cache_file = nullptr;
+    int using_in_memory_fallback = -1;
+    rv = keycache_get_location(&cache_file, &using_in_memory_fallback,
+                               &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    ASSERT_TRUE(cache_file != nullptr);
+    EXPECT_EQ(using_in_memory_fallback, 0);
+
+    std::string expected_cache_file =
+        temp_cache.path() + "/scitokens/scitokens_cpp.sqlite";
+    EXPECT_EQ(std::string(cache_file), expected_cache_file);
+    free(cache_file);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv = scitoken_config_set_str("keycache.cache_home", "", &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    if (err_msg) {
+        free(err_msg);
+    }
+}
+
 TEST_F(KeycacheTest, InvalidConfigKeyTest) {
     char *err_msg = nullptr;
     int new_update_interval = 400;

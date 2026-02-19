@@ -1186,6 +1186,49 @@ int keycache_get_jwks_metadata(const char *issuer, char **metadata,
     return 0;
 }
 
+int keycache_get_location(char **cache_file, int *using_in_memory_fallback,
+                          char **err_msg) {
+    if (!cache_file) {
+        if (err_msg) {
+            *err_msg = strdup("Cache file output pointer may not be null.");
+        }
+        return -1;
+    }
+    if (!using_in_memory_fallback) {
+        if (err_msg) {
+            *err_msg = strdup("In-memory indicator pointer may not be null.");
+        }
+        return -1;
+    }
+
+    try {
+        std::string cache_location;
+        bool in_memory_fallback = false;
+        if (!scitokens::internal::get_keycache_location(cache_location,
+                                                        in_memory_fallback)) {
+            if (err_msg) {
+                *err_msg = strdup("Failed to determine keycache location.");
+            }
+            return -1;
+        }
+
+        *cache_file = strdup(cache_location.c_str());
+        if (!(*cache_file)) {
+            if (err_msg) {
+                *err_msg = strdup("Failed to allocate memory for keycache path.");
+            }
+            return -1;
+        }
+        *using_in_memory_fallback = in_memory_fallback ? 1 : 0;
+    } catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+    return 0;
+}
+
 int keycache_delete_jwks(const char *issuer, char **err_msg) {
     if (!issuer) {
         if (err_msg) {

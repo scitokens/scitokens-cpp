@@ -35,6 +35,12 @@ const std::string IN_MEMORY_DB_URI =
 // connection is closed between cache operations.
 sqlite3 *g_inmem_anchor = nullptr;
 
+struct CacheLocationInfo {
+    std::string cache_file;
+    std::string active_db_path;
+    bool using_in_memory_fallback{false};
+};
+
 // Open a SQLite database, using URI mode so that shared in-memory
 // databases are supported.
 int open_cachedb(const std::string &db_path, sqlite3 **db) {
@@ -101,8 +107,8 @@ void initialize_cachedb(const std::string &keycache_file) {
  *  4. If all of the above fail and keycache.allow_in_memory is true,
  *     fall back to a shared in-memory SQLite database
  */
-std::string get_cache_file() {
-
+CacheLocationInfo resolve_cache_location() {
+    CacheLocationInfo location_info;
     const char *xdg_cache_home = getenv("XDG_CACHE_HOME");
 
     auto bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
@@ -131,35 +137,68 @@ std::string get_cache_file() {
     if (cache_dir.size() == 0) {
         if (configurer::Configuration::get_allow_in_memory()) {
             ensure_inmem_anchor();
-            return IN_MEMORY_DB_URI;
+            location_info.active_db_path = IN_MEMORY_DB_URI;
+            location_info.using_in_memory_fallback = true;
         }
-        return "";
+        return location_info;
     }
+
+    std::string keycache_dir = cache_dir + "/scitokens";
+    location_info.cache_file = keycache_dir + "/scitokens_cpp.sqllite";
 
     int r = mkdir(cache_dir.c_str(), 0700);
     if ((r < 0) && errno != EEXIST) {
         if (configurer::Configuration::get_allow_in_memory()) {
             ensure_inmem_anchor();
-            return IN_MEMORY_DB_URI;
+            location_info.active_db_path = IN_MEMORY_DB_URI;
+            location_info.using_in_memory_fallback = true;
         }
-        return "";
+        return location_info;
     }
 
-    std::string keycache_dir = cache_dir + "/scitokens";
     r = mkdir(keycache_dir.c_str(), 0700);
     if ((r < 0) && errno != EEXIST) {
         if (configurer::Configuration::get_allow_in_memory()) {
             ensure_inmem_anchor();
-            return IN_MEMORY_DB_URI;
+            location_info.active_db_path = IN_MEMORY_DB_URI;
+            location_info.using_in_memory_fallback = true;
         }
-        return "";
+        return location_info;
     }
 
-    std::string keycache_file = keycache_dir + "/scitokens_cpp.sqllite";
-    initialize_cachedb(keycache_file);
+    initialize_cachedb(location_info.cache_file);
+    location_info.active_db_path = location_info.cache_file;
 
-    return keycache_file;
+    return location_info;
 }
+
+std::string get_cache_file() { return resolve_cache_location().active_db_path; }
+
+} // namespace
+
+bool scitokens::internal::get_keycache_location(
+    std::string &cache_file, bool &using_in_memory_fallback) {
+    auto location_info = resolve_cache_location();
+    using_in_memory_fallback = location_info.using_in_memory_fallback;
+
+    if (location_info.using_in_memory_fallback) {
+        // Report the expected on-disk file location when known; otherwise
+        // report the in-memory URI.
+        cache_file = location_info.cache_file.empty()
+                         ? location_info.active_db_path
+                         : location_info.cache_file;
+    } else {
+        // Prefer the active file path; if initialization failed, still surface
+        // the expected target path for diagnostics.
+        cache_file = location_info.active_db_path.empty()
+                         ? location_info.cache_file
+                         : location_info.active_db_path;
+    }
+
+    return !cache_file.empty();
+}
+
+namespace {
 
 // Remove a given issuer from the database.  Starts a new transaction
 // if `new_transaction` is true.

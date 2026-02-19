@@ -1922,6 +1922,21 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
         err_msg = nullptr;
     }
 
+    char *cache_file = nullptr;
+    int using_in_memory_fallback = -1;
+    rv = keycache_get_location(&cache_file, &using_in_memory_fallback, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "unknown");
+    ASSERT_TRUE(cache_file != nullptr);
+    EXPECT_EQ(using_in_memory_fallback, 0);
+    std::string expected_cache_file =
+        restricted_cache + "/scitokens/scitokens_cpp.sqlite";
+    EXPECT_EQ(std::string(cache_file), expected_cache_file);
+    free(cache_file);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
     // Create a valid token that would normally verify successfully
     std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
         scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
@@ -2040,6 +2055,21 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
                                  restricted_cache.c_str(), &err_msg);
     ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
                      << (err_msg ? err_msg : "unknown");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    char *cache_file = nullptr;
+    int using_in_memory_fallback = -1;
+    rv = keycache_get_location(&cache_file, &using_in_memory_fallback, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "unknown");
+    ASSERT_TRUE(cache_file != nullptr);
+    EXPECT_EQ(using_in_memory_fallback, 1);
+    std::string expected_cache_file =
+        restricted_cache + "/scitokens/scitokens_cpp.sqlite";
+    EXPECT_EQ(std::string(cache_file), expected_cache_file);
+    free(cache_file);
     if (err_msg) {
         free(err_msg);
         err_msg = nullptr;

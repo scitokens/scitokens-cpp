@@ -484,6 +484,19 @@ int keycache_get_jwks_metadata(const char *issuer, char **metadata,
                                char **err_msg);
 
 /**
+ * Get keycache location information.
+ * - Returns 0 on success, nonzero on failure.
+ * - `cache_file` is an output variable set to the expected on-disk cache file
+ *   path. If no file path can be determined, this may be set to an in-memory
+ *   SQLite URI.
+ * - `using_in_memory_fallback` is set to 1 if the library is using in-memory
+ *   SQLite fallback because file-based cache writes were unavailable; otherwise
+ *   0.
+ */
+int keycache_get_location(char **cache_file, int *using_in_memory_fallback,
+                          char **err_msg);
+
+/**
  * Delete a JWKS entry from the keycache.
  * - Returns 0 if successful, nonzero on failure.
  * - If the issuer does not exist in the cache, this is not considered an error.

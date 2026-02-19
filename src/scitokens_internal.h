@@ -152,6 +152,11 @@ namespace internal {
 // Forward declaration
 class MonitoringStats;
 
+// Returns the keycache file location that SciTokens should use (or attempt to
+// use) and whether SQLite is currently using in-memory fallback mode.
+bool get_keycache_location(std::string &cache_file,
+                           bool &using_in_memory_fallback);
+
 /**
  * Manages the background thread for refreshing JWKS.
  * This is a singleton that starts/stops a background thread which periodically
