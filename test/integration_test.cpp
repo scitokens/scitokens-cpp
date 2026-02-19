@@ -25,6 +25,71 @@ using scitokens_test::SecureTempDir;
 
 namespace {
 
+// RAII guard that restores keycache configuration on destruction.
+// Ensures test cleanup happens even when GTEST_SKIP() or ASSERT_* aborts.
+class KeycacheConfigGuard {
+  public:
+    KeycacheConfigGuard() = default;
+    ~KeycacheConfigGuard() {
+        char *err_msg = nullptr;
+        if (restore_allow_in_memory_) {
+            scitoken_config_set_str("keycache.allow_in_memory",
+                                    original_allow_in_memory_.c_str(),
+                                    &err_msg);
+            if (err_msg)
+                free(err_msg);
+        }
+        if (restore_cache_home_) {
+            scitoken_config_set_str("keycache.cache_home",
+                                    original_cache_home_.c_str(), &err_msg);
+            if (err_msg)
+                free(err_msg);
+        }
+        if (!chmod_path_.empty()) {
+            chmod(chmod_path_.c_str(), 0700);
+        }
+    }
+
+    void save_allow_in_memory() {
+        char *val = nullptr;
+        char *err_msg = nullptr;
+        scitoken_config_get_str("keycache.allow_in_memory", &val, &err_msg);
+        if (val) {
+            original_allow_in_memory_ = val;
+            free(val);
+        }
+        if (err_msg)
+            free(err_msg);
+        restore_allow_in_memory_ = true;
+    }
+
+    void save_cache_home() {
+        char *val = nullptr;
+        char *err_msg = nullptr;
+        scitoken_config_get_str("keycache.cache_home", &val, &err_msg);
+        if (val) {
+            original_cache_home_ = val;
+            free(val);
+        }
+        if (err_msg)
+            free(err_msg);
+        restore_cache_home_ = true;
+    }
+
+    void set_chmod_restore(const std::string &path) { chmod_path_ = path; }
+
+    // Non-copyable
+    KeycacheConfigGuard(const KeycacheConfigGuard &) = delete;
+    KeycacheConfigGuard &operator=(const KeycacheConfigGuard &) = delete;
+
+  private:
+    bool restore_allow_in_memory_{false};
+    bool restore_cache_home_{false};
+    std::string original_allow_in_memory_;
+    std::string original_cache_home_;
+    std::string chmod_path_;
+};
+
 // Helper class to parse monitoring JSON
 class MonitoringStats {
   public:
@@ -1877,6 +1942,282 @@ TEST_F(IntegrationTest, StressTestInvalidIssuer) {
         << TEST_DURATION_MS << "ms";
 
     // unique_cache destructor will clean up the temporary cache directory
+}
+
+// Test that token verification fails with a clear keycache error message
+// when the cache directory is not writable and allow_in_memory is NOT set.
+TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
+    char *err_msg = nullptr;
+
+    // RAII guard ensures config is restored even on GTEST_SKIP/ASSERT abort
+    KeycacheConfigGuard config_guard;
+    config_guard.save_allow_in_memory();
+    config_guard.save_cache_home();
+
+    // Ensure allow_in_memory is disabled
+    int rv =
+        scitoken_config_set_str("keycache.allow_in_memory", "false", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a temporary directory, then a cache directory with no
+    // permissions. This matches common deployment misconfiguration cases.
+    SecureTempDir temp_cache("unwritable_cache_");
+    ASSERT_TRUE(temp_cache.valid()) << "Failed to create temp cache directory";
+    std::string restricted_cache = temp_cache.path() + "/restricted_cache";
+    ASSERT_EQ(mkdir(restricted_cache.c_str(), 0700), 0)
+        << "Failed to create restricted cache directory";
+    ASSERT_EQ(chmod(restricted_cache.c_str(), 0000), 0)
+        << "Failed to remove permissions from cache directory";
+    config_guard.set_chmod_restore(restricted_cache);
+
+    // If we can still write/lookup despite 0000 perms, we're likely running as
+    // a privileged user and this permission-based test is not meaningful.
+    if (access(restricted_cache.c_str(), W_OK | X_OK) == 0) {
+        GTEST_SKIP() << "Permission-denied cache test requires non-privileged "
+                        "execution (directory with mode 0000 is still "
+                        "accessible).";
+    }
+
+    // Point the keycache at the non-writable directory.
+    rv = scitoken_config_set_str("keycache.cache_home",
+                                 restricted_cache.c_str(), &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
+                     << (err_msg ? err_msg : "unknown");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    char *cache_file = nullptr;
+    int using_in_memory_fallback = -1;
+    rv =
+        keycache_get_location(&cache_file, &using_in_memory_fallback, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "unknown");
+    ASSERT_TRUE(cache_file != nullptr);
+    EXPECT_EQ(using_in_memory_fallback, 0);
+    std::string expected_cache_file =
+        restricted_cache + "/scitokens/scitokens_cpp.sqllite";
+    EXPECT_EQ(std::string(cache_file), expected_cache_file);
+    free(cache_file);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a valid token that would normally verify successfully
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
+                                   &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv =
+        scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv =
+        scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Attempt to verify the token — should fail because the keycache is not
+    // writable and the library cannot read/write cached keys
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_NE(rv, 0) << "Deserialization should fail with unwritable cache dir";
+    ASSERT_TRUE(err_msg != nullptr) << "Error message should be set";
+    std::string error_str(err_msg);
+    free(err_msg);
+    err_msg = nullptr;
+
+    // The error message must mention "keycache" so operators can diagnose
+    // the problem (instead of a misleading "Timeout when loading OIDC
+    // metadata")
+    EXPECT_NE(error_str.find("keycache"), std::string::npos)
+        << "Error message should mention 'keycache', got: " << error_str;
+
+    // config_guard destructor restores permissions and config
+}
+
+// Test that token verification succeeds using an in-memory SQLite database
+// when the cache directory is not writable and allow_in_memory is enabled.
+TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
+    char *err_msg = nullptr;
+
+    // RAII guard ensures config is restored even on GTEST_SKIP/ASSERT abort
+    KeycacheConfigGuard config_guard;
+    config_guard.save_allow_in_memory();
+    config_guard.save_cache_home();
+
+    // Enable in-memory keycache fallback
+    int rv =
+        scitoken_config_set_str("keycache.allow_in_memory", "true", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a temporary directory, then a cache directory with no
+    // permissions. This matches common deployment misconfiguration cases.
+    SecureTempDir temp_cache("inmem_cache_");
+    ASSERT_TRUE(temp_cache.valid()) << "Failed to create temp cache directory";
+    std::string restricted_cache = temp_cache.path() + "/restricted_cache";
+    ASSERT_EQ(mkdir(restricted_cache.c_str(), 0700), 0)
+        << "Failed to create restricted cache directory";
+    ASSERT_EQ(chmod(restricted_cache.c_str(), 0000), 0)
+        << "Failed to remove permissions from cache directory";
+    config_guard.set_chmod_restore(restricted_cache);
+
+    // If we can still write/lookup despite 0000 perms, we're likely running as
+    // a privileged user and this permission-based test is not meaningful.
+    if (access(restricted_cache.c_str(), W_OK | X_OK) == 0) {
+        GTEST_SKIP() << "Permission-denied cache fallback test requires "
+                        "non-privileged execution (directory with mode 0000 "
+                        "is still accessible).";
+    }
+
+    // Point the keycache at the non-writable directory.
+    rv = scitoken_config_set_str("keycache.cache_home",
+                                 restricted_cache.c_str(), &err_msg);
+    ASSERT_EQ(rv, 0) << "Failed to set cache_home: "
+                     << (err_msg ? err_msg : "unknown");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    char *cache_file = nullptr;
+    int using_in_memory_fallback = -1;
+    rv =
+        keycache_get_location(&cache_file, &using_in_memory_fallback, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "unknown");
+    ASSERT_TRUE(cache_file != nullptr);
+    EXPECT_EQ(using_in_memory_fallback, 1);
+    std::string expected_cache_file =
+        restricted_cache + "/scitokens/scitokens_cpp.sqllite";
+    EXPECT_EQ(std::string(cache_file), expected_cache_file);
+    free(cache_file);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Create a valid token
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+        scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                            private_key_.c_str(), &err_msg),
+        scitoken_key_destroy);
+    ASSERT_TRUE(key.get() != nullptr);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+        scitoken_create(key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+
+    rv = scitoken_set_claim_string(token.get(), "iss", issuer_url_.c_str(),
+                                   &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv =
+        scitoken_set_claim_string(token.get(), "sub", "test-subject", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    rv =
+        scitoken_set_claim_string(token.get(), "scope", "read:/test", &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    scitoken_set_lifetime(token.get(), 3600);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Verify the token — should succeed because the in-memory cache is used
+    std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+        scitoken_create(nullptr), scitoken_destroy);
+    ASSERT_TRUE(verify_token.get() != nullptr);
+
+    rv = scitoken_deserialize_v2(token_value, verify_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_EQ(rv, 0) << "Deserialization should succeed with in-memory cache: "
+                     << (err_msg ? err_msg : "unknown error");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Verify we can read back the claims
+    char *value = nullptr;
+    rv = scitoken_get_claim_string(verify_token.get(), "iss", &value, &err_msg);
+    ASSERT_EQ(rv, 0);
+    ASSERT_TRUE(value != nullptr);
+    EXPECT_EQ(std::string(value), issuer_url_);
+    free(value);
+
+    // config_guard destructor restores permissions and config
 }
 
 } // namespace

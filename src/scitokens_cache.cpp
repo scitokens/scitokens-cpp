@@ -1,6 +1,9 @@
 
+#include <cerrno>
 #include <cstdint>
+#include <cstring>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include <pwd.h>
@@ -25,10 +28,100 @@ constexpr int SQLITE_BUSY_TIMEOUT_MS = 5000;
 // Default time before expiry when next_update should occur (4 hours)
 constexpr int64_t DEFAULT_NEXT_UPDATE_OFFSET_S = 4 * 3600;
 
+// URI for the shared in-memory SQLite database used as fallback when
+// the file-based keycache is not writable
+const std::string IN_MEMORY_DB_URI =
+    "file:scitokens_keycache?mode=memory&cache=shared";
+
+// Persistent connection that keeps the shared in-memory database alive.
+// Without this anchor, the database would be destroyed when the last
+// connection is closed between cache operations.
+sqlite3 *g_inmem_anchor = nullptr;
+std::once_flag g_inmem_once;
+bool g_inmem_ready = false;
+
+struct CacheLocationInfo {
+    std::string cache_file;
+    std::string active_db_path;
+    std::string error_detail;
+    bool using_in_memory_fallback{false};
+};
+
+// Open a SQLite database, using URI mode so that shared in-memory
+// databases are supported.
+int open_cachedb(const std::string &db_path, sqlite3 **db) {
+    return sqlite3_open_v2(
+        db_path.c_str(), db,
+        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_URI, nullptr);
+}
+
+// Ensure the in-memory anchor connection is open and the table exists.
+// Thread-safe via std::call_once.  Returns true only if the shared
+// in-memory database is actually usable.
+bool ensure_inmem_anchor() {
+    std::call_once(g_inmem_once, [] {
+        int rc = open_cachedb(IN_MEMORY_DB_URI, &g_inmem_anchor);
+        if (rc != SQLITE_OK) {
+            if (g_inmem_anchor) {
+                sqlite3_close(g_inmem_anchor);
+                g_inmem_anchor = nullptr;
+            }
+            return;
+        }
+        sqlite3_busy_timeout(g_inmem_anchor, SQLITE_BUSY_TIMEOUT_MS);
+        char *err_msg = nullptr;
+        rc = sqlite3_exec(g_inmem_anchor,
+                          "CREATE TABLE IF NOT EXISTS keycache ("
+                          "issuer text UNIQUE PRIMARY KEY NOT NULL,"
+                          "keys text NOT NULL)",
+                          NULL, 0, &err_msg);
+        if (rc) {
+            sqlite3_free(err_msg);
+            sqlite3_close(g_inmem_anchor);
+            g_inmem_anchor = nullptr;
+            return;
+        }
+        g_inmem_ready = true;
+    });
+    return g_inmem_ready;
+}
+
+// Try to fall back to the in-memory database when allow_in_memory is enabled.
+// Returns true if fallback succeeded and db_path was changed.
+bool try_inmem_fallback(std::string &db_path) {
+    if (!configurer::Configuration::get_allow_in_memory()) {
+        return false;
+    }
+    if (!ensure_inmem_anchor()) {
+        return false;
+    }
+    db_path = IN_MEMORY_DB_URI;
+    return true;
+}
+
+// Open a SQLite cache database.  When the file-based path is not
+// accessible and keycache.allow_in_memory is enabled, transparently
+// retries with the shared in-memory database.
+int open_cachedb_with_fallback(std::string &db_path, sqlite3 **db) {
+    int rc = open_cachedb(db_path, db);
+    if (rc == SQLITE_OK) {
+        return rc;
+    }
+    // File-based open failed; try in-memory fallback.
+    if (*db) {
+        sqlite3_close(*db);
+        *db = nullptr;
+    }
+    if (try_inmem_fallback(db_path)) {
+        rc = open_cachedb(db_path, db);
+    }
+    return rc;
+}
+
 void initialize_cachedb(const std::string &keycache_file) {
 
     sqlite3 *db;
-    int rc = sqlite3_open(keycache_file.c_str(), &db);
+    int rc = open_cachedb(keycache_file, &db);
     if (rc != SQLITE_OK) {
         std::cerr << "SQLite key cache creation failed." << std::endl;
         sqlite3_close(db);
@@ -55,9 +148,11 @@ void initialize_cachedb(const std::string &keycache_file) {
  *  2. $XDG_CACHE_HOME
  *  3. .cache subdirectory of home directory as returned by the password
  * database
+ *  4. If all of the above fail and keycache.allow_in_memory is true,
+ *     fall back to a shared in-memory SQLite database
  */
-std::string get_cache_file() {
-
+CacheLocationInfo resolve_cache_location() {
+    CacheLocationInfo location_info;
     const char *xdg_cache_home = getenv("XDG_CACHE_HOME");
 
     auto bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
@@ -84,25 +179,68 @@ std::string get_cache_file() {
     }
 
     if (cache_dir.size() == 0) {
-        return "";
-    }
-
-    int r = mkdir(cache_dir.c_str(), 0700);
-    if ((r < 0) && errno != EEXIST) {
-        return "";
+        if (try_inmem_fallback(location_info.active_db_path)) {
+            location_info.using_in_memory_fallback = true;
+        }
+        return location_info;
     }
 
     std::string keycache_dir = cache_dir + "/scitokens";
-    r = mkdir(keycache_dir.c_str(), 0700);
+    location_info.cache_file = keycache_dir + "/scitokens_cpp.sqllite";
+
+    int r = mkdir(cache_dir.c_str(), 0700);
     if ((r < 0) && errno != EEXIST) {
-        return "";
+        location_info.error_detail =
+            "mkdir(" + cache_dir + "): " + strerror(errno);
+        if (try_inmem_fallback(location_info.active_db_path)) {
+            location_info.using_in_memory_fallback = true;
+        }
+        return location_info;
     }
 
-    std::string keycache_file = keycache_dir + "/scitokens_cpp.sqllite";
-    initialize_cachedb(keycache_file);
+    r = mkdir(keycache_dir.c_str(), 0700);
+    if ((r < 0) && errno != EEXIST) {
+        location_info.error_detail =
+            "mkdir(" + keycache_dir + "): " + strerror(errno);
+        if (try_inmem_fallback(location_info.active_db_path)) {
+            location_info.using_in_memory_fallback = true;
+        }
+        return location_info;
+    }
 
-    return keycache_file;
+    initialize_cachedb(location_info.cache_file);
+    location_info.active_db_path = location_info.cache_file;
+
+    return location_info;
 }
+
+std::string get_cache_file() { return resolve_cache_location().active_db_path; }
+
+} // namespace
+
+bool scitokens::internal::get_keycache_location(
+    std::string &cache_file, bool &using_in_memory_fallback) {
+    auto location_info = resolve_cache_location();
+    using_in_memory_fallback = location_info.using_in_memory_fallback;
+
+    if (location_info.using_in_memory_fallback) {
+        // Report the expected on-disk file location when known; otherwise
+        // report the in-memory URI.
+        cache_file = location_info.cache_file.empty()
+                         ? location_info.active_db_path
+                         : location_info.cache_file;
+    } else {
+        // Prefer the active file path; if initialization failed, still surface
+        // the expected target path for diagnostics.
+        cache_file = location_info.active_db_path.empty()
+                         ? location_info.cache_file
+                         : location_info.active_db_path;
+    }
+
+    return !cache_file.empty();
+}
+
+namespace {
 
 // Remove a given issuer from the database.  Starts a new transaction
 // if `new_transaction` is true.
@@ -159,16 +297,27 @@ bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
                                                    int64_t now,
                                                    picojson::value &keys,
                                                    int64_t &next_update) {
-    auto cache_fname = get_cache_file();
+    auto location = resolve_cache_location();
+    auto cache_fname = location.active_db_path;
     if (cache_fname.size() == 0) {
-        return false;
+        std::string msg =
+            "Failed to open the keycache; unable to determine the "
+            "cache directory";
+        if (!location.cache_file.empty()) {
+            msg += " (target: " + location.cache_file + ")";
+        }
+        if (!location.error_detail.empty()) {
+            msg += ": " + location.error_detail;
+        }
+        throw std::runtime_error(msg);
     }
 
     sqlite3 *db;
-    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    int rc = open_cachedb_with_fallback(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
-        return false;
+        throw std::runtime_error("Failed to open the keycache at " +
+                                 cache_fname);
     }
     // Set busy timeout to handle concurrent access
     sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
@@ -289,16 +438,27 @@ bool scitokens::Validator::store_public_keys(const std::string &issuer,
     picojson::value db_value(top_obj);
     std::string db_str = db_value.serialize();
 
-    auto cache_fname = get_cache_file();
+    auto location = resolve_cache_location();
+    auto cache_fname = location.active_db_path;
     if (cache_fname.size() == 0) {
-        return false;
+        std::string msg =
+            "Failed to open the keycache for writing; unable to determine the "
+            "cache directory";
+        if (!location.cache_file.empty()) {
+            msg += " (target: " + location.cache_file + ")";
+        }
+        if (!location.error_detail.empty()) {
+            msg += ": " + location.error_detail;
+        }
+        throw std::runtime_error(msg);
     }
 
     sqlite3 *db;
-    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    int rc = open_cachedb_with_fallback(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
-        return false;
+        throw std::runtime_error("Failed to open the keycache for writing at " +
+                                 cache_fname);
     }
     // Set busy timeout to handle concurrent access
     sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
@@ -361,7 +521,7 @@ scitokens::Validator::get_all_issuers_from_db(int64_t now) {
     }
 
     sqlite3 *db;
-    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    int rc = open_cachedb_with_fallback(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
         return result;
@@ -464,16 +624,27 @@ std::string scitokens::Validator::get_jwks_metadata(const std::string &issuer) {
     int64_t expires = -1;
 
     // Get the metadata from database without expiry check
-    auto cache_fname = get_cache_file();
+    auto location = resolve_cache_location();
+    auto cache_fname = location.active_db_path;
     if (cache_fname.size() == 0) {
-        throw std::runtime_error("Unable to access cache file");
+        std::string msg =
+            "Failed to open the keycache; unable to determine the "
+            "cache directory";
+        if (!location.cache_file.empty()) {
+            msg += " (target: " + location.cache_file + ")";
+        }
+        if (!location.error_detail.empty()) {
+            msg += ": " + location.error_detail;
+        }
+        throw std::runtime_error(msg);
     }
 
     sqlite3 *db;
-    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    int rc = open_cachedb_with_fallback(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
-        throw std::runtime_error("Failed to open cache database");
+        throw std::runtime_error("Failed to open the keycache at " +
+                                 cache_fname);
     }
     sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
 
@@ -546,7 +717,7 @@ bool scitokens::Validator::delete_jwks(const std::string &issuer) {
     }
 
     sqlite3 *db;
-    int rc = sqlite3_open(cache_fname.c_str(), &db);
+    int rc = open_cachedb_with_fallback(cache_fname, &db);
     if (rc) {
         sqlite3_close(db);
         return false;
