@@ -25,6 +25,70 @@ using scitokens_test::SecureTempDir;
 
 namespace {
 
+// RAII guard that restores keycache configuration on destruction.
+// Ensures test cleanup happens even when GTEST_SKIP() or ASSERT_* aborts.
+class KeycacheConfigGuard {
+  public:
+    KeycacheConfigGuard() = default;
+    ~KeycacheConfigGuard() {
+        char *err_msg = nullptr;
+        if (restore_allow_in_memory_) {
+            scitoken_config_set_str("keycache.allow_in_memory",
+                                   original_allow_in_memory_.c_str(), &err_msg);
+            if (err_msg)
+                free(err_msg);
+        }
+        if (restore_cache_home_) {
+            scitoken_config_set_str("keycache.cache_home",
+                                   original_cache_home_.c_str(), &err_msg);
+            if (err_msg)
+                free(err_msg);
+        }
+        if (!chmod_path_.empty()) {
+            chmod(chmod_path_.c_str(), 0700);
+        }
+    }
+
+    void save_allow_in_memory() {
+        char *val = nullptr;
+        char *err_msg = nullptr;
+        scitoken_config_get_str("keycache.allow_in_memory", &val, &err_msg);
+        if (val) {
+            original_allow_in_memory_ = val;
+            free(val);
+        }
+        if (err_msg)
+            free(err_msg);
+        restore_allow_in_memory_ = true;
+    }
+
+    void save_cache_home() {
+        char *val = nullptr;
+        char *err_msg = nullptr;
+        scitoken_config_get_str("keycache.cache_home", &val, &err_msg);
+        if (val) {
+            original_cache_home_ = val;
+            free(val);
+        }
+        if (err_msg)
+            free(err_msg);
+        restore_cache_home_ = true;
+    }
+
+    void set_chmod_restore(const std::string &path) { chmod_path_ = path; }
+
+    // Non-copyable
+    KeycacheConfigGuard(const KeycacheConfigGuard &) = delete;
+    KeycacheConfigGuard &operator=(const KeycacheConfigGuard &) = delete;
+
+  private:
+    bool restore_allow_in_memory_{false};
+    bool restore_cache_home_{false};
+    std::string original_allow_in_memory_;
+    std::string original_cache_home_;
+    std::string chmod_path_;
+};
+
 // Helper class to parse monitoring JSON
 class MonitoringStats {
   public:
@@ -1884,6 +1948,11 @@ TEST_F(IntegrationTest, StressTestInvalidIssuer) {
 TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
     char *err_msg = nullptr;
 
+    // RAII guard ensures config is restored even on GTEST_SKIP/ASSERT abort
+    KeycacheConfigGuard config_guard;
+    config_guard.save_allow_in_memory();
+    config_guard.save_cache_home();
+
     // Ensure allow_in_memory is disabled
     int rv =
         scitoken_config_set_str("keycache.allow_in_memory", "false", &err_msg);
@@ -1902,11 +1971,11 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
         << "Failed to create restricted cache directory";
     ASSERT_EQ(chmod(restricted_cache.c_str(), 0000), 0)
         << "Failed to remove permissions from cache directory";
+    config_guard.set_chmod_restore(restricted_cache);
 
     // If we can still write/lookup despite 0000 perms, we're likely running as
     // a privileged user and this permission-based test is not meaningful.
     if (access(restricted_cache.c_str(), W_OK | X_OK) == 0) {
-        chmod(restricted_cache.c_str(), 0700);
         GTEST_SKIP() << "Permission-denied cache test requires non-privileged "
                         "execution (directory with mode 0000 is still "
                         "accessible).";
@@ -2008,20 +2077,18 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
     EXPECT_NE(error_str.find("keycache"), std::string::npos)
         << "Error message should mention 'keycache', got: " << error_str;
 
-    // Restore permissions so SecureTempDir destructor can clean up.
-    chmod(restricted_cache.c_str(), 0700);
-
-    // Reset cache_home to default
-    rv = scitoken_config_set_str("keycache.cache_home", "", &err_msg);
-    ASSERT_EQ(rv, 0);
-    if (err_msg)
-        free(err_msg);
+    // config_guard destructor restores permissions and config
 }
 
 // Test that token verification succeeds using an in-memory SQLite database
 // when the cache directory is not writable and allow_in_memory is enabled.
 TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
     char *err_msg = nullptr;
+
+    // RAII guard ensures config is restored even on GTEST_SKIP/ASSERT abort
+    KeycacheConfigGuard config_guard;
+    config_guard.save_allow_in_memory();
+    config_guard.save_cache_home();
 
     // Enable in-memory keycache fallback
     int rv =
@@ -2041,11 +2108,11 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
         << "Failed to create restricted cache directory";
     ASSERT_EQ(chmod(restricted_cache.c_str(), 0000), 0)
         << "Failed to remove permissions from cache directory";
+    config_guard.set_chmod_restore(restricted_cache);
 
     // If we can still write/lookup despite 0000 perms, we're likely running as
     // a privileged user and this permission-based test is not meaningful.
     if (access(restricted_cache.c_str(), W_OK | X_OK) == 0) {
-        chmod(restricted_cache.c_str(), 0700);
         GTEST_SKIP() << "Permission-denied cache fallback test requires "
                         "non-privileged execution (directory with mode 0000 "
                         "is still accessible).";
@@ -2149,21 +2216,7 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
     EXPECT_EQ(std::string(value), issuer_url_);
     free(value);
 
-    // Restore permissions so SecureTempDir destructor can clean up.
-    chmod(restricted_cache.c_str(), 0700);
-
-    // Disable in-memory fallback and reset cache_home
-    rv = scitoken_config_set_str("keycache.allow_in_memory", "false", &err_msg);
-    ASSERT_EQ(rv, 0);
-    if (err_msg) {
-        free(err_msg);
-        err_msg = nullptr;
-    }
-
-    rv = scitoken_config_set_str("keycache.cache_home", "", &err_msg);
-    ASSERT_EQ(rv, 0);
-    if (err_msg)
-        free(err_msg);
+    // config_guard destructor restores permissions and config
 }
 
 } // namespace
