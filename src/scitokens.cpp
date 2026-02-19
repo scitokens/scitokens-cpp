@@ -1215,7 +1215,8 @@ int keycache_get_location(char **cache_file, int *using_in_memory_fallback,
         *cache_file = strdup(cache_location.c_str());
         if (!(*cache_file)) {
             if (err_msg) {
-                *err_msg = strdup("Failed to allocate memory for keycache path.");
+                *err_msg =
+                    strdup("Failed to allocate memory for keycache path.");
             }
             return -1;
         }
@@ -1389,7 +1390,7 @@ int scitoken_config_set_str(const char *key, const char *value,
             return -1;
         }
     } else if (_key == "keycache.allow_in_memory") {
-        std::string val = value ? value : "";
+        std::string val = value ? to_lowercase(value) : "";
         bool enabled = (val == "1" || val == "true" || val == "yes");
         configurer::Configuration::set_allow_in_memory(enabled);
     } else if (_key == "tls.ca_file") {

@@ -1924,7 +1924,8 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
 
     char *cache_file = nullptr;
     int using_in_memory_fallback = -1;
-    rv = keycache_get_location(&cache_file, &using_in_memory_fallback, &err_msg);
+    rv =
+        keycache_get_location(&cache_file, &using_in_memory_fallback, &err_msg);
     ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "unknown");
     ASSERT_TRUE(cache_file != nullptr);
     EXPECT_EQ(using_in_memory_fallback, 0);
@@ -2062,7 +2063,8 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
 
     char *cache_file = nullptr;
     int using_in_memory_fallback = -1;
-    rv = keycache_get_location(&cache_file, &using_in_memory_fallback, &err_msg);
+    rv =
+        keycache_get_location(&cache_file, &using_in_memory_fallback, &err_msg);
     ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "unknown");
     ASSERT_TRUE(cache_file != nullptr);
     EXPECT_EQ(using_in_memory_fallback, 1);
