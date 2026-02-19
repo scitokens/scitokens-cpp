@@ -812,7 +812,7 @@ TEST_F(KeycacheTest, GetKeycacheLocation) {
     EXPECT_EQ(using_in_memory_fallback, 0);
 
     std::string expected_cache_file =
-        temp_cache.path() + "/scitokens/scitokens_cpp.sqlite";
+        temp_cache.path() + "/scitokens/scitokens_cpp.sqllite";
     EXPECT_EQ(std::string(cache_file), expected_cache_file);
     free(cache_file);
     if (err_msg) {

@@ -1929,7 +1929,7 @@ TEST_F(IntegrationTest, VerifyFailsWithUnwritableCacheDir) {
     ASSERT_TRUE(cache_file != nullptr);
     EXPECT_EQ(using_in_memory_fallback, 0);
     std::string expected_cache_file =
-        restricted_cache + "/scitokens/scitokens_cpp.sqlite";
+        restricted_cache + "/scitokens/scitokens_cpp.sqllite";
     EXPECT_EQ(std::string(cache_file), expected_cache_file);
     free(cache_file);
     if (err_msg) {
@@ -2067,7 +2067,7 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
     ASSERT_TRUE(cache_file != nullptr);
     EXPECT_EQ(using_in_memory_fallback, 1);
     std::string expected_cache_file =
-        restricted_cache + "/scitokens/scitokens_cpp.sqlite";
+        restricted_cache + "/scitokens/scitokens_cpp.sqllite";
     EXPECT_EQ(std::string(cache_file), expected_cache_file);
     free(cache_file);
     if (err_msg) {
