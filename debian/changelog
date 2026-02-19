@@ -1,3 +1,15 @@
+scitokens-cpp (1.4.0-1) unstable; urgency=medium
+
+  * Add keycache.allow_in_memory config option with in-memory SQLite fallback
+  * Add persistent anchor connection for shared in-memory SQLite database
+  * Improve error messages when keycache file cannot be read or written
+  * Add integration test for keycache not-writable error message
+  * Improve cache directory permission tests to handle common deployment misconfigurations
+  * Implement keycache location retrieval and update library to 0.0.3
+  * Fix typo in SQLite file extension in integration and main tests
+
+ -- Derek Weitzel <dweitzel@unl.edu>  Wed, 19 Feb 2026 00:00:00 +0000
+
 scitokens-cpp (1.3.0-1) unstable; urgency=medium
 
   * Add scitokens-generate-jwks CLI for key generation in https://github.com/scitokens/scitokens-cpp/pull/186
