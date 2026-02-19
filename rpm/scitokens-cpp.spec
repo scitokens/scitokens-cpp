@@ -1,6 +1,6 @@
 Name: scitokens-cpp
 Version: 1.4.0
-Release: 1%{?dist}
+Release: 2%{?dist}
 Summary: C++ Implementation of the SciTokens Library
 License: ASL 2.0
 URL: https://github.com/scitokens/scitokens-cpp
@@ -67,7 +67,7 @@ Requires: %{name}%{?_isa} = %{version}
 
 %changelog
 
-* Wed Feb 19 2026 Derek Weitzel <dweitzel@unl.edu> - 1.4.0-1
+* Thu Feb 19 2026 Derek Weitzel <dweitzel@unl.edu> - 1.4.0-2
 - Add keycache.allow_in_memory config option with in-memory SQLite fallback
 - Add persistent anchor connection for shared in-memory SQLite database
 - Improve error messages when keycache file cannot be read or written
