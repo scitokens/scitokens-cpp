@@ -34,13 +34,14 @@ class KeycacheConfigGuard {
         char *err_msg = nullptr;
         if (restore_allow_in_memory_) {
             scitoken_config_set_str("keycache.allow_in_memory",
-                                   original_allow_in_memory_.c_str(), &err_msg);
+                                    original_allow_in_memory_.c_str(),
+                                    &err_msg);
             if (err_msg)
                 free(err_msg);
         }
         if (restore_cache_home_) {
             scitoken_config_set_str("keycache.cache_home",
-                                   original_cache_home_.c_str(), &err_msg);
+                                    original_cache_home_.c_str(), &err_msg);
             if (err_msg)
                 free(err_msg);
         }
