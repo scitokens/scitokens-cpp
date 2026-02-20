@@ -20,7 +20,7 @@ Source0: https://github.com/scitokens/scitokens-cpp/releases/download/v%{version
 
 BuildRequires: gcc-c++
 BuildRequires: make
-BuildRequires: cmake3
+BuildRequires: cmake
 BuildRequires: sqlite-devel
 BuildRequires: openssl-devel
 BuildRequires: libcurl-devel
@@ -45,11 +45,11 @@ Requires: %{name}%{?_isa} = %{version}
 %setup -q
 
 %build
-%cmake3
-%cmake3_build
+%cmake
+%cmake_build
 
 %install
-%cmake3_install
+%cmake_install
 
 # Run the ldconfig
 %ldconfig_scriptlets
@@ -66,6 +66,8 @@ Requires: %{name}%{?_isa} = %{version}
 %dir %{_includedir}/scitokens
 
 %changelog
+* Thu Feb 19 2026 Derek Weitzel <dweitzel@unl.edu> - 1.4.0-3
+- Remove cmake3 macros and bogus date in changelog
 
 * Thu Feb 19 2026 Derek Weitzel <dweitzel@unl.edu> - 1.4.0-2
 - Add keycache.allow_in_memory config option with in-memory SQLite fallback
