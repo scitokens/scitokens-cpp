@@ -555,6 +555,9 @@ int scitoken_config_get_int(const char *key, char **err_msg);
  *
  * Supported keys:
  * - "keycache.cache_home": Directory for the key cache
+ * - "keycache.allow_in_memory": Whether to allow in-memory key caching
+ *   (case-insensitive "1", "true", or "yes" enables; any other value
+ *   disables)
  * - "tls.ca_file": Path to TLS CA certificate file
  * - "monitoring.file": Path to write monitoring JSON (empty to disable, default
  * disabled) When enabled, monitoring stats are written periodically during
@@ -570,6 +573,8 @@ int scitoken_config_set_str(const char *key, const char *value, char **err_msg);
  *
  * Supported keys:
  * - "keycache.cache_home": Directory for the key cache
+ * - "keycache.allow_in_memory": "true" if in-memory key caching is enabled,
+ *   "false" otherwise
  * - "tls.ca_file": Path to TLS CA certificate file
  * - "monitoring.file": Path to write monitoring JSON (empty if disabled)
  */
