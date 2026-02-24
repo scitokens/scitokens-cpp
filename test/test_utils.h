@@ -40,9 +40,10 @@ class SecureTempDir {
                 base = std::string(binary_dir) + "/tests";
             } else {
                 // Fallback: use current working directory + tests
-                char cwd[PATH_MAX];
-                if (getcwd(cwd, sizeof(cwd))) {
+                char *cwd = getcwd(nullptr, 0);
+                if (cwd) {
                     base = std::string(cwd) + "/tests";
+                    free(cwd);
                 } else {
                     base = "/tmp"; // Last resort fallback
                 }
