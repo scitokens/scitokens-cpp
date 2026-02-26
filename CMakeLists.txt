@@ -24,6 +24,7 @@ endif()
 include(GNUInstallDirs)
 
 find_package( jwt-cpp REQUIRED )
+find_package( Atomic REQUIRED )
 find_package( CURL REQUIRED )
 find_package( UUID REQUIRED )
 
@@ -51,7 +52,7 @@ target_include_directories(SciTokens PUBLIC ${JWT_CPP_INCLUDES} "${PROJECT_SOURC
 # Find threading library
 find_package(Threads REQUIRED)
 
-target_link_libraries(SciTokens PUBLIC ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES} Threads::Threads)
+target_link_libraries(SciTokens PUBLIC ${OPENSSL_LIBRARIES} ${LIBCRYPTO_LIBRARIES} ${CURL_LIBRARIES} ${SQLITE_LIBRARIES} ${UUID_LIBRARIES} Threads::Threads std::atomic)
 if (UNIX)
 # pkg_check_modules fails to return an absolute path on RHEL7.  Set the
 # link directories accordingly.
