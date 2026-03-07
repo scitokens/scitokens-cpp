@@ -951,10 +951,12 @@ std::string Validator::get_jwks(const std::string &issuer) {
 
 bool Validator::refresh_jwks(const std::string &issuer) {
     picojson::value keys;
-    unsigned timeout = std::max(
-        static_cast<unsigned>(
-            configurer::Configuration::get_jwks_download_timeout()),
-        internal::SimpleCurlGet::extended_timeout);
+    int configured_timeout =
+        configurer::Configuration::get_jwks_download_timeout();
+    unsigned timeout =
+        std::max(configured_timeout > 0 ? static_cast<unsigned>(configured_timeout)
+                                        : internal::SimpleCurlGet::default_timeout,
+                 internal::SimpleCurlGet::extended_timeout);
     std::unique_ptr<scitokens::AsyncStatus> status =
         get_public_keys_from_web(issuer, timeout);
     while (!status->m_done) {
