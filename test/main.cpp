@@ -1432,6 +1432,60 @@ TEST_F(EnvConfigTest, StringConfigFromEnv) {
     // temp_cache destructor will clean up the directory
 }
 
+TEST_F(EnvConfigTest, JwksDownloadTimeoutConfig) {
+    char *err_msg = nullptr;
+
+    // Verify default value is 4 seconds
+    int default_val =
+        scitoken_config_get_int("jwks.download_timeout_s", &err_msg);
+    EXPECT_EQ(default_val, 4) << (err_msg ? err_msg : "");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Set a custom value
+    int test_value = 10;
+    auto rv = scitoken_config_set_int("jwks.download_timeout_s", test_value,
+                                      &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Verify the value was set
+    int retrieved =
+        scitoken_config_get_int("jwks.download_timeout_s", &err_msg);
+    EXPECT_EQ(retrieved, test_value) << (err_msg ? err_msg : "");
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Setting zero should fail
+    rv = scitoken_config_set_int("jwks.download_timeout_s", 0, &err_msg);
+    EXPECT_NE(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Setting negative should fail
+    rv = scitoken_config_set_int("jwks.download_timeout_s", -1, &err_msg);
+    EXPECT_NE(rv, 0);
+    if (err_msg) {
+        free(err_msg);
+        err_msg = nullptr;
+    }
+
+    // Restore default
+    rv = scitoken_config_set_int("jwks.download_timeout_s", 4, &err_msg);
+    ASSERT_EQ(rv, 0) << (err_msg ? err_msg : "");
+    if (err_msg)
+        free(err_msg);
+}
+
 // Test for thundering herd prevention with per-issuer locks
 TEST_F(IssuerSecurityTest, ThunderingHerdPrevention) {
     char *err_msg = nullptr;
