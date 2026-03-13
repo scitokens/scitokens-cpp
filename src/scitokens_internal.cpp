@@ -699,37 +699,136 @@ std::string rs256_from_coords(const std::string &e_str,
  * '/a/b/c'
  */
 std::string normalize_absolute_path(const std::string &path) {
-    if ((path == "//") || (path == "/") || (path == "")) {
-        return "/";
-    }
-    std::vector<std::string> path_components;
-    auto path_iter = path.begin();
-    while (path_iter != path.end()) {
-        while (*path_iter == '/') {
-            path_iter++;
-        }
-        auto next_path_iter = std::find(path_iter, path.end(), '/');
-        std::string component;
-        component.reserve(std::distance(path_iter, next_path_iter));
-        component.assign(path_iter, next_path_iter);
-        path_components.push_back(component);
-        path_iter = next_path_iter;
-    }
     std::vector<std::string> path_components_filtered;
-    path_components_filtered.reserve(path_components.size());
-    for (const auto &component : path_components) {
+    std::stringstream path_stream(path);
+    std::string component;
+    while (std::getline(path_stream, component, '/')) {
         if (component == "..") {
-            path_components_filtered.pop_back();
+            if (!path_components_filtered.empty()) {
+                path_components_filtered.pop_back();
+            }
         } else if (!component.empty() && component != ".") {
             path_components_filtered.push_back(component);
         }
     }
-    std::stringstream ss;
-    for (const auto &component : path_components_filtered) {
-        ss << "/" << component;
+
+    std::stringstream normalized_path;
+    for (const auto &normalized_component : path_components_filtered) {
+        normalized_path << "/" << normalized_component;
     }
-    std::string result = ss.str();
+
+    std::string result = normalized_path.str();
     return result.empty() ? "/" : result;
+}
+
+std::string percent_decode_once(const std::string &input, bool &changed) {
+    std::string output;
+    output.reserve(input.size());
+    changed = false;
+
+    auto hex_to_int = [](char value) {
+        if (value >= '0' && value <= '9') {
+            return value - '0';
+        }
+        if (value >= 'a' && value <= 'f') {
+            return 10 + (value - 'a');
+        }
+        if (value >= 'A' && value <= 'F') {
+            return 10 + (value - 'A');
+        }
+        return -1;
+    };
+
+    for (size_t idx = 0; idx < input.size(); ++idx) {
+        if (input[idx] == '%' && idx + 2 < input.size()) {
+            int upper = hex_to_int(input[idx + 1]);
+            int lower = hex_to_int(input[idx + 2]);
+            if (upper >= 0 && lower >= 0) {
+                output.push_back(static_cast<char>((upper << 4) | lower));
+                changed = true;
+                idx += 2;
+                continue;
+            }
+        }
+        output.push_back(input[idx]);
+    }
+
+    return output;
+}
+
+bool normalize_scope_path_strict(const std::string &raw_path,
+                                 std::string &normalized_path) {
+    constexpr size_t MAX_SCOPE_DECODE_PASSES = 4;
+
+    std::vector<std::string> path_components_filtered;
+    std::stringstream path_stream(raw_path);
+    std::string raw_component;
+    while (std::getline(path_stream, raw_component, '/')) {
+        std::string decoded_component = raw_component;
+        for (size_t pass = 0; pass < MAX_SCOPE_DECODE_PASSES; ++pass) {
+            bool changed = false;
+            decoded_component = percent_decode_once(decoded_component, changed);
+            if (decoded_component == "..") {
+                return false;
+            }
+            if (!changed) {
+                break;
+            }
+        }
+
+        // If we still have percent-encodings after the allowed decode passes,
+        // reject the component to prevent downstream decoders from turning it
+        // into a traversal such as ".." later.
+        if (decoded_component.find('%') != std::string::npos) {
+            return false;
+        }
+
+        // Scope paths are attacker-controlled token input and must not gain
+        // broader access while being decoded and canonicalized.
+
+        // After decoding, components must not contain path separators or NULs.
+        // Otherwise, an encoded slash could be reintroduced as a real path
+        // segment (e.g., "foo%2F..%2Fbar" -> "foo/../bar"), or "%00" could
+        // produce a NUL that causes later C-string truncation.
+        if (decoded_component.find('/') != std::string::npos ||
+            decoded_component.find('\\') != std::string::npos ||
+            decoded_component.find('\0') != std::string::npos) {
+            return false;
+        }
+
+        if (decoded_component == "..") {
+            return false;
+        }
+        if (!decoded_component.empty() && decoded_component != ".") {
+            path_components_filtered.push_back(decoded_component);
+        }
+    }
+
+    std::stringstream canonical_path;
+    for (const auto &component : path_components_filtered) {
+        canonical_path << "/" << component;
+    }
+    normalized_path = canonical_path.str();
+    if (normalized_path.empty()) {
+        normalized_path = "/";
+    }
+    return true;
+}
+
+bool path_matches_scope(const std::string &requested_path,
+                        const std::string &authorized_path) {
+    // Scope matching must respect path segment boundaries so "/john" does not
+    // authorize sibling paths such as "/johnathan".
+    if (authorized_path == "/") {
+        return true;
+    }
+    if (requested_path == authorized_path) {
+        return true;
+    }
+    return requested_path.size() > authorized_path.size() &&
+           requested_path.compare(0, authorized_path.size(), authorized_path) ==
+               0 &&
+           requested_path[authorized_path.size()] == '/';
 }
 
 } // namespace
@@ -1329,7 +1428,9 @@ bool scitokens::Enforcer::scope_validator(const jwt::claim &claim,
         } else {
             path = full_authz.substr((++sep_iter));
         }
-        path = normalize_absolute_path(path);
+        if (!normalize_scope_path_strict(path, path)) {
+            return false;
+        }
 
         // If we are in compatibility mode and this is a WLCG token, then
         // translate the authorization names to utilize the SciToken-style
@@ -1363,7 +1464,7 @@ bool scitokens::Enforcer::scope_validator(const jwt::claim &claim,
                 me->m_gen_acls.emplace_back(alt_authz, path);
         } else if (((me->m_test_authz == authz) ||
                     (!alt_authz.empty() && (me->m_test_authz == alt_authz))) &&
-                   (requested_path.substr(0, path.size()) == path)) {
+                   path_matches_scope(requested_path, path)) {
             return true;
         }
 
@@ -1376,7 +1477,7 @@ bool scitokens::Enforcer::scope_validator(const jwt::claim &claim,
         if (me->m_test_authz.empty()) {
             me->m_gen_acls.emplace_back("condor", "/WRITE");
         } else if ((me->m_test_authz == "condor") &&
-                   (requested_path.substr(0, 6) == "/WRITE")) {
+                   path_matches_scope(requested_path, "/WRITE")) {
             return true;
         }
     }
