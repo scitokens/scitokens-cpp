@@ -431,16 +431,16 @@ TEST_F(SerializeTest, EnforcerScopeRespectsPathBoundaries) {
         acl.authz = "read";
         acl.resource = resource;
 
-        int acl_rv = enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
+        int acl_rv =
+            enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
         if (allowed) {
             EXPECT_EQ(acl_rv, 0) << (err_msg ? err_msg : "unexpected denial");
             EXPECT_EQ(err_msg, nullptr);
         } else {
             EXPECT_EQ(acl_rv, -1);
             ASSERT_NE(err_msg, nullptr);
-            EXPECT_STREQ(
-                err_msg,
-                "token verification failed: 'scope' claim verification failed.");
+            EXPECT_STREQ(err_msg, "token verification failed: 'scope' claim "
+                                  "verification failed.");
         }
         free(err_msg);
         err_msg = nullptr;
@@ -529,16 +529,16 @@ TEST_F(SerializeTest, EnforcerCompatWriteScopeRespectsPathBoundaries) {
         acl.authz = "condor";
         acl.resource = resource;
 
-        int acl_rv = enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
+        int acl_rv =
+            enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
         if (allowed) {
             EXPECT_EQ(acl_rv, 0) << (err_msg ? err_msg : "unexpected denial");
             EXPECT_EQ(err_msg, nullptr);
         } else {
             EXPECT_EQ(acl_rv, -1);
             ASSERT_NE(err_msg, nullptr);
-            EXPECT_STREQ(
-                err_msg,
-                "token verification failed: 'scope' claim verification failed.");
+            EXPECT_STREQ(err_msg, "token verification failed: 'scope' claim "
+                                  "verification failed.");
         }
         free(err_msg);
         err_msg = nullptr;
@@ -590,15 +590,13 @@ TEST_F(SerializeTest, EnforcerRejectsTraversalInScopePaths) {
 
         local_rv = enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
         if (allowed) {
-            EXPECT_EQ(local_rv, 0)
-                << (err_msg ? err_msg : "unexpected denial");
+            EXPECT_EQ(local_rv, 0) << (err_msg ? err_msg : "unexpected denial");
             EXPECT_EQ(err_msg, nullptr);
         } else {
             EXPECT_EQ(local_rv, -1);
             ASSERT_NE(err_msg, nullptr);
-            EXPECT_STREQ(
-                err_msg,
-                "token verification failed: 'scope' claim verification failed.");
+            EXPECT_STREQ(err_msg, "token verification failed: 'scope' claim "
+                                  "verification failed.");
         }
         free(err_msg);
         err_msg = nullptr;
