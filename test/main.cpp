@@ -396,6 +396,265 @@ TEST_F(SerializeTest, EnforcerScopeTest) {
     ASSERT_TRUE(found_write);
 }
 
+TEST_F(SerializeTest, EnforcerScopeRespectsPathBoundaries) {
+    char *err_msg = nullptr;
+
+    auto rv = scitoken_set_claim_string(
+        m_token.get(), "aud", "https://demo.scitokens.org/", &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest",
+                                    &m_audiences_array[0], &err_msg);
+    ASSERT_TRUE(enforcer != nullptr) << err_msg;
+
+    rv = scitoken_set_claim_string(m_token.get(), "scope", "read:/john",
+                                   &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    rv = scitoken_set_claim_string(m_token.get(), "ver", "scitoken:2.0",
+                                   &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    free(err_msg);
+    err_msg = nullptr;
+
+    auto expect_access = [&](const char *resource, bool allowed) {
+        Acl acl;
+        acl.authz = "read";
+        acl.resource = resource;
+
+        int acl_rv =
+            enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
+        if (allowed) {
+            EXPECT_EQ(acl_rv, 0) << (err_msg ? err_msg : "unexpected denial");
+            EXPECT_EQ(err_msg, nullptr);
+        } else {
+            EXPECT_EQ(acl_rv, -1);
+            ASSERT_NE(err_msg, nullptr);
+            EXPECT_STREQ(err_msg, "token verification failed: 'scope' claim "
+                                  "verification failed.");
+        }
+        free(err_msg);
+        err_msg = nullptr;
+    };
+
+    expect_access("/john", true);
+    expect_access("/john/file", true);
+    expect_access("/johnathan", false);
+    expect_access("/johnny", false);
+
+    enforcer_destroy(enforcer);
+}
+
+TEST_F(SerializeTest, EnforcerRootScopeAllowsNormalizedAbsolutePaths) {
+    char *err_msg = nullptr;
+
+    auto rv = scitoken_set_claim_string(
+        m_token.get(), "aud", "https://demo.scitokens.org/", &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest",
+                                    &m_audiences_array[0], &err_msg);
+    ASSERT_TRUE(enforcer != nullptr) << err_msg;
+
+    rv = scitoken_set_claim_string(m_token.get(), "scope", "read:/", &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    rv = scitoken_set_claim_string(m_token.get(), "ver", "scitoken:2.0",
+                                   &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    free(err_msg);
+    err_msg = nullptr;
+
+    Acl acl;
+    acl.authz = "read";
+    acl.resource = "/users/alice/project/file.txt";
+
+    rv = enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
+    EXPECT_EQ(rv, 0) << (err_msg ? err_msg : "unexpected denial");
+    EXPECT_EQ(err_msg, nullptr);
+    free(err_msg);
+
+    enforcer_destroy(enforcer);
+}
+
+TEST_F(SerializeTest, EnforcerCompatWriteScopeRespectsPathBoundaries) {
+    char *err_msg = nullptr;
+
+    auto rv = scitoken_set_claim_string(
+        m_token.get(), "aud", "https://demo.scitokens.org/", &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest",
+                                    &m_audiences_array[0], &err_msg);
+    ASSERT_TRUE(enforcer != nullptr) << err_msg;
+
+    scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::WLCG_1_0);
+    rv = scitoken_set_claim_string(m_token.get(), "scope",
+                                   "compute.modify compute.create "
+                                   "compute.cancel",
+                                   &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    free(err_msg);
+    err_msg = nullptr;
+
+    auto expect_access = [&](const char *resource, bool allowed) {
+        Acl acl;
+        acl.authz = "condor";
+        acl.resource = resource;
+
+        int acl_rv =
+            enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
+        if (allowed) {
+            EXPECT_EQ(acl_rv, 0) << (err_msg ? err_msg : "unexpected denial");
+            EXPECT_EQ(err_msg, nullptr);
+        } else {
+            EXPECT_EQ(acl_rv, -1);
+            ASSERT_NE(err_msg, nullptr);
+            EXPECT_STREQ(err_msg, "token verification failed: 'scope' claim "
+                                  "verification failed.");
+        }
+        free(err_msg);
+        err_msg = nullptr;
+    };
+
+    expect_access("/WRITE", true);
+    expect_access("/WRITE/job/123", true);
+    expect_access("/WRITEUP", false);
+
+    enforcer_destroy(enforcer);
+}
+
+TEST_F(SerializeTest, EnforcerRejectsTraversalInScopePaths) {
+    char *err_msg = nullptr;
+
+    auto rv = scitoken_set_claim_string(
+        m_token.get(), "aud", "https://demo.scitokens.org/", &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest",
+                                    &m_audiences_array[0], &err_msg);
+    ASSERT_TRUE(enforcer != nullptr) << err_msg;
+
+    rv = scitoken_set_claim_string(m_token.get(), "ver", "scitoken:2.0",
+                                   &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    auto expect_scope_access = [&](const char *scope, const char *resource,
+                                   bool allowed) {
+        int local_rv =
+            scitoken_set_claim_string(m_token.get(), "scope", scope, &err_msg);
+        ASSERT_TRUE(local_rv == 0) << err_msg;
+
+        char *token_value = nullptr;
+        local_rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+        ASSERT_TRUE(local_rv == 0) << err_msg;
+        std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value,
+                                                               free);
+
+        local_rv = scitoken_deserialize_v2(token_value, m_read_token.get(),
+                                           nullptr, &err_msg);
+        ASSERT_TRUE(local_rv == 0) << err_msg;
+        free(err_msg);
+        err_msg = nullptr;
+
+        Acl acl;
+        acl.authz = "read";
+        acl.resource = resource;
+
+        local_rv = enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
+        if (allowed) {
+            EXPECT_EQ(local_rv, 0) << (err_msg ? err_msg : "unexpected denial");
+            EXPECT_EQ(err_msg, nullptr);
+        } else {
+            EXPECT_EQ(local_rv, -1);
+            ASSERT_NE(err_msg, nullptr);
+            EXPECT_STREQ(err_msg, "token verification failed: 'scope' claim "
+                                  "verification failed.");
+        }
+        free(err_msg);
+        err_msg = nullptr;
+    };
+
+    expect_scope_access("read:/home/user1/..", "/home/user2", false);
+    expect_scope_access("read:/anything/..", "/etc/passwd", false);
+    expect_scope_access("read:/foo/%2e%2e/bar", "/bar", false);
+    expect_scope_access("read:/foo/%2E%2e/bar", "/bar", false);
+    expect_scope_access("read:/foo/%252e%252e/bar", "/bar", false);
+    expect_scope_access("read:/home/user1/docs", "/home/user1/docs/file.txt",
+                        true);
+
+    enforcer_destroy(enforcer);
+}
+
+TEST_F(SerializeTest, EnforcerSafelyNormalizesRequestedPathTraversal) {
+    char *err_msg = nullptr;
+
+    auto rv = scitoken_set_claim_string(
+        m_token.get(), "aud", "https://demo.scitokens.org/", &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest",
+                                    &m_audiences_array[0], &err_msg);
+    ASSERT_TRUE(enforcer != nullptr) << err_msg;
+
+    rv = scitoken_set_claim_string(m_token.get(), "scope", "read:/safe",
+                                   &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    rv = scitoken_set_claim_string(m_token.get(), "ver", "scitoken:2.0",
+                                   &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    free(err_msg);
+    err_msg = nullptr;
+
+    Acl acl;
+    acl.authz = "read";
+    acl.resource = "/../../safe/file.txt";
+
+    rv = enforcer_test(enforcer, m_read_token.get(), &acl, &err_msg);
+    EXPECT_EQ(rv, 0) << (err_msg ? err_msg : "unexpected denial");
+    EXPECT_EQ(err_msg, nullptr);
+    free(err_msg);
+
+    enforcer_destroy(enforcer);
+}
+
 } // namespace
 
 TEST_F(SerializeTest, DeserializeAsyncTest) {
