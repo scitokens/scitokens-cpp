@@ -776,8 +776,26 @@ bool normalize_scope_path_strict(const std::string &raw_path,
             }
         }
 
+        // If we still have percent-encodings after the allowed decode passes,
+        // reject the component to prevent downstream decoders from turning it
+        // into a traversal such as ".." later.
+        if (decoded_component.find('%') != std::string::npos) {
+            return false;
+        }
+
         // Scope paths are attacker-controlled token input and must not gain
         // broader access while being decoded and canonicalized.
+
+        // After decoding, components must not contain path separators or NULs.
+        // Otherwise, an encoded slash could be reintroduced as a real path
+        // segment (e.g., "foo%2F..%2Fbar" -> "foo/../bar"), or "%00" could
+        // produce a NUL that causes later C-string truncation.
+        if (decoded_component.find('/') != std::string::npos ||
+            decoded_component.find('\\') != std::string::npos ||
+            decoded_component.find('\0') != std::string::npos) {
+            return false;
+        }
+
         if (decoded_component == "..") {
             return false;
         }
