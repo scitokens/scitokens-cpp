@@ -732,6 +732,22 @@ std::string normalize_absolute_path(const std::string &path) {
     return result.empty() ? "/" : result;
 }
 
+bool path_matches_scope(const std::string &requested_path,
+                        const std::string &authorized_path) {
+    // Scope matching must respect path segment boundaries so "/john" does not
+    // authorize sibling paths such as "/johnathan".
+    if (authorized_path == "/") {
+        return true;
+    }
+    if (requested_path == authorized_path) {
+        return true;
+    }
+    return requested_path.size() > authorized_path.size() &&
+           requested_path.compare(0, authorized_path.size(), authorized_path) ==
+               0 &&
+           requested_path[authorized_path.size()] == '/';
+}
+
 } // namespace
   //
 static std::unordered_map<std::string, jwt::claim>
@@ -1363,7 +1379,7 @@ bool scitokens::Enforcer::scope_validator(const jwt::claim &claim,
                 me->m_gen_acls.emplace_back(alt_authz, path);
         } else if (((me->m_test_authz == authz) ||
                     (!alt_authz.empty() && (me->m_test_authz == alt_authz))) &&
-                   (requested_path.substr(0, path.size()) == path)) {
+                   path_matches_scope(requested_path, path)) {
             return true;
         }
 
@@ -1376,7 +1392,7 @@ bool scitokens::Enforcer::scope_validator(const jwt::claim &claim,
         if (me->m_test_authz.empty()) {
             me->m_gen_acls.emplace_back("condor", "/WRITE");
         } else if ((me->m_test_authz == "condor") &&
-                   (requested_path.substr(0, 6) == "/WRITE")) {
+                   path_matches_scope(requested_path, "/WRITE")) {
             return true;
         }
     }
