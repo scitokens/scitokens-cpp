@@ -151,6 +151,35 @@ int main() {
         }
     }
 
+    // Test 6: Check if SCITOKEN_CONFIG_JWKS_DOWNLOAD_TIMEOUT_S was loaded
+    const char *env_timeout =
+        std::getenv("SCITOKEN_CONFIG_JWKS_DOWNLOAD_TIMEOUT_S");
+    if (env_timeout) {
+        try {
+            int expected = std::stoi(env_timeout);
+            int actual = scitoken_config_get_int("jwks.download_timeout_s",
+                                                 &err_msg);
+            if (actual != expected) {
+                std::cerr
+                    << "FAIL: jwks.download_timeout_s expected " << expected
+                    << " but got " << actual << std::endl;
+                if (err_msg) {
+                    std::cerr << "Error: " << err_msg << std::endl;
+                    free(err_msg);
+                    err_msg = nullptr;
+                }
+                failures++;
+            } else {
+                std::cout << "PASS: jwks.download_timeout_s = " << actual
+                          << std::endl;
+            }
+        } catch (const std::exception &e) {
+            std::cerr << "FAIL: Could not parse env var value: " << e.what()
+                      << std::endl;
+            failures++;
+        }
+    }
+
     if (failures == 0) {
         std::cout << "\nAll environment variable configuration tests passed!"
                   << std::endl;

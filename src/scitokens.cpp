@@ -43,7 +43,7 @@ void load_config_from_environment() {
         bool is_int;
     };
 
-    const std::array<ConfigMapping, 9> known_configs = {
+    const std::array<ConfigMapping, 10> known_configs = {
         {{"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
          {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S",
           true},
@@ -54,7 +54,8 @@ void load_config_from_environment() {
          {"monitoring.file_interval_s", "MONITORING_FILE_INTERVAL_S", true},
          {"keycache.refresh_interval_ms", "KEYCACHE_REFRESH_INTERVAL_MS", true},
          {"keycache.refresh_threshold_ms", "KEYCACHE_REFRESH_THRESHOLD_MS",
-          true}}};
+          true},
+         {"jwks.download_timeout_s", "JWKS_DOWNLOAD_TIMEOUT_S", true}}};
 
     const char *prefix = "SCITOKEN_CONFIG_";
 
@@ -1322,6 +1323,17 @@ int scitoken_config_set_int(const char *key, int value, char **err_msg) {
         return 0;
     }
 
+    else if (_key == "jwks.download_timeout_s") {
+        if (value <= 0) {
+            if (err_msg) {
+                *err_msg = strdup("JWKS download timeout must be positive.");
+            }
+            return -1;
+        }
+        configurer::Configuration::set_jwks_download_timeout(value);
+        return 0;
+    }
+
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
@@ -1361,6 +1373,10 @@ int scitoken_config_get_int(const char *key, char **err_msg) {
 
     else if (_key == "keycache.refresh_threshold_ms") {
         return configurer::Configuration::get_refresh_threshold();
+    }
+
+    else if (_key == "jwks.download_timeout_s") {
+        return configurer::Configuration::get_jwks_download_timeout();
     }
 
     else {

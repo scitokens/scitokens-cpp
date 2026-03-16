@@ -1050,8 +1050,14 @@ std::string Validator::get_jwks(const std::string &issuer) {
 
 bool Validator::refresh_jwks(const std::string &issuer) {
     picojson::value keys;
-    std::unique_ptr<scitokens::AsyncStatus> status = get_public_keys_from_web(
-        issuer, internal::SimpleCurlGet::extended_timeout);
+    int configured_timeout =
+        configurer::Configuration::get_jwks_download_timeout();
+    unsigned timeout =
+        std::max(configured_timeout > 0 ? static_cast<unsigned>(configured_timeout)
+                                        : internal::SimpleCurlGet::default_timeout,
+                 internal::SimpleCurlGet::extended_timeout);
+    std::unique_ptr<scitokens::AsyncStatus> status =
+        get_public_keys_from_web(issuer, timeout);
     while (!status->m_done) {
         status = get_public_keys_from_web_continue(std::move(status));
     }
@@ -1093,7 +1099,7 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
             try {
                 result->m_ignore_error = true;
                 result = get_public_keys_from_web(
-                    issuer, internal::SimpleCurlGet::default_timeout);
+                    issuer, configurer::Configuration::get_jwks_download_timeout());
                 // Hold refresh mutex in the new result
                 result->m_refresh_lock = std::move(lock);
                 // Mark that this is a refresh attempt for a known issuer
@@ -1133,7 +1139,7 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
         } else {
             // Still no keys, fetch them from the web
             result = get_public_keys_from_web(
-                issuer, internal::SimpleCurlGet::default_timeout);
+                issuer, configurer::Configuration::get_jwks_download_timeout());
 
             // Transfer ownership of the lock to the async status
             // The lock will be held until keys are stored in

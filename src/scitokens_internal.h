@@ -70,6 +70,14 @@ class Configuration {
         return m_allow_in_memory.load(std::memory_order_relaxed);
     }
 
+    // JWKS download timeout configuration (in seconds)
+    static void set_jwks_download_timeout(int timeout_s) {
+        get_jwks_download_timeout_ref() = timeout_s;
+    }
+    static int get_jwks_download_timeout() {
+        return get_jwks_download_timeout_ref();
+    }
+
     // Background refresh configuration
     static void set_background_refresh_enabled(bool enabled) {
         m_background_refresh_enabled = enabled;
@@ -94,6 +102,10 @@ class Configuration {
     }
     static std::atomic_int &get_expiry_delta_ref() {
         static std::atomic_int instance{4 * 24 * 3600};
+        return instance;
+    }
+    static std::atomic_int &get_jwks_download_timeout_ref() {
+        static std::atomic_int instance{4};
         return instance;
     }
 
