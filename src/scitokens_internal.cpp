@@ -1432,12 +1432,13 @@ bool scitokens::Enforcer::scope_validator(const jwt::claim &claim,
             return false;
         }
 
-        // If we are in compatibility mode and this is a WLCG token, then
-        // translate the authorization names to utilize the SciToken-style
+        // If we are in compatibility mode and this is a WLCG or AT_JWT token,
+        // then translate the authorization names to utilize the SciToken-style
         // names.
         std::string alt_authz;
         if (me->m_validate_profile == SciToken::Profile::COMPAT &&
-            me->m_validator.get_profile() == SciToken::Profile::WLCG_1_0) {
+            (me->m_validator.get_profile() == SciToken::Profile::WLCG_1_0 ||
+             me->m_validator.get_profile() == SciToken::Profile::AT_JWT)) {
             if (authz == "storage.read") {
                 authz = "read";
             } else if (authz == "storage.create") {
