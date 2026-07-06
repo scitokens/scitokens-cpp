@@ -1413,8 +1413,13 @@ bool scitokens::Enforcer::scope_validator(const jwt::claim &claim,
     // me->m_test_authz << ":" << requested_path << std::endl;
     bool compat_modify = false, compat_create = false, compat_cancel = false;
     while (scope_iter != scope.end()) {
-        while (*scope_iter == ' ') {
+        while (scope_iter != scope.end() && *scope_iter == ' ') {
             scope_iter++;
+        }
+        if (scope_iter == scope.end()) {
+            // Trailing whitespace: previously this dereferenced end() and
+            // then emitted a bogus ACL with an empty authorization.
+            break;
         }
         auto next_scope_iter = std::find(scope_iter, scope.end(), ' ');
         std::string full_authz;

@@ -396,6 +396,73 @@ TEST_F(SerializeTest, EnforcerScopeTest) {
     ASSERT_TRUE(found_write);
 }
 
+TEST_F(SerializeTest, EnforcerScopeTrailingSpaceTest) {
+    char *err_msg = nullptr;
+
+    auto rv = scitoken_set_claim_string(
+        m_token.get(), "aud", "https://demo.scitokens.org/", &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest",
+                                    &m_audiences_array[0], &err_msg);
+    ASSERT_TRUE(enforcer != nullptr) << err_msg;
+
+    // Trailing whitespace previously walked the iterator past end() and
+    // emitted a bogus ACL with an empty authorization.
+    rv = scitoken_set_claim_string(m_token.get(), "scope", "read:/foo ",
+                                   &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    rv = scitoken_set_claim_string(m_token.get(), "ver", "scitoken:2.0",
+                                   &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    free(token_value);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    Acl *acls;
+    rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(acls != nullptr);
+    int count = 0;
+    for (int idx = 0; acls[idx].authz || acls[idx].resource; idx++) {
+        EXPECT_STREQ(acls[idx].authz, "read");
+        EXPECT_STREQ(acls[idx].resource, "/foo");
+        count++;
+    }
+    EXPECT_EQ(count, 1);
+    enforcer_acl_free(acls);
+    enforcer_destroy(enforcer);
+}
+
+TEST_F(SerializeTest, EmptyStringListTest) {
+    char *err_msg = nullptr;
+
+    // A claim whose value is an empty JSON list: freeing the returned
+    // (terminator-only) string list previously read past the allocation.
+    const char *empty_list[1] = {nullptr};
+    auto rv = scitoken_set_claim_string_list(m_token.get(), "empty_groups",
+                                             empty_list, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char **value = nullptr;
+    rv = scitoken_get_claim_string_list(m_token.get(), "empty_groups", &value,
+                                        &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    ASSERT_TRUE(value != nullptr);
+    EXPECT_EQ(value[0], nullptr);
+    scitoken_free_string_list(value);
+
+    // Null input is a no-op.
+    scitoken_free_string_list(nullptr);
+}
+
 TEST_F(SerializeTest, EnforcerScopeRespectsPathBoundaries) {
     char *err_msg = nullptr;
 
