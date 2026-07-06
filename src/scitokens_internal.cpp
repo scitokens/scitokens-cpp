@@ -86,6 +86,26 @@ std::once_flag Validator::m_background_refresh_once;
 namespace internal {
 
 // BackgroundRefreshManager implementation
+BackgroundRefreshManager &BackgroundRefreshManager::get_instance() {
+    // Construct the singletons and function-local statics the refresh
+    // thread uses BEFORE constructing this instance.  Objects with static
+    // storage duration are destroyed in the reverse order their
+    // construction completed, so everything constructed here is guaranteed
+    // to outlive the manager -- whose destructor stops and joins the
+    // thread.  Without this ordering, a dependency first touched after the
+    // manager was created would be destroyed before it at exit, while the
+    // refresh thread may still be using it (a use-after-destruction race
+    // during shutdown).
+    MonitoringStats::instance();
+    configurer::Configuration::get_cache_home();
+    configurer::Configuration::get_tls_ca_file();
+    configurer::Configuration::get_next_update_delta();
+    configurer::Configuration::get_expiry_delta();
+
+    static BackgroundRefreshManager instance;
+    return instance;
+}
+
 void BackgroundRefreshManager::start() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_running.load(std::memory_order_acquire)) {
