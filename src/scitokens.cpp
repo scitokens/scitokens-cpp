@@ -180,6 +180,13 @@ void scitoken_key_destroy(SciTokenKey token) {
 SciToken scitoken_create(SciTokenKey private_key) {
     scitokens::SciTokenKey *key =
         reinterpret_cast<scitokens::SciTokenKey *>(private_key);
+    if (key == nullptr) {
+        // A key is only needed for signing; tokens used for deserialization
+        // may be created without one.  (Dereferencing the null handle here
+        // was previously undefined behavior.)
+        scitokens::SciTokenKey empty_key;
+        return new scitokens::SciToken(empty_key);
+    }
     return new scitokens::SciToken(*key);
 }
 
@@ -252,6 +259,24 @@ int scitoken_get_claim_string(const SciToken token, const char *key,
                               char **value, char **err_msg) {
     scitokens::SciToken *real_token =
         reinterpret_cast<scitokens::SciToken *>(token);
+    if (real_token == nullptr) {
+        if (err_msg) {
+            *err_msg = strdup("Token passed is not initialized.");
+        }
+        return -1;
+    }
+    if (key == nullptr) {
+        if (err_msg) {
+            *err_msg = strdup("Claim key passed is not initialized.");
+        }
+        return -1;
+    }
+    if (value == nullptr) {
+        if (err_msg) {
+            *err_msg = strdup("Output value pointer may not be null.");
+        }
+        return -1;
+    }
     std::string claim_str;
     try {
         claim_str = real_token->get_claim_string(key);
@@ -307,9 +332,16 @@ int scitoken_get_claim_string_list(const SciToken token, const char *key,
         }
         return -1;
     }
+    // calloc null-initializes every slot, so a partially-filled list is
+    // always terminated and safe to hand to scitoken_free_string_list.
     auto claim_list_c =
-        static_cast<char **>(malloc(sizeof(char *) * (claim_list.size() + 1)));
-    claim_list_c[claim_list.size()] = nullptr;
+        static_cast<char **>(calloc(claim_list.size() + 1, sizeof(char *)));
+    if (claim_list_c == nullptr) {
+        if (err_msg) {
+            *err_msg = strdup("Failed to allocate string list");
+        }
+        return -1;
+    }
     int idx = 0;
     for (const auto &entry : claim_list) {
         claim_list_c[idx] = strdup(entry.c_str());
@@ -328,10 +360,14 @@ int scitoken_get_claim_string_list(const SciToken token, const char *key,
 }
 
 void scitoken_free_string_list(char **value) {
-    int idx = 0;
-    do {
-        free(value[idx++]);
-    } while (value[idx]);
+    if (value == nullptr) {
+        return;
+    }
+    // Note: the previous do/while formulation read value[idx] after the
+    // terminating nullptr on an empty list (heap out-of-bounds read).
+    for (int idx = 0; value[idx]; idx++) {
+        free(value[idx]);
+    }
     free(value);
 }
 
@@ -724,12 +760,21 @@ void enforcer_set_validate_profile(Enforcer enf, SciTokenProfile profile) {
 namespace {
 
 Acl *convert_acls(scitokens::Enforcer::AclsList &acls_list, char **err_msg) {
+    // calloc null-initializes every entry (including the terminator), so a
+    // partially-filled array is always safe to hand to enforcer_acl_free;
+    // the previous malloc left the tail uninitialized, and the error paths
+    // below freed uninitialized pointers.
     Acl *acl_result =
-        static_cast<Acl *>(malloc((acls_list.size() + 1) * sizeof(Acl)));
+        static_cast<Acl *>(calloc(acls_list.size() + 1, sizeof(Acl)));
+    if (acl_result == nullptr) {
+        if (err_msg) {
+            *err_msg = strdup("Failed to allocate the ACL list.");
+        }
+        return nullptr;
+    }
     size_t idx = 0;
     for (const auto &acl : acls_list) {
         acl_result[idx].authz = strdup(acl.first.c_str());
-        acl_result[idx].resource = strdup(acl.second.c_str());
         if (acl_result[idx].authz == nullptr) {
             enforcer_acl_free(acl_result);
             if (err_msg) {
@@ -738,6 +783,7 @@ Acl *convert_acls(scitokens::Enforcer::AclsList &acls_list, char **err_msg) {
             }
             return nullptr;
         }
+        acl_result[idx].resource = strdup(acl.second.c_str());
         if (acl_result[idx].resource == nullptr) {
             enforcer_acl_free(acl_result);
             if (err_msg) {
@@ -747,8 +793,6 @@ Acl *convert_acls(scitokens::Enforcer::AclsList &acls_list, char **err_msg) {
         }
         idx++;
     }
-    acl_result[idx].authz = nullptr;
-    acl_result[idx].resource = nullptr;
     return acl_result;
 }
 

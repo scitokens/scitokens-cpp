@@ -340,6 +340,13 @@ bool scitokens::Validator::get_public_keys_from_db(const std::string issuer,
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
         const unsigned char *data = sqlite3_column_text(stmt, 0);
+        if (data == nullptr) {
+            // Out-of-memory or unexpected NULL; constructing a std::string
+            // from a null pointer is undefined behavior.
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return false;
+        }
         std::string metadata(reinterpret_cast<const char *>(data));
         sqlite3_finalize(stmt);
         picojson::value json_obj;
@@ -666,6 +673,11 @@ std::string scitokens::Validator::get_jwks_metadata(const std::string &issuer) {
     rc = sqlite3_step(stmt);
     if (rc == SQLITE_ROW) {
         const unsigned char *data = sqlite3_column_text(stmt, 0);
+        if (data == nullptr) {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            throw std::runtime_error("Failed to read cache entry");
+        }
         std::string metadata(reinterpret_cast<const char *>(data));
         sqlite3_finalize(stmt);
         sqlite3_close(db);
