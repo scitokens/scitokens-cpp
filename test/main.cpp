@@ -683,6 +683,35 @@ TEST_F(SerializeTest, DeserializeAsyncTest) {
     scitoken_destroy(scitoken);
 }
 
+TEST_F(SerializeTest, StatusFreeTest) {
+    char *err_msg = nullptr;
+
+    char *token_value = nullptr;
+    auto rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    SciToken scitoken;
+    SciTokenStatus status;
+    rv = scitoken_deserialize_start(token_value, &scitoken, nullptr, &status,
+                                    &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    // Abandon the operation mid-flight: freeing the status must not crash
+    // and must null the handle.  (This also verifies the C-linkage symbol
+    // for scitoken_status_free resolves; it was previously only emitted
+    // with a mismatched C++ signature.)
+    scitoken_status_free(&status);
+    EXPECT_EQ(status, nullptr);
+
+    // Freeing a null status handle is a no-op.
+    scitoken_status_free(&status);
+    EXPECT_EQ(status, nullptr);
+    scitoken_status_free(nullptr);
+
+    scitoken_destroy(scitoken);
+}
+
 TEST_F(SerializeTest, FailDeserializeAsyncTest) {
     char *err_msg = nullptr;
 
