@@ -1090,10 +1090,16 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
                 internal::MonitoringStats::instance().get_issuer_stats(issuer);
             // Record that we're using a stale key (past next_update)
             issuer_stats.inc_stale_key_use();
+            // Save the still-valid cached keys so a failed refresh can fall
+            // back to them instead of failing the validation.
+            picojson::value cached_keys = result->m_keys;
             try {
-                result->m_ignore_error = true;
                 result = get_public_keys_from_web(
                     issuer, internal::SimpleCurlGet::default_timeout);
+                // A refresh failure is not fatal: we have valid keys already
+                result->m_ignore_error = true;
+                result->m_fallback_keys = cached_keys;
+                result->m_has_fallback_keys = true;
                 // Hold refresh mutex in the new result
                 result->m_refresh_lock = std::move(lock);
                 // Mark that this is a refresh attempt for a known issuer
@@ -1156,11 +1162,21 @@ Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status,
                                        std::string &algorithm) {
 
     if (status->m_continue_fetch) {
-        // Save issuer and lock info before potentially moving status
+        // Save issuer, lock, and refresh-fallback info before potentially
+        // moving status: if the fetch throws, the status object (moved into
+        // the callee) is destroyed during unwinding.
         std::string issuer = status->m_issuer;
+        std::string kid = status->m_kid;
         auto issuer_mutex = status->m_issuer_mutex;
         std::unique_lock<std::mutex> issuer_lock(
             std::move(status->m_issuer_lock));
+        bool ignore_error = status->m_ignore_error;
+        bool has_fallback_keys = status->m_has_fallback_keys;
+        picojson::value fallback_keys = status->m_fallback_keys;
+        std::string jwt_string = status->m_jwt_string;
+        bool monitoring_started = status->m_monitoring_started;
+        bool is_sync = status->m_is_sync;
+        auto start_time = status->m_start_time;
 
         try {
             status = get_public_keys_from_web_continue(std::move(status));
@@ -1195,7 +1211,30 @@ Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status,
                 }
                 issuer_lock.unlock();
             }
-            throw; // Re-throw the original exception
+            if (ignore_error && has_fallback_keys) {
+                // This was a refresh of keys that are still valid; fall
+                // back to them rather than failing the validation.  The
+                // keycache entry is untouched, so the next validation past
+                // next_update will retry the refresh.
+                auto &issuer_stats =
+                    internal::MonitoringStats::instance().get_issuer_stats(
+                        issuer);
+                issuer_stats.inc_failed_refresh();
+                std::unique_ptr<AsyncStatus> fallback(new AsyncStatus());
+                fallback->m_keys = fallback_keys;
+                fallback->m_issuer = issuer;
+                fallback->m_kid = kid;
+                fallback->m_do_store = false;
+                // Carry over verification state from the destroyed status
+                fallback->m_jwt_string = jwt_string;
+                fallback->m_monitoring_started = monitoring_started;
+                fallback->m_is_sync = is_sync;
+                fallback->m_start_time = start_time;
+                status = std::move(fallback);
+                // Fall through to the key-extraction code below.
+            } else {
+                throw; // Re-throw the original exception
+            }
         }
     }
     if (status->m_do_store) {

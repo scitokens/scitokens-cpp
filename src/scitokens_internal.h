@@ -588,6 +588,11 @@ class AsyncStatus {
     int64_t m_next_update{-1};
     int64_t m_expires{-1};
     picojson::value m_keys;
+    // Still-valid cached keys saved before a refresh attempt; if the
+    // refresh fails (m_ignore_error set), validation falls back to these
+    // instead of failing outright.
+    picojson::value m_fallback_keys;
+    bool m_has_fallback_keys{false};
     std::string m_issuer;
     std::string m_kid;
     std::string m_oauth_metadata_url;
