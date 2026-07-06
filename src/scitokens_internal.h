@@ -164,10 +164,10 @@ bool get_keycache_location(std::string &cache_file,
  */
 class BackgroundRefreshManager {
   public:
-    static BackgroundRefreshManager &get_instance() {
-        static BackgroundRefreshManager instance;
-        return instance;
-    }
+    // Defined out-of-line: it constructs the singletons the refresh thread
+    // depends on before constructing this instance (see the implementation
+    // for the static destruction-order reasoning).
+    static BackgroundRefreshManager &get_instance();
 
     // Start the background refresh thread (can be called multiple times)
     void start();
