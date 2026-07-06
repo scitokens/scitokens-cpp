@@ -151,7 +151,7 @@ void initialize_cachedb(const std::string &keycache_file) {
  *  4. If all of the above fail and keycache.allow_in_memory is true,
  *     fall back to a shared in-memory SQLite database
  */
-CacheLocationInfo resolve_cache_location() {
+CacheLocationInfo resolve_cache_location_uncached() {
     CacheLocationInfo location_info;
     const char *xdg_cache_home = getenv("XDG_CACHE_HOME");
 
@@ -212,6 +212,33 @@ CacheLocationInfo resolve_cache_location() {
     location_info.active_db_path = location_info.cache_file;
 
     return location_info;
+}
+
+// Resolving the location is expensive -- getpwuid_r, two mkdir calls, and a
+// full SQLite open/CREATE TABLE/close round trip -- and was previously
+// performed for every keycache operation (at least once per token
+// validation).  Cache the successful result; the cache is invalidated when
+// a configuration value affecting the location changes (cache home,
+// in-memory fallback).
+CacheLocationInfo resolve_cache_location() {
+    static std::mutex cache_mutex;
+    static CacheLocationInfo cached_info;
+    static bool cached_valid = false;
+    static uint64_t cached_generation = 0;
+
+    uint64_t generation =
+        configurer::Configuration::get_cache_config_generation();
+
+    std::lock_guard<std::mutex> lock(cache_mutex);
+    if (cached_valid && cached_generation == generation) {
+        return cached_info;
+    }
+    cached_info = resolve_cache_location_uncached();
+    cached_generation = generation;
+    // Only cache successful resolutions: failures (transient permission or
+    // disk problems) should be retried on the next operation.
+    cached_valid = !cached_info.active_db_path.empty();
+    return cached_info;
 }
 
 std::string get_cache_file() { return resolve_cache_location().active_db_path; }
@@ -526,6 +553,10 @@ scitokens::Validator::get_all_issuers_from_db(int64_t now) {
         sqlite3_close(db);
         return result;
     }
+    // Set busy timeout to handle concurrent access; without it, a write
+    // from another thread/process makes the scan below silently return a
+    // partial issuer list.
+    sqlite3_busy_timeout(db, SQLITE_BUSY_TIMEOUT_MS);
 
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, "SELECT issuer, keys FROM keycache", -1, &stmt,
