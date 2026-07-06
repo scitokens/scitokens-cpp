@@ -265,11 +265,11 @@ SimpleCurlGet::GetStatus SimpleCurlGet::perform_continue() {
         if (m_timeout_ms < 0) {
             m_timeout_ms = 100;
         }
-        FD_ZERO(m_read_fd_set);
-        FD_ZERO(m_write_fd_set);
-        FD_ZERO(m_exc_fd_set);
-        resm = curl_multi_fdset(m_curl_multi.get(), m_read_fd_set,
-                                m_write_fd_set, m_exc_fd_set, &m_max_fd);
+        FD_ZERO(&m_read_fd_set);
+        FD_ZERO(&m_write_fd_set);
+        FD_ZERO(&m_exc_fd_set);
+        resm = curl_multi_fdset(m_curl_multi.get(), &m_read_fd_set,
+                                &m_write_fd_set, &m_exc_fd_set, &m_max_fd);
         if (resm) {
             throw CurlException(curl_multi_strerror(resm));
         }
@@ -320,7 +320,7 @@ int SimpleCurlGet::perform(const std::string &url, time_t expiry_time) {
         timeout.tv_sec = timeout_ms / 1000;
         timeout.tv_usec = (timeout_ms % 1000) * 1000;
         // Return value of select is ignored; curl will take care of it.
-        select(m_max_fd + 1, m_read_fd_set, m_write_fd_set, m_exc_fd_set,
+        select(m_max_fd + 1, &m_read_fd_set, &m_write_fd_set, &m_exc_fd_set,
                &timeout);
         status = perform_continue();
     }

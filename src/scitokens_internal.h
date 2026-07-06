@@ -204,9 +204,12 @@ class SimpleCurlGet {
     size_t m_len{0};
     std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> m_curl;
     std::unique_ptr<CURLM, decltype(&curl_multi_cleanup)> m_curl_multi;
-    fd_set m_read_fd_set[FD_SETSIZE];
-    fd_set m_write_fd_set[FD_SETSIZE];
-    fd_set m_exc_fd_set[FD_SETSIZE];
+    // A single fd_set already holds FD_SETSIZE descriptors; these were
+    // previously declared as arrays of FD_SETSIZE fd_sets (~384KB of
+    // wasted memory per in-flight request).
+    fd_set m_read_fd_set;
+    fd_set m_write_fd_set;
+    fd_set m_exc_fd_set;
     int m_max_fd{-1};
     long m_timeout_ms{0};
 
@@ -232,9 +235,9 @@ class SimpleCurlGet {
 
     long get_timeout_ms() const { return m_timeout_ms; }
     int get_max_fd() const { return m_max_fd; }
-    fd_set *get_read_fd_set() { return m_read_fd_set; }
-    fd_set *get_write_fd_set() { return m_write_fd_set; }
-    fd_set *get_exc_fd_set() { return m_exc_fd_set; }
+    fd_set *get_read_fd_set() { return &m_read_fd_set; }
+    fd_set *get_write_fd_set() { return &m_write_fd_set; }
+    fd_set *get_exc_fd_set() { return &m_exc_fd_set; }
 
   private:
     static size_t write_data(void *buffer, size_t size, size_t nmemb,
@@ -602,7 +605,15 @@ class AsyncStatus {
 
     struct timeval get_timeout_val(time_t expiry_time) const {
         auto now = time(NULL);
-        long timeout_ms = 100 * (expiry_time - now);
+        // Note: this was `100 *`, suggesting a poll interval 10x more
+        // frequent than the seconds-to-milliseconds conversion used
+        // everywhere else.
+        long timeout_ms = 1000 * (expiry_time - now);
+        if (timeout_ms < 0) {
+            // Deadline already passed; a negative timeval is invalid for
+            // select() (EINVAL).
+            timeout_ms = 0;
+        }
         if (m_cget && (m_cget->get_timeout_ms() < timeout_ms))
             timeout_ms = m_cget->get_timeout_ms();
         struct timeval timeout;
@@ -920,6 +931,17 @@ class Validator {
             // Note: m_is_sync flag no longer needed since counting is only done
             // in verify_async_continue
             while (!result->m_done) {
+                // Wait for socket readiness (or curl's suggested timeout,
+                // capped at one second) instead of busy-spinning on
+                // curl_multi_perform for the duration of the key fetch.
+                auto timeout_val = result->get_timeout_val(time(NULL) + 1);
+                select(result->get_max_fd() + 1, result->get_read_fd_set(),
+                       result->get_write_fd_set(), result->get_exc_fd_set(),
+                       &timeout_val);
+                // Continue regardless of the select() result: libcurl
+                // requires curl_multi_perform after a timeout to drive its
+                // internal (non-socket) work, and a timed-out select clears
+                // the fd_sets, which only the continue call repopulates.
                 result = verify_async_continue(std::move(result));
             }
 
