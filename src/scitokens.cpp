@@ -483,6 +483,12 @@ int scitoken_deserialize_start(const char *value, SciToken *token,
         }
         return -1;
     }
+    if (status_out == nullptr) {
+        if (err_msg) {
+            *err_msg = strdup("Output status not provided");
+        }
+        return -1;
+    }
 
     scitokens::SciTokenKey key;
     scitokens::SciToken *real_token = new scitokens::SciToken(key);
@@ -839,7 +845,13 @@ int enforcer_generate_acls_start(const Enforcer enf, const SciToken scitoken,
         *status_out = nullptr;
         return 0;
     }
-    *status_out = status.release();
+    // Wrap in a SciTokenAsyncStatus so all SciTokenStatus handles exposed
+    // through the C API share one concrete type; scitoken_status_free and
+    // the scitoken_status_get_* accessors rely on this.
+    std::unique_ptr<scitokens::SciTokenAsyncStatus> wrapper(
+        new scitokens::SciTokenAsyncStatus());
+    wrapper->m_status = std::move(status);
+    *status_out = wrapper.release();
     return 0;
 }
 
@@ -860,11 +872,11 @@ int enforcer_generate_acls_continue(const Enforcer enf, SciTokenStatus *status,
     }
 
     scitokens::Enforcer::AclsList acls_list;
-    std::unique_ptr<scitokens::AsyncStatus> status_internal(
-        reinterpret_cast<scitokens::AsyncStatus *>(*status));
+    std::unique_ptr<scitokens::SciTokenAsyncStatus> wrapper(
+        reinterpret_cast<scitokens::SciTokenAsyncStatus *>(*status));
     try {
-        status_internal = real_enf->generate_acls_continue(
-            std::move(status_internal), acls_list);
+        wrapper->m_status = real_enf->generate_acls_continue(
+            std::move(wrapper->m_status), acls_list);
     } catch (std::exception &exc) {
         *status = nullptr;
         if (err_msg) {
@@ -872,7 +884,7 @@ int enforcer_generate_acls_continue(const Enforcer enf, SciTokenStatus *status,
         }
         return -1;
     }
-    if (status_internal->m_done) {
+    if (wrapper->m_status->m_done) {
         auto result_acls = convert_acls(acls_list, err_msg);
         if (!result_acls) {
             return -1;
@@ -881,7 +893,7 @@ int enforcer_generate_acls_continue(const Enforcer enf, SciTokenStatus *status,
         *status = nullptr;
         return 0;
     }
-    *status = status_internal.release();
+    *status = wrapper.release();
     return 0;
 }
 
@@ -921,9 +933,17 @@ int enforcer_test(const Enforcer enf, const SciToken scitoken, const Acl *acl,
     return 0;
 }
 
-void scitoken_status_free(SciTokenStatus status) {
-    std::unique_ptr<scitokens::AsyncStatus> status_real(
-        reinterpret_cast<scitokens::AsyncStatus *>(status));
+void scitoken_status_free(SciTokenStatus *status) {
+    if (status == nullptr || *status == nullptr) {
+        return;
+    }
+    // All SciTokenStatus handles returned by the public API are
+    // SciTokenAsyncStatus objects (enforcer statuses are wrapped in
+    // enforcer_generate_acls_start/continue), so this is the correct
+    // concrete type to destroy.
+    std::unique_ptr<scitokens::SciTokenAsyncStatus> status_real(
+        reinterpret_cast<scitokens::SciTokenAsyncStatus *>(*status));
+    *status = nullptr;
 }
 
 int scitoken_status_get_timeout_val(const SciTokenStatus *status,
