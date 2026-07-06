@@ -780,7 +780,10 @@ class Validator {
   public:
     Validator() : m_now(std::chrono::system_clock::now()) {}
 
-    void set_now(std::chrono::system_clock::time_point now) { m_now = now; }
+    void set_now(std::chrono::system_clock::time_point now) {
+        m_now = now;
+        m_now_set = true;
+    }
 
     // Maximum timeout for select() in microseconds for periodic checks
     static constexpr long MAX_SELECT_TIMEOUT_US = 50000; // 50ms
@@ -1068,9 +1071,15 @@ class Validator {
         SciTokenKey key(status->m_kid, status->m_algorithm,
                         status->m_public_pem, "");
 
-        auto verifier =
-            jwt::verify<FixedClock, jwt::traits::kazuho_picojson>({m_now})
-                .allow_algorithm(key);
+        // Unless the caller explicitly pinned the clock with set_now(),
+        // evaluate exp/nbf against the current time.  Validators and
+        // Enforcers are frequently long-lived; freezing the clock at
+        // construction time made them accept arbitrarily expired tokens.
+        auto verification_time =
+            m_now_set ? m_now : std::chrono::system_clock::now();
+        auto verifier = jwt::verify<FixedClock, jwt::traits::kazuho_picojson>(
+                            {verification_time})
+                            .allow_algorithm(key);
 
         const jwt::decoded_jwt<jwt::traits::kazuho_picojson> jwt(
             status->m_jwt_string);
@@ -1412,6 +1421,9 @@ class Validator {
     ClaimValidatorMap m_claim_validators;
 
     std::chrono::system_clock::time_point m_now;
+    // True only when set_now() was called; otherwise each verification
+    // uses the current time.
+    bool m_now_set{false};
 
     std::vector<std::string> m_critical_claims;
     std::vector<std::string> m_allowed_issuers;
