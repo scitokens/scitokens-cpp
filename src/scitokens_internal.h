@@ -852,13 +852,19 @@ class Validator {
                         "Timeout when loading the OIDC metadata.");
                 }
 
-                // Only continue if select returned due to I/O activity (not
-                // timeout)
-                if (select_result > 0) {
+                // Continue on I/O activity (select_result > 0) and also on
+                // timeout (select_result == 0): libcurl requires
+                // curl_multi_perform to be called after a select timeout so
+                // it can drive non-socket work (DNS retries, connect
+                // timeouts, internal timers).  A timed-out select also
+                // clears the fd_sets, and only verify_async_continue()
+                // repopulates them, so skipping it would leave this loop
+                // selecting on empty sets until expiry_time.
+                if (select_result >= 0) {
                     result = verify_async_continue(std::move(result));
                 }
-                // If select_result == 0 (timeout) or -1 (error/interrupt),
-                // just loop back to update duration and check expiry
+                // If select_result == -1 (error/interrupt), just loop back
+                // to update duration and check expiry
             }
 
             // Record successful validation (final duration update)
