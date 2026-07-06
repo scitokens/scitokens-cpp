@@ -122,13 +122,59 @@ int main(int argc, char *const *argv) {
         }
     }
 
-    SciToken scitoken;
     char *err_msg = nullptr;
-    if (scitoken_deserialize(token.c_str(), &scitoken, nullptr, &err_msg)) {
-        std::cout << "Failed to deserialize a token: " << err_msg << std::endl;
-        return 1;
+    SciToken scitoken = nullptr;
+    SciTokenKey dummy_key = nullptr;
+    if (g_profile.empty()) {
+        if (scitoken_deserialize(token.c_str(), &scitoken, nullptr,
+                                 &err_msg)) {
+            std::cout << "Failed to deserialize a token: " << err_msg
+                      << std::endl;
+            free(err_msg);
+            return 1;
+        }
+    } else {
+        // The --profile option restricts which token profile is acceptable;
+        // it requires creating the token object up front so the deserialize
+        // profile can be set before parsing.
+        SciTokenProfile profile;
+        if (g_profile == "wlcg") {
+            profile = SciTokenProfile::WLCG_1_0;
+        } else if (g_profile == "scitokens1") {
+            profile = SciTokenProfile::SCITOKENS_1_0;
+        } else if (g_profile == "scitokens2") {
+            profile = SciTokenProfile::SCITOKENS_2_0;
+        } else if (g_profile == "atjwt") {
+            profile = SciTokenProfile::AT_JWT;
+        } else {
+            fprintf(stderr, "%s: unknown token profile: %s\n", argv[0],
+                    g_profile.c_str());
+            return 1;
+        }
+
+        // No signing key is needed for verification.
+        dummy_key = scitoken_key_create("none", "none", "", "", &err_msg);
+        if (dummy_key == nullptr) {
+            fprintf(stderr, "%s: %s\n", argv[0], err_msg);
+            free(err_msg);
+            return 1;
+        }
+        scitoken = scitoken_create(dummy_key);
+        scitoken_set_deserialize_profile(scitoken, profile);
+        if (scitoken_deserialize_v2(token.c_str(), scitoken, nullptr,
+                                    &err_msg)) {
+            std::cout << "Failed to deserialize a token: " << err_msg
+                      << std::endl;
+            free(err_msg);
+            scitoken_destroy(scitoken);
+            scitoken_key_destroy(dummy_key);
+            return 1;
+        }
     }
     scitoken_destroy(scitoken);
+    if (dummy_key != nullptr) {
+        scitoken_key_destroy(dummy_key);
+    }
     std::cout << "Token deserialization successful." << std::endl;
 
     return 0;
