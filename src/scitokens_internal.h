@@ -443,9 +443,22 @@ class MonitoringStats {
      * Get a reference to an issuer's statistics, creating the entry if needed.
      * The returned reference remains valid for the lifetime of the singleton.
      * All IssuerStats fields are atomic, so concurrent access is safe.
+     *
+     * Issuer strings come from tokens that have not been validated yet, so
+     * an attacker can supply arbitrarily many distinct values.  Once
+     * MAX_TRACKED_ISSUERS distinct issuers are tracked, further issuers
+     * share a single aggregate overflow bucket (reported as "<other>" in
+     * the JSON output) rather than growing the map without bound.
      */
     IssuerStats &get_issuer_stats(const std::string &issuer) {
         std::lock_guard<std::mutex> lock(m_mutex);
+        auto iter = m_issuer_stats.find(issuer);
+        if (iter != m_issuer_stats.end()) {
+            return iter->second;
+        }
+        if (m_issuer_stats.size() >= MAX_TRACKED_ISSUERS) {
+            return m_overflow_stats;
+        }
         return m_issuer_stats[issuer];
     }
 
@@ -484,9 +497,13 @@ class MonitoringStats {
 
     // Limit the number of failed issuer entries to prevent DDoS
     static constexpr size_t MAX_FAILED_ISSUERS = 100;
+    // Limit the number of tracked issuers; entries beyond this share the
+    // overflow bucket (issuer names are attacker-controlled token input)
+    static constexpr size_t MAX_TRACKED_ISSUERS = 1000;
 
     mutable std::mutex m_mutex;
     std::unordered_map<std::string, IssuerStats> m_issuer_stats;
+    IssuerStats m_overflow_stats;
     std::unordered_map<std::string, FailedIssuerStats> m_failed_issuer_lookups;
 
     // Atomic timestamp for last monitoring file write (seconds since epoch)
@@ -494,6 +511,7 @@ class MonitoringStats {
     std::atomic<int64_t> m_last_file_write_time{0};
 
     std::string sanitize_issuer_for_json(const std::string &issuer) const;
+    picojson::object serialize_issuer_stats(const IssuerStats &stats) const;
     void prune_failed_issuers();
     void write_monitoring_file_impl() noexcept;
 };

@@ -72,6 +72,63 @@ void MonitoringStats::prune_failed_issuers() {
     }
 }
 
+picojson::object
+MonitoringStats::serialize_issuer_stats(const IssuerStats &stats) const {
+    picojson::object issuer_obj;
+    issuer_obj["successful_validations"] = picojson::value(static_cast<int64_t>(
+        stats.successful_validations.load(std::memory_order_relaxed)));
+    issuer_obj["unsuccessful_validations"] =
+        picojson::value(static_cast<int64_t>(
+            stats.unsuccessful_validations.load(std::memory_order_relaxed)));
+    issuer_obj["expired_tokens"] = picojson::value(static_cast<int64_t>(
+        stats.expired_tokens.load(std::memory_order_relaxed)));
+
+    // Validation started counters
+    issuer_obj["sync_validations_started"] =
+        picojson::value(static_cast<int64_t>(
+            stats.sync_validations_started.load(std::memory_order_relaxed)));
+    issuer_obj["async_validations_started"] =
+        picojson::value(static_cast<int64_t>(
+            stats.async_validations_started.load(std::memory_order_relaxed)));
+
+    // Duration tracking
+    issuer_obj["sync_total_time_s"] = picojson::value(stats.get_sync_time_s());
+    issuer_obj["async_total_time_s"] =
+        picojson::value(stats.get_async_time_s());
+    issuer_obj["total_validation_time_s"] =
+        picojson::value(stats.get_total_time_s());
+
+    // Web lookup statistics
+    issuer_obj["successful_key_lookups"] = picojson::value(static_cast<int64_t>(
+        stats.successful_key_lookups.load(std::memory_order_relaxed)));
+    issuer_obj["failed_key_lookups"] = picojson::value(static_cast<int64_t>(
+        stats.failed_key_lookups.load(std::memory_order_relaxed)));
+    issuer_obj["failed_key_lookup_time_s"] =
+        picojson::value(stats.get_failed_key_lookup_time_s());
+
+    // Key refresh statistics
+    issuer_obj["expired_keys"] = picojson::value(static_cast<int64_t>(
+        stats.expired_keys.load(std::memory_order_relaxed)));
+    issuer_obj["failed_refreshes"] = picojson::value(static_cast<int64_t>(
+        stats.failed_refreshes.load(std::memory_order_relaxed)));
+    issuer_obj["stale_key_uses"] = picojson::value(static_cast<int64_t>(
+        stats.stale_key_uses.load(std::memory_order_relaxed)));
+
+    // Background refresh statistics
+    issuer_obj["background_successful_refreshes"] = picojson::value(
+        static_cast<int64_t>(stats.background_successful_refreshes.load(
+            std::memory_order_relaxed)));
+    issuer_obj["background_failed_refreshes"] =
+        picojson::value(static_cast<int64_t>(
+            stats.background_failed_refreshes.load(std::memory_order_relaxed)));
+
+    // Negative cache statistics
+    issuer_obj["negative_cache_hits"] = picojson::value(static_cast<int64_t>(
+        stats.negative_cache_hits.load(std::memory_order_relaxed)));
+
+    return issuer_obj;
+}
+
 std::string MonitoringStats::get_json() const {
     std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -80,74 +137,21 @@ std::string MonitoringStats::get_json() const {
 
     // Add per-issuer statistics
     for (const auto &entry : m_issuer_stats) {
-        const std::string &issuer = entry.first;
-        const IssuerStats &stats = entry.second;
-
         // Entries survive reset() with zeroed counters (in-flight
         // validations may hold references to them); don't report them
         // until they see activity again.
-        if (!stats.has_activity()) {
+        if (!entry.second.has_activity()) {
             continue;
         }
+        std::string sanitized_issuer = sanitize_issuer_for_json(entry.first);
+        issuers_obj[sanitized_issuer] =
+            picojson::value(serialize_issuer_stats(entry.second));
+    }
 
-        picojson::object issuer_obj;
-        issuer_obj["successful_validations"] =
-            picojson::value(static_cast<int64_t>(
-                stats.successful_validations.load(std::memory_order_relaxed)));
-        issuer_obj["unsuccessful_validations"] = picojson::value(
-            static_cast<int64_t>(stats.unsuccessful_validations.load(
-                std::memory_order_relaxed)));
-        issuer_obj["expired_tokens"] = picojson::value(static_cast<int64_t>(
-            stats.expired_tokens.load(std::memory_order_relaxed)));
-
-        // Validation started counters
-        issuer_obj["sync_validations_started"] = picojson::value(
-            static_cast<int64_t>(stats.sync_validations_started.load(
-                std::memory_order_relaxed)));
-        issuer_obj["async_validations_started"] = picojson::value(
-            static_cast<int64_t>(stats.async_validations_started.load(
-                std::memory_order_relaxed)));
-
-        // Duration tracking
-        issuer_obj["sync_total_time_s"] =
-            picojson::value(stats.get_sync_time_s());
-        issuer_obj["async_total_time_s"] =
-            picojson::value(stats.get_async_time_s());
-        issuer_obj["total_validation_time_s"] =
-            picojson::value(stats.get_total_time_s());
-
-        // Web lookup statistics
-        issuer_obj["successful_key_lookups"] =
-            picojson::value(static_cast<int64_t>(
-                stats.successful_key_lookups.load(std::memory_order_relaxed)));
-        issuer_obj["failed_key_lookups"] = picojson::value(static_cast<int64_t>(
-            stats.failed_key_lookups.load(std::memory_order_relaxed)));
-        issuer_obj["failed_key_lookup_time_s"] =
-            picojson::value(stats.get_failed_key_lookup_time_s());
-
-        // Key refresh statistics
-        issuer_obj["expired_keys"] = picojson::value(static_cast<int64_t>(
-            stats.expired_keys.load(std::memory_order_relaxed)));
-        issuer_obj["failed_refreshes"] = picojson::value(static_cast<int64_t>(
-            stats.failed_refreshes.load(std::memory_order_relaxed)));
-        issuer_obj["stale_key_uses"] = picojson::value(static_cast<int64_t>(
-            stats.stale_key_uses.load(std::memory_order_relaxed)));
-
-        // Background refresh statistics
-        issuer_obj["background_successful_refreshes"] = picojson::value(
-            static_cast<int64_t>(stats.background_successful_refreshes.load(
-                std::memory_order_relaxed)));
-        issuer_obj["background_failed_refreshes"] = picojson::value(
-            static_cast<int64_t>(stats.background_failed_refreshes.load(
-                std::memory_order_relaxed)));
-
-        // Negative cache statistics
-        issuer_obj["negative_cache_hits"] =
-            picojson::value(static_cast<int64_t>(
-                stats.negative_cache_hits.load(std::memory_order_relaxed)));
-
-        std::string sanitized_issuer = sanitize_issuer_for_json(issuer);
-        issuers_obj[sanitized_issuer] = picojson::value(issuer_obj);
+    // Issuers beyond MAX_TRACKED_ISSUERS share one aggregate bucket
+    if (m_overflow_stats.has_activity()) {
+        issuers_obj["<other>"] =
+            picojson::value(serialize_issuer_stats(m_overflow_stats));
     }
 
     root["issuers"] = picojson::value(issuers_obj);
@@ -182,6 +186,7 @@ void MonitoringStats::reset() {
     for (auto &entry : m_issuer_stats) {
         entry.second.reset_counters();
     }
+    m_overflow_stats.reset_counters();
     // The failed-issuer map stores plain values that are only accessed
     // under m_mutex, so clearing it is safe.
     m_failed_issuer_lookups.clear();
