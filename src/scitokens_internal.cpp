@@ -502,8 +502,6 @@ std::string es256_from_coords(const std::string &x_str,
         BN_free);
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
-    unsigned char *buf;
-    OSSL_PARAM *params;
     std::unique_ptr<EC_GROUP, decltype(&EC_GROUP_free)> ec_group(
         EC_GROUP_new_by_curve_name(EC_NAME), EC_GROUP_free);
     if (!ec_group.get()) {
@@ -522,46 +520,53 @@ std::string es256_from_coords(const std::string &x_str,
         throw UnsupportedKeyException("Invalid elliptic curve point in key");
     }
 
+    unsigned char *buf_raw = nullptr;
     size_t out_len =
         EC_POINT_point2buf(ec_group.get(), Q_point.get(),
-                           POINT_CONVERSION_UNCOMPRESSED, &buf, NULL);
+                           POINT_CONVERSION_UNCOMPRESSED, &buf_raw, NULL);
     if (out_len == 0) {
         throw UnsupportedKeyException(
             "Failed to convert EC point to octet base buffer");
     }
+    std::unique_ptr<unsigned char, void (*)(void *)> buf(
+        buf_raw, [](void *ptr) { OPENSSL_free(ptr); });
 
     std::unique_ptr<OSSL_PARAM_BLD, decltype(&OSSL_PARAM_BLD_free)> param_build(
         OSSL_PARAM_BLD_new(), OSSL_PARAM_BLD_free);
     if (!param_build.get() ||
         !OSSL_PARAM_BLD_push_utf8_string(param_build.get(), "group",
                                          "prime256v1", 0) ||
-        !OSSL_PARAM_BLD_push_octet_string(param_build.get(), "pub", buf,
-                                          out_len) ||
-        (params = OSSL_PARAM_BLD_to_param(param_build.get())) == NULL) {
+        !OSSL_PARAM_BLD_push_octet_string(param_build.get(), "pub", buf.get(),
+                                          out_len)) {
+        throw UnsupportedKeyException(
+            "Failed to build EC public key parameters");
+    }
+    std::unique_ptr<OSSL_PARAM, decltype(&OSSL_PARAM_free)> params(
+        OSSL_PARAM_BLD_to_param(param_build.get()), OSSL_PARAM_free);
+    if (!params.get()) {
         throw UnsupportedKeyException(
             "Failed to build EC public key parameters");
     }
 
-    EVP_PKEY *pkey = NULL;
     std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> ec_ctx(
         EVP_PKEY_CTX_new_from_name(NULL, "EC", NULL), EVP_PKEY_CTX_free);
     if (!ec_ctx.get()) {
         throw UnsupportedKeyException("Failed to set EC PKEY context");
     }
 
+    EVP_PKEY *pkey_raw = NULL;
     if (EVP_PKEY_fromdata_init(ec_ctx.get()) <= 0 ||
-        EVP_PKEY_fromdata(ec_ctx.get(), &pkey, EVP_PKEY_PUBLIC_KEY, params) <=
-            0 ||
-        pkey == NULL) {
+        EVP_PKEY_fromdata(ec_ctx.get(), &pkey_raw, EVP_PKEY_PUBLIC_KEY,
+                          params.get()) <= 0 ||
+        pkey_raw == NULL) {
         throw UnsupportedKeyException("Failed to set the EC public key");
     }
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(pkey_raw,
+                                                             EVP_PKEY_free);
 
-    if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey) == 0) {
+    if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey.get()) == 0) {
         throw UnsupportedKeyException("Failed to serialize EC public key");
     }
-    EVP_PKEY_free(pkey);
-    OSSL_PARAM_free(params);
-    OPENSSL_free(buf);
 #else
     std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> ec(
         EC_KEY_new_by_curve_name(EC_NAME), EC_KEY_free);
@@ -620,7 +625,6 @@ std::string rs256_from_coords(const std::string &e_str,
     // ========================================
     // OpenSSL 3.x: Use EVP_PKEY API
     // ========================================
-    OSSL_PARAM *params;
     std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> rsa_ctx(
         EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL), EVP_PKEY_CTX_free);
     if (!rsa_ctx.get()) {
@@ -633,25 +637,30 @@ std::string rs256_from_coords(const std::string &e_str,
         !OSSL_PARAM_BLD_push_BN_pad(param_build.get(), "e", e_bignum.get(),
                                     BN_num_bytes(e_bignum.get())) ||
         !OSSL_PARAM_BLD_push_BN_pad(param_build.get(), "n", n_bignum.get(),
-                                    BN_num_bytes(n_bignum.get())) ||
-        (params = OSSL_PARAM_BLD_to_param(param_build.get())) == NULL) {
+                                    BN_num_bytes(n_bignum.get()))) {
+        throw UnsupportedKeyException(
+            "Failed to build RSA public key parameters");
+    }
+    std::unique_ptr<OSSL_PARAM, decltype(&OSSL_PARAM_free)> params(
+        OSSL_PARAM_BLD_to_param(param_build.get()), OSSL_PARAM_free);
+    if (!params.get()) {
         throw UnsupportedKeyException(
             "Failed to build RSA public key parameters");
     }
 
-    EVP_PKEY *pkey = NULL;
+    EVP_PKEY *pkey_raw = NULL;
     if (EVP_PKEY_fromdata_init(rsa_ctx.get()) <= 0 ||
-        EVP_PKEY_fromdata(rsa_ctx.get(), &pkey, EVP_PKEY_PUBLIC_KEY, params) <=
-            0 ||
-        pkey == NULL) {
+        EVP_PKEY_fromdata(rsa_ctx.get(), &pkey_raw, EVP_PKEY_PUBLIC_KEY,
+                          params.get()) <= 0 ||
+        pkey_raw == NULL) {
         throw UnsupportedKeyException("Failed to set the RSA public key");
     }
+    std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(pkey_raw,
+                                                             EVP_PKEY_free);
 
-    if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey) == 0) {
+    if (PEM_write_bio_PUBKEY(pubkey_bio.get(), pkey.get()) == 0) {
         throw UnsupportedKeyException("Failed to serialize RSA public key");
     }
-    EVP_PKEY_free(pkey);
-    OSSL_PARAM_free(params);
     // Note: OSSL_PARAM_BLD_push_BN_pad() copied the BIGNUM data, so unique_ptr
     // still owns the original BIGNUMs and will free them automatically
 
@@ -1317,15 +1326,17 @@ bool scitokens::Validator::store_public_ec_key(const std::string &issuer,
         throw UnsupportedKeyException("Unable to get OpenSSL EC point");
     }
 
-    OSSL_PARAM *params;
-    if (!EVP_PKEY_todata(pkey.get(), EVP_PKEY_PUBLIC_KEY, &params)) {
+    OSSL_PARAM *params_raw = nullptr;
+    if (!EVP_PKEY_todata(pkey.get(), EVP_PKEY_PUBLIC_KEY, &params_raw)) {
         throw UnsupportedKeyException(
             "Unable to get OpenSSL public key parameters");
     }
+    std::unique_ptr<OSSL_PARAM, decltype(&OSSL_PARAM_free)> params(
+        params_raw, OSSL_PARAM_free);
 
     const void *buf = NULL;
     size_t buf_len;
-    OSSL_PARAM *p = OSSL_PARAM_locate(params, "pub");
+    OSSL_PARAM *p = OSSL_PARAM_locate(params.get(), "pub");
     if (!p || !OSSL_PARAM_get_octet_string_ptr(p, &buf, &buf_len) ||
         !EC_POINT_oct2point(ec_group.get(), q_point.get(),
                             static_cast<const unsigned char *>(buf), buf_len,
@@ -1340,8 +1351,6 @@ bool scitokens::Validator::store_public_ec_key(const std::string &issuer,
         throw UnsupportedKeyException(
             "Unable to get OpenSSL affine coordinates");
     }
-
-    OSSL_PARAM_free(params);
 #else
     std::unique_ptr<EC_KEY, decltype(&EC_KEY_free)> pkey(
         PEM_read_bio_EC_PUBKEY(pubkey_bio.get(), nullptr, nullptr, nullptr),
