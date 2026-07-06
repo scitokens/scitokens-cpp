@@ -1491,9 +1491,12 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
     // If setting to "", then we should treat as though it is unsetting the
     // config
     if (dir_path.length() == 0) { // User is configuring to empty string
-        std::lock_guard<std::mutex> lock(get_cache_home_mutex());
-        get_cache_home_string() = dir_path;
-        get_cache_home_set().store(false, std::memory_order_relaxed);
+        {
+            std::lock_guard<std::mutex> lock(get_cache_home_mutex());
+            get_cache_home_string() = dir_path;
+            get_cache_home_set().store(false, std::memory_order_relaxed);
+        }
+        bump_cache_config_generation();
         return std::make_pair(true, "");
     }
 
@@ -1521,6 +1524,7 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
         get_cache_home_string() = cleaned_dir_path;
         get_cache_home_set().store(true, std::memory_order_relaxed);
     }
+    bump_cache_config_generation();
     return std::make_pair(true, "");
 }
 

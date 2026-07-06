@@ -65,9 +65,22 @@ class Configuration {
     // In-memory keycache fallback configuration
     static void set_allow_in_memory(bool enabled) {
         m_allow_in_memory.store(enabled, std::memory_order_relaxed);
+        bump_cache_config_generation();
     }
     static bool get_allow_in_memory() {
         return m_allow_in_memory.load(std::memory_order_relaxed);
+    }
+
+    // Generation counter for configuration changes that affect where the
+    // keycache lives (cache home, in-memory fallback).  The cached keycache
+    // location resolution is invalidated when this changes.
+    static uint64_t get_cache_config_generation() {
+        return get_cache_config_generation_ref().load(
+            std::memory_order_acquire);
+    }
+    static void bump_cache_config_generation() {
+        get_cache_config_generation_ref().fetch_add(1,
+                                                    std::memory_order_acq_rel);
     }
 
     // Background refresh configuration
@@ -121,6 +134,11 @@ class Configuration {
     }
     static std::atomic<bool> &get_tls_ca_file_set() {
         static std::atomic<bool> instance{false};
+        return instance;
+    }
+
+    static std::atomic<uint64_t> &get_cache_config_generation_ref() {
+        static std::atomic<uint64_t> instance{0};
         return instance;
     }
 
