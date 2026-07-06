@@ -1117,14 +1117,27 @@ Validator::get_public_key_pem(const std::string &issuer, const std::string &kid,
             internal::MonitoringStats::instance().get_issuer_stats(issuer);
         issuer_stats.inc_expired_key();
 
-        // Use per-issuer lock to prevent thundering herd for new issuers
+        // Use per-issuer lock to prevent thundering herd for new issuers.
+        // Never block on the mutex: the async API can interleave several
+        // operations on one thread, and an earlier in-flight AsyncStatus for
+        // this issuer may already hold it -- a blocking acquire would
+        // deadlock the thread against itself (std::mutex is not recursive).
         auto issuer_mutex = get_issuer_mutex(issuer);
-        std::unique_lock<std::mutex> issuer_lock(*issuer_mutex);
+        std::unique_lock<std::mutex> issuer_lock(*issuer_mutex,
+                                                 std::try_to_lock);
 
-        // Check again if keys are now in DB (another thread may have fetched
-        // them while we were waiting for the lock)
-        if (get_public_keys_from_db(issuer, now, result->m_keys,
-                                    result->m_next_update)) {
+        if (!issuer_lock.owns_lock()) {
+            // Another operation is already fetching this issuer's keys.
+            // Return a status that polls the keycache DB (and retries the
+            // lock) on each continue call instead of blocking here.
+            result->m_waiting_for_issuer = true;
+            result->m_continue_fetch = true;
+            result->m_issuer_mutex = issuer_mutex;
+        }
+        // Check again if keys are now in DB (another operation may have
+        // fetched them before we acquired the lock)
+        else if (get_public_keys_from_db(issuer, now, result->m_keys,
+                                         result->m_next_update)) {
             // Keys are now available, use them
             result->m_continue_fetch = false;
             result->m_do_store = false;
@@ -1154,6 +1167,40 @@ std::unique_ptr<AsyncStatus>
 Validator::get_public_key_pem_continue(std::unique_ptr<AsyncStatus> status,
                                        std::string &public_pem,
                                        std::string &algorithm) {
+
+    if (status->m_waiting_for_issuer) {
+        // Another operation held this issuer's fetch lock when we started.
+        // See if it has stored keys in the meantime; a negative-cache entry
+        // (the other fetch failed) propagates as an exception here.
+        auto now = std::time(NULL);
+        if (get_public_keys_from_db(status->m_issuer, now, status->m_keys,
+                                    status->m_next_update)) {
+            status->m_waiting_for_issuer = false;
+            status->m_continue_fetch = false;
+            status->m_do_store = false;
+            // Fall through to the key-extraction code below.
+        } else {
+            // No keys yet: try to take over the fetch in case the other
+            // operation failed or was abandoned without storing anything.
+            std::unique_lock<std::mutex> issuer_lock(*status->m_issuer_mutex,
+                                                     std::try_to_lock);
+            if (!issuer_lock.owns_lock()) {
+                // Still fetching; poll again on the next continue call.
+                return std::move(status);
+            }
+            std::string issuer = status->m_issuer;
+            std::string kid = status->m_kid;
+            auto issuer_mutex = status->m_issuer_mutex;
+            status = get_public_keys_from_web(
+                issuer, internal::SimpleCurlGet::default_timeout);
+            status->m_issuer = issuer;
+            status->m_kid = kid;
+            status->m_issuer_mutex = issuer_mutex;
+            status->m_issuer_lock = std::move(issuer_lock);
+            // Fall through: the m_continue_fetch block below drives the
+            // download exactly as for a first-attempt fetch.
+        }
+    }
 
     if (status->m_continue_fetch) {
         // Save issuer and lock info before potentially moving status

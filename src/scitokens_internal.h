@@ -578,6 +578,9 @@ class AsyncStatus {
     bool m_has_metadata{false};
     bool m_oauth_fallback{false};
     bool m_is_refresh{false}; // True if this is a refresh of an existing key
+    // True if another operation holds this issuer's fetch lock; we poll the
+    // keycache DB on each continue instead of blocking on the mutex.
+    bool m_waiting_for_issuer{false};
     AsyncState m_state{DOWNLOAD_METADATA};
     std::unique_lock<std::mutex> m_refresh_lock;
     // Per-issuer lock to prevent thundering herd on new issuers
@@ -603,8 +606,14 @@ class AsyncStatus {
     struct timeval get_timeout_val(time_t expiry_time) const {
         auto now = time(NULL);
         long timeout_ms = 100 * (expiry_time - now);
-        if (m_cget && (m_cget->get_timeout_ms() < timeout_ms))
-            timeout_ms = m_cget->get_timeout_ms();
+        if (m_cget) {
+            if (m_cget->get_timeout_ms() < timeout_ms)
+                timeout_ms = m_cget->get_timeout_ms();
+        } else if (timeout_ms > 100) {
+            // No transfer of our own in progress (e.g. waiting for another
+            // operation's fetch of this issuer); poll at 100ms.
+            timeout_ms = 100;
+        }
         struct timeval timeout;
         timeout.tv_sec = timeout_ms / 1000;
         timeout.tv_usec = (timeout_ms % 1000) * 1000;
@@ -852,13 +861,19 @@ class Validator {
                         "Timeout when loading the OIDC metadata.");
                 }
 
-                // Only continue if select returned due to I/O activity (not
-                // timeout)
-                if (select_result > 0) {
+                // Continue on I/O activity (select_result > 0) and also on
+                // timeout (select_result == 0): libcurl requires
+                // curl_multi_perform to be called after a select timeout so
+                // it can drive non-socket work (DNS retries, connect
+                // timeouts, internal timers).  A timed-out select also
+                // clears the fd_sets, and only verify_async_continue()
+                // repopulates them, so skipping it would leave this loop
+                // selecting on empty sets until expiry_time.
+                if (select_result >= 0) {
                     result = verify_async_continue(std::move(result));
                 }
-                // If select_result == 0 (timeout) or -1 (error/interrupt),
-                // just loop back to update duration and check expiry
+                // If select_result == -1 (error/interrupt), just loop back
+                // to update duration and check expiry
             }
 
             // Record successful validation (final duration update)
