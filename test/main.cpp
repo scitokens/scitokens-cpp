@@ -691,8 +691,8 @@ TEST_F(SerializeTest, StaleKeyFallbackTest) {
     const char stale_issuer[] = "https://127.0.0.1:1/gtest-stale";
 
     // Store valid keys that become due for refresh after one second.
-    auto rv = scitoken_config_set_int("keycache.update_interval_s", 1,
-                                      &err_msg);
+    auto rv =
+        scitoken_config_set_int("keycache.update_interval_s", 1, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
     rv = scitoken_store_public_ec_key(stale_issuer, "1", ec_public, &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
