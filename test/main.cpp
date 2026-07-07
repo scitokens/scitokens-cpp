@@ -1086,6 +1086,21 @@ TEST_F(KeycacheTest, GetKeycacheLocation) {
     }
 }
 
+TEST_F(KeycacheTest, SetCacheHomeAllSlashesTest) {
+    // A cache home consisting only of slashes has no path components;
+    // it must be rejected with an error, not crash (previously this
+    // caused an out-of-bounds access on an empty vector).
+    for (const char *path : {"/", "//", "///"}) {
+        char *err_msg = nullptr;
+        auto rv =
+            scitoken_config_set_str("keycache.cache_home", path, &err_msg);
+        EXPECT_FALSE(rv == 0) << "path: " << path;
+        if (err_msg) {
+            free(err_msg);
+        }
+    }
+}
+
 TEST_F(KeycacheTest, InvalidConfigKeyTest) {
     char *err_msg = nullptr;
     int new_update_interval = 400;

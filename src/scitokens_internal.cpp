@@ -1499,6 +1499,13 @@ configurer::Configuration::set_cache_home(const std::string dir_path) {
 
     std::vector<std::string> path_components =
         path_split(dir_path); // cleans any extraneous /'s
+    if (path_components.empty()) {
+        // A path of only slashes (e.g. "/") has no components and would
+        // otherwise be silently stored as an empty cache home.
+        return std::make_pair(false,
+                              "The provided cache home path does not contain "
+                              "any path components");
+    }
     std::string cleaned_dir_path;
     for (const auto &component :
          path_components) { // add the / back to the path components
@@ -1593,8 +1600,5 @@ configurer::Configuration::path_split(std::string path) {
         }
     }
 
-    if (path_components[0] == "") {
-        path_components.erase(path_components.begin());
-    }
     return path_components;
 }
