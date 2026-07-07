@@ -126,8 +126,7 @@ int main(int argc, char *const *argv) {
     SciToken scitoken = nullptr;
     SciTokenKey dummy_key = nullptr;
     if (g_profile.empty()) {
-        if (scitoken_deserialize(token.c_str(), &scitoken, nullptr,
-                                 &err_msg)) {
+        if (scitoken_deserialize(token.c_str(), &scitoken, nullptr, &err_msg)) {
             std::cout << "Failed to deserialize a token: " << err_msg
                       << std::endl;
             free(err_msg);
