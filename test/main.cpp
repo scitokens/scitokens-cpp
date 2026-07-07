@@ -683,6 +683,46 @@ TEST_F(SerializeTest, DeserializeAsyncTest) {
     scitoken_destroy(scitoken);
 }
 
+TEST_F(SerializeTest, StaleKeyFallbackTest) {
+    char *err_msg = nullptr;
+
+    // An issuer whose metadata endpoint can never be reached (connection
+    // is refused immediately; no network access is performed).
+    const char stale_issuer[] = "https://127.0.0.1:1/gtest-stale";
+
+    // Store valid keys that become due for refresh after one second.
+    auto rv =
+        scitoken_config_set_int("keycache.update_interval_s", 1, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    rv = scitoken_store_public_ec_key(stale_issuer, "1", ec_public, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    rv = scitoken_config_set_int("keycache.update_interval_s", 600, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    auto token = TokenPtr(scitoken_create(m_key.get()), scitoken_destroy);
+    ASSERT_TRUE(token.get() != nullptr);
+    rv = scitoken_set_claim_string(token.get(), "iss", stale_issuer, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    scitoken_set_lifetime(token.get(), 60);
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    std::unique_ptr<char, decltype(&free)> token_value_ptr(token_value, free);
+
+    // Let next_update pass so verification triggers a refresh attempt.
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    // The refresh fetch fails (unreachable issuer), but the cached keys
+    // are still valid: verification must fall back to them and succeed.
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    EXPECT_TRUE(rv == 0) << (err_msg ? err_msg : "");
+    if (err_msg) {
+        free(err_msg);
+    }
+}
+
 TEST_F(SerializeTest, FailDeserializeAsyncTest) {
     char *err_msg = nullptr;
 
