@@ -1092,8 +1092,8 @@ TEST_F(KeycacheTest, SetCacheHomeAllSlashesTest) {
     // caused an out-of-bounds access on an empty vector).
     for (const char *path : {"/", "//", "///"}) {
         char *err_msg = nullptr;
-        auto rv = scitoken_config_set_str("keycache.cache_home", path,
-                                          &err_msg);
+        auto rv =
+            scitoken_config_set_str("keycache.cache_home", path, &err_msg);
         EXPECT_FALSE(rv == 0) << "path: " << path;
         if (err_msg) {
             free(err_msg);
