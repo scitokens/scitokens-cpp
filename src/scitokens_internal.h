@@ -1,5 +1,6 @@
 
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -1084,14 +1085,10 @@ class Validator {
                                              jwt::date now) {
             if (now < claim_time - clock_skew) {
                 // Round up so the reported offset always exceeds the skew
-                auto delta = std::chrono::duration_cast<std::chrono::seconds>(
-                    claim_time - now);
-                if (delta < claim_time - now) {
-                    ++delta;
-                }
+                auto delta = static_cast<long long>(std::ceil(
+                    std::chrono::duration<double>(claim_time - now).count()));
                 throw JWTVerificationException(
-                    "'" + claim + "' claim is " +
-                    std::to_string(delta.count()) +
+                    "'" + claim + "' claim is " + std::to_string(delta) +
                     "s in the future, more than the allowed clock skew of " +
                     std::to_string(clock_skew.count()) + "s");
             }
