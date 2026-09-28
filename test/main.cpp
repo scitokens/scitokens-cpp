@@ -773,6 +773,91 @@ TEST_F(SerializeTest, ExplicitTime) {
     enforcer_destroy(enforcer);
 }
 
+TEST_F(SerializeTest, ClockSkew) {
+    char *err_msg = nullptr;
+
+    scitoken_set_serialize_profile(m_token.get(), SciTokenProfile::WLCG_1_0);
+    auto rv = scitoken_set_claim_string(m_token.get(), "scope",
+                                        "storage.read:/", &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    char *token_value = nullptr;
+    rv = scitoken_serialize(m_token.get(), &token_value, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    auto issued = time(NULL);
+
+    rv = scitoken_deserialize_v2(token_value, m_read_token.get(), nullptr,
+                                 &err_msg);
+    free(token_value);
+    ASSERT_TRUE(rv == 0) << err_msg;
+
+    auto orig_skew =
+        scitoken_config_get_int("validation.clock_skew_s", nullptr);
+    EXPECT_EQ(orig_skew, 60);
+
+    auto enforcer = enforcer_create("https://demo.scitokens.org/gtest",
+                                    &m_audiences_array[0], &err_msg);
+    ASSERT_TRUE(enforcer != nullptr) << err_msg;
+    Acl *acls = nullptr;
+
+    // Local clock slightly behind the issuer: 'iat' and 'nbf' are in the
+    // future but within the default skew.
+    enforcer_set_time(enforcer, issued - 5, &err_msg);
+    rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    enforcer_acl_free(acls);
+    acls = nullptr;
+
+    // Beyond the allowed skew; the error names the claim instead of
+    // claiming the token expired.
+    enforcer_set_time(enforcer, issued - 100, &err_msg);
+    rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    ASSERT_FALSE(rv == 0);
+    ASSERT_TRUE(err_msg != nullptr);
+    EXPECT_NE(std::string(err_msg).find("in the future"), std::string::npos)
+        << err_msg;
+    EXPECT_EQ(std::string(err_msg).find("expired"), std::string::npos)
+        << err_msg;
+    free(err_msg);
+    err_msg = nullptr;
+
+    // A larger configured skew accepts it.
+    rv = scitoken_config_set_int("validation.clock_skew_s", 200, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    enforcer_acl_free(acls);
+    acls = nullptr;
+
+    // Zero skew restores strict checking.
+    rv = scitoken_config_set_int("validation.clock_skew_s", 0, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    enforcer_set_time(enforcer, issued - 5, &err_msg);
+    rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    ASSERT_FALSE(rv == 0);
+    free(err_msg);
+    err_msg = nullptr;
+
+    // Skew does not extend 'exp' (token lifetime is 60s).
+    rv = scitoken_config_set_int("validation.clock_skew_s", 200, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    enforcer_set_time(enforcer, issued + 100, &err_msg);
+    rv = enforcer_generate_acls(enforcer, m_read_token.get(), &acls, &err_msg);
+    ASSERT_FALSE(rv == 0);
+    free(err_msg);
+    err_msg = nullptr;
+
+    rv = scitoken_config_set_int("validation.clock_skew_s", -1, &err_msg);
+    ASSERT_FALSE(rv == 0);
+    free(err_msg);
+    err_msg = nullptr;
+
+    rv =
+        scitoken_config_set_int("validation.clock_skew_s", orig_skew, &err_msg);
+    ASSERT_TRUE(rv == 0) << err_msg;
+    enforcer_destroy(enforcer);
+}
+
 TEST_F(SerializeTest, GetExpirationErrorHandling) {
     char *err_msg = nullptr;
 

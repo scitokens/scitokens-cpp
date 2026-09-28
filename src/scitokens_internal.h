@@ -1,5 +1,6 @@
 
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -86,6 +87,10 @@ class Configuration {
     }
     static int get_refresh_threshold() { return m_refresh_threshold_ms; }
 
+    // Allowed clock skew (seconds) when checking the 'iat' and 'nbf' claims
+    static void set_clock_skew(int seconds) { m_clock_skew_s = seconds; }
+    static int get_clock_skew() { return m_clock_skew_s; }
+
   private:
     // Accessor functions for construct-on-first-use idiom
     static std::atomic_int &get_next_update_delta_ref() {
@@ -138,6 +143,7 @@ class Configuration {
     static std::atomic_bool m_allow_in_memory;
     static std::atomic_int m_refresh_interval_ms;  // N milliseconds
     static std::atomic_int m_refresh_threshold_ms; // M milliseconds
+    static std::atomic_int m_clock_skew_s;         // In seconds, default 60
     // static bool check_dir(const std::string dir_path);
     static std::pair<bool, std::string>
     mkdir_and_parents_if_needed(const std::string dir_path);
@@ -1068,9 +1074,50 @@ class Validator {
         SciTokenKey key(status->m_kid, status->m_algorithm,
                         status->m_public_pem, "");
 
+        // Tolerate small clock differences between the issuer and this host
+        // for the 'iat' and 'nbf' claims; jwt-cpp's defaults allow none and
+        // report a token issued a second in the future as "token expired".
+        // 'exp' is still checked with no leeway.
+        auto clock_skew =
+            std::chrono::seconds(configurer::Configuration::get_clock_skew());
+        auto check_not_future = [clock_skew](const std::string &claim,
+                                             jwt::date claim_time,
+                                             jwt::date now) {
+            if (now < claim_time - clock_skew) {
+                // Round up so the reported offset always exceeds the skew
+                auto delta = static_cast<long long>(std::ceil(
+                    std::chrono::duration<double>(claim_time - now).count()));
+                throw JWTVerificationException(
+                    "'" + claim + "' claim is " + std::to_string(delta) +
+                    "s in the future, more than the allowed clock skew of " +
+                    std::to_string(clock_skew.count()) + "s");
+            }
+        };
+
         auto verifier =
             jwt::verify<FixedClock, jwt::traits::kazuho_picojson>({m_now})
-                .allow_algorithm(key);
+                .allow_algorithm(key)
+                .with_claim(
+                    "iat",
+                    [check_not_future](const jwt::verify_ops::verify_context<
+                                           jwt::traits::kazuho_picojson> &ctx,
+                                       std::error_code &) {
+                        if (!ctx.jwt.has_issued_at()) {
+                            return;
+                        }
+                        check_not_future("iat", ctx.jwt.get_issued_at(),
+                                         ctx.current_time);
+                    })
+                .with_claim("nbf", [check_not_future](
+                                       const jwt::verify_ops::verify_context<
+                                           jwt::traits::kazuho_picojson> &ctx,
+                                       std::error_code &) {
+                    if (!ctx.jwt.has_not_before()) {
+                        return;
+                    }
+                    check_not_future("nbf", ctx.jwt.get_not_before(),
+                                     ctx.current_time);
+                });
 
         const jwt::decoded_jwt<jwt::traits::kazuho_picojson> jwt(
             status->m_jwt_string);
