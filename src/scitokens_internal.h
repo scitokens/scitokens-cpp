@@ -1083,8 +1083,12 @@ class Validator {
                                              jwt::date claim_time,
                                              jwt::date now) {
             if (now < claim_time - clock_skew) {
+                // Round up so the reported offset always exceeds the skew
                 auto delta = std::chrono::duration_cast<std::chrono::seconds>(
                     claim_time - now);
+                if (delta < claim_time - now) {
+                    ++delta;
+                }
                 throw JWTVerificationException(
                     "'" + claim + "' claim is " +
                     std::to_string(delta.count()) +

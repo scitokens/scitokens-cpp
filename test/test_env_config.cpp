@@ -151,6 +151,34 @@ int main() {
         }
     }
 
+    // Test 6: Check if SCITOKEN_CONFIG_VALIDATION_CLOCK_SKEW_S was loaded
+    const char *env_skew =
+        std::getenv("SCITOKEN_CONFIG_VALIDATION_CLOCK_SKEW_S");
+    if (env_skew) {
+        try {
+            int expected = std::stoi(env_skew);
+            int actual =
+                scitoken_config_get_int("validation.clock_skew_s", &err_msg);
+            if (actual != expected) {
+                std::cerr << "FAIL: validation.clock_skew_s expected "
+                          << expected << " but got " << actual << std::endl;
+                if (err_msg) {
+                    std::cerr << "Error: " << err_msg << std::endl;
+                    free(err_msg);
+                    err_msg = nullptr;
+                }
+                failures++;
+            } else {
+                std::cout << "PASS: validation.clock_skew_s = " << actual
+                          << std::endl;
+            }
+        } catch (const std::exception &e) {
+            std::cerr << "FAIL: Could not parse env var value: " << e.what()
+                      << std::endl;
+            failures++;
+        }
+    }
+
     if (failures == 0) {
         std::cout << "\nAll environment variable configuration tests passed!"
                   << std::endl;
