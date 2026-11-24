@@ -1,7 +1,18 @@
 /**
  * Public header for the SciTokens C library.
  *
+ * Thread-safety: individual handles (SciToken, SciTokenKey, Validator,
+ * Enforcer, SciTokenStatus) are NOT thread-safe.  A handle must not be
+ * used from multiple threads concurrently: validation mutates internal
+ * state on the Validator/Enforcer (detected token profile, requested
+ * test path, generated ACLs), so concurrent use of one handle can crash
+ * or -- worse -- return authorization results computed from another
+ * thread's request.  Create one handle per thread, or serialize access
+ * to a shared handle externally.
  *
+ * Distinct handles may be used from different threads freely: the
+ * shared key cache, configuration, and monitoring state are internally
+ * synchronized.
  */
 
 #include <sys/select.h>
@@ -244,6 +255,9 @@ int scitoken_store_public_ec_key(const char *issuer, const char *keyid,
 /**
  * @brief Create a new token validator
  *
+ * The returned handle is not thread-safe; do not call validator_*
+ * functions on the same handle from multiple threads concurrently.
+ *
  * @return Validator handle on success, NULL on failure
  */
 Validator validator_create();
@@ -285,6 +299,12 @@ void validator_destroy(Validator validator);
 
 /**
  * @brief Create a new token enforcer
+ *
+ * The returned handle is not thread-safe: enforcer_test and
+ * enforcer_generate_acls store the request being evaluated inside the
+ * handle, so concurrent calls on one handle can return authorization
+ * results computed from another thread's request.  Create one enforcer
+ * per thread, or serialize access externally.
  *
  * @param issuer Required issuer URL for tokens
  * @param audience NULL-terminated array of acceptable audience values
