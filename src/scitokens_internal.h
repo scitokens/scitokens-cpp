@@ -578,6 +578,9 @@ class AsyncStatus {
     bool m_has_metadata{false};
     bool m_oauth_fallback{false};
     bool m_is_refresh{false}; // True if this is a refresh of an existing key
+    // True if another operation holds this issuer's fetch lock; we poll the
+    // keycache DB on each continue instead of blocking on the mutex.
+    bool m_waiting_for_issuer{false};
     AsyncState m_state{DOWNLOAD_METADATA};
     std::unique_lock<std::mutex> m_refresh_lock;
     // Per-issuer lock to prevent thundering herd on new issuers
@@ -603,8 +606,14 @@ class AsyncStatus {
     struct timeval get_timeout_val(time_t expiry_time) const {
         auto now = time(NULL);
         long timeout_ms = 100 * (expiry_time - now);
-        if (m_cget && (m_cget->get_timeout_ms() < timeout_ms))
-            timeout_ms = m_cget->get_timeout_ms();
+        if (m_cget) {
+            if (m_cget->get_timeout_ms() < timeout_ms)
+                timeout_ms = m_cget->get_timeout_ms();
+        } else if (timeout_ms > 100) {
+            // No transfer of our own in progress (e.g. waiting for another
+            // operation's fetch of this issuer); poll at 100ms.
+            timeout_ms = 100;
+        }
         struct timeval timeout;
         timeout.tv_sec = timeout_ms / 1000;
         timeout.tv_usec = (timeout_ms % 1000) * 1000;
