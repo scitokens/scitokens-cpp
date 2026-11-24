@@ -12,6 +12,8 @@ else()
 endif()
 
 target_link_libraries(scitokens-gtest SciTokens "${LIBGTEST}" pthread)
+# main.cpp signs some test tokens directly with jwt-cpp, which needs OpenSSL.
+target_include_directories(scitokens-gtest PRIVATE ${LIBCRYPTO_INCLUDE_DIRS})
 
 add_test(
   NAME
