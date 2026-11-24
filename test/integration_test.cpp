@@ -2,6 +2,7 @@
 #include "test_utils.h"
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -14,6 +15,7 @@
 #include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 #ifndef PICOJSON_USE_INT64
@@ -2221,6 +2223,255 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
     free(value);
 
     // config_guard destructor restores permissions and config
+}
+
+// =============================================================================
+// Per-operation validation state
+//
+// An asynchronous enforcer_generate_acls_start/continue operation must return
+// only its own token's ACLs, even when other operations ran to completion on
+// the same Enforcer while it was waiting for a key download.
+// =============================================================================
+
+// Namespace-scope rather than a static member, so that it never needs an
+// out-of-class definition before C++17 if it is bound to a reference.
+constexpr const char *kAudience = "https://per-operation.test/";
+
+class PerOperationStateIntegrationTest : public IntegrationTest {
+  protected:
+    using AclVec = std::vector<std::pair<std::string, std::string>>;
+    using TokenPtr = std::unique_ptr<void, decltype(&scitoken_destroy)>;
+
+    void SetUp() override {
+        IntegrationTest::SetUp();
+        if (HasFatalFailure()) {
+            return;
+        }
+        char *err_msg = nullptr;
+        original_update_interval_ =
+            scitoken_config_get_int("keycache.update_interval_s", &err_msg);
+        free(err_msg);
+        key_.reset(scitoken_key_create("test-key-1", "ES256",
+                                       public_key_.c_str(),
+                                       private_key_.c_str(), nullptr));
+        ASSERT_TRUE(key_.get() != nullptr);
+    }
+
+    void TearDown() override {
+        char *err_msg = nullptr;
+        scitoken_config_set_int("keycache.update_interval_s",
+                                original_update_interval_, &err_msg);
+        free(err_msg);
+    }
+
+    // Create, sign, and (fresh-handle) verify a SciTokens 2.0 token.
+    TokenPtr make_token(const char *scope) {
+        TokenPtr token(scitoken_create(key_.get()), scitoken_destroy);
+        char *err_msg = nullptr;
+        EXPECT_EQ(scitoken_set_claim_string(token.get(), "iss",
+                                            issuer_url_.c_str(), &err_msg),
+                  0);
+        EXPECT_EQ(
+            scitoken_set_claim_string(token.get(), "aud", kAudience, &err_msg),
+            0);
+        EXPECT_EQ(
+            scitoken_set_claim_string(token.get(), "scope", scope, &err_msg),
+            0);
+        EXPECT_EQ(scitoken_set_claim_string(token.get(), "ver", "scitoken:2.0",
+                                            &err_msg),
+                  0);
+        scitoken_set_lifetime(token.get(), 600);
+        char *serialized = nullptr;
+        EXPECT_EQ(scitoken_serialize(token.get(), &serialized, &err_msg), 0);
+        std::unique_ptr<char, decltype(&free)> serialized_ptr(serialized, free);
+
+        TokenPtr result(scitoken_create(nullptr), scitoken_destroy);
+        if (!serialized || scitoken_deserialize_v2(serialized, result.get(),
+                                                   nullptr, &err_msg) != 0) {
+            ADD_FAILURE() << "Failed to create token: "
+                          << (err_msg ? err_msg : "unknown error");
+            result.reset();
+        }
+        free(err_msg);
+        return result;
+    }
+
+    static AclVec to_vec(Acl *acls) {
+        AclVec result;
+        for (int idx = 0; acls && acls[idx].authz && acls[idx].resource;
+             idx++) {
+            result.emplace_back(acls[idx].authz, acls[idx].resource);
+        }
+        if (acls) {
+            enforcer_acl_free(acls);
+        }
+        return result;
+    }
+
+    // Re-store the issuer's keys with a 1 second next_update, then let that
+    // pass: the keys stay usable, but the next lookup starts a refresh.
+    // Tokens must be created (and verified) before calling this, since
+    // verifying them afterwards would refresh the keys again.
+    void make_keys_stale() {
+        char *err_msg = nullptr;
+        ASSERT_EQ(
+            scitoken_config_set_int("keycache.update_interval_s", 1, &err_msg),
+            0);
+        char *jwks = nullptr;
+        ASSERT_EQ(
+            keycache_get_cached_jwks(issuer_url_.c_str(), &jwks, &err_msg), 0)
+            << (err_msg ? err_msg : "");
+        std::unique_ptr<char, decltype(&free)> jwks_ptr(jwks, free);
+        ASSERT_EQ(keycache_set_jwks(issuer_url_.c_str(), jwks, &err_msg), 0)
+            << (err_msg ? err_msg : "");
+        std::this_thread::sleep_for(std::chrono::milliseconds(2100));
+    }
+
+    std::unique_ptr<void, decltype(&enforcer_destroy)> make_enforcer() {
+        const char *audiences[] = {kAudience, nullptr};
+        char *err_msg = nullptr;
+        std::unique_ptr<void, decltype(&enforcer_destroy)> enf(
+            enforcer_create(issuer_url_.c_str(), audiences, &err_msg),
+            enforcer_destroy);
+        free(err_msg);
+        return enf;
+    }
+
+    // Start an operation that must go pending because it starts the key
+    // refresh; while it is pending the refresh lock is held, so other
+    // operations on the issuer complete immediately from the cached keys.
+    static SciTokenStatus start_pending(Enforcer enf, const TokenPtr &token) {
+        SciTokenStatus status = nullptr;
+        Acl *raw = nullptr;
+        char *err_msg = nullptr;
+        int rv = enforcer_generate_acls_start(enf, token.get(), &status, &raw,
+                                              &err_msg);
+        EXPECT_EQ(rv, 0) << (err_msg ? err_msg : "");
+        free(err_msg);
+        if (status == nullptr) {
+            ADD_FAILURE() << "operation completed immediately; the test needs "
+                             "it pending on the key refresh";
+            if (rv == 0) {
+                enforcer_acl_free(raw);
+            }
+        }
+        return status;
+    }
+
+    // Drive a pending operation to completion; returns its result code.
+    static int finish(Enforcer enf, SciTokenStatus &status, AclVec &acls,
+                      std::string &err) {
+        const time_t deadline = time(nullptr) + 30;
+        int rv = 0;
+        while (status != nullptr && time(nullptr) < deadline) {
+            Acl *raw = nullptr;
+            char *err_msg = nullptr;
+            rv = enforcer_generate_acls_continue(enf, &status, &raw, &err_msg);
+            if (rv != 0) {
+                err = err_msg ? err_msg : "unknown error";
+                free(err_msg);
+                status = nullptr;
+                return rv;
+            }
+            free(err_msg);
+            if (status == nullptr) {
+                acls = to_vec(raw);
+                return 0;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        err = "operation did not finish before the deadline";
+        return -1;
+    }
+
+    int original_update_interval_{600};
+    std::unique_ptr<void, decltype(&scitoken_key_destroy)> key_{
+        nullptr, scitoken_key_destroy};
+};
+
+// The interleaving from the bug report: operation A is pending on a key
+// refresh, other operations on the same Enforcer complete from the cached
+// keys, then A completes.  On the unfixed library A's result also contained
+// the other operations' ACLs.
+TEST_F(PerOperationStateIntegrationTest, InterleavedAsyncAclsArePerOperation) {
+    auto token_a = make_token("read:/public");
+    auto token_b = make_token("write:/secret");
+    auto token_c = make_token("read:/c-only");
+    ASSERT_TRUE(token_a && token_b && token_c);
+    make_keys_stale();
+    if (HasFatalFailure()) {
+        return;
+    }
+    auto enf = make_enforcer();
+    ASSERT_TRUE(enf.get() != nullptr);
+
+    SciTokenStatus status_a = start_pending(enf.get(), token_a);
+    ASSERT_NE(status_a, nullptr);
+
+    // B: blocking call, completes from the cached keys.
+    char *err_msg = nullptr;
+    Acl *raw = nullptr;
+    ASSERT_EQ(enforcer_generate_acls(enf.get(), token_b.get(), &raw, &err_msg),
+              0)
+        << (err_msg ? err_msg : "");
+    EXPECT_EQ(to_vec(raw), (AclVec{{"write", "/secret"}}));
+
+    // C: asynchronous call that completes within _start.
+    SciTokenStatus status_c = nullptr;
+    raw = nullptr;
+    ASSERT_EQ(enforcer_generate_acls_start(enf.get(), token_c.get(), &status_c,
+                                           &raw, &err_msg),
+              0)
+        << (err_msg ? err_msg : "");
+    ASSERT_EQ(status_c, nullptr);
+    EXPECT_EQ(to_vec(raw), (AclVec{{"read", "/c-only"}}));
+
+    // Finally A completes, with only its own ACLs.
+    AclVec acls_a;
+    std::string err;
+    ASSERT_EQ(finish(enf.get(), status_a, acls_a, err), 0) << err;
+    EXPECT_EQ(acls_a, (AclVec{{"read", "/public"}}));
+
+    // A sequential call afterwards is unaffected.
+    raw = nullptr;
+    ASSERT_EQ(enforcer_generate_acls(enf.get(), token_b.get(), &raw, &err_msg),
+              0)
+        << (err_msg ? err_msg : "");
+    EXPECT_EQ(to_vec(raw), (AclVec{{"write", "/secret"}}));
+}
+
+// An enforcer_test call made while an asynchronous operation is pending must
+// not change that operation's result.  On the unfixed library the pending
+// operation was then evaluated against the enforcer_test request and failed.
+TEST_F(PerOperationStateIntegrationTest,
+       InterleavedEnforcerTestDoesNotAffectPendingOperation) {
+    auto token_a = make_token("read:/public");
+    auto token_b = make_token("write:/secret");
+    ASSERT_TRUE(token_a && token_b);
+    make_keys_stale();
+    if (HasFatalFailure()) {
+        return;
+    }
+    auto enf = make_enforcer();
+    ASSERT_TRUE(enf.get() != nullptr);
+
+    SciTokenStatus status_a = start_pending(enf.get(), token_a);
+    ASSERT_NE(status_a, nullptr);
+
+    char *err_msg = nullptr;
+    Acl denied{"write", "/elsewhere"};
+    EXPECT_NE(enforcer_test(enf.get(), token_b.get(), &denied, &err_msg), 0);
+    free(err_msg);
+    err_msg = nullptr;
+    Acl allowed{"write", "/secret/file"};
+    EXPECT_EQ(enforcer_test(enf.get(), token_b.get(), &allowed, &err_msg), 0)
+        << (err_msg ? err_msg : "");
+    free(err_msg);
+
+    AclVec acls_a;
+    std::string err;
+    ASSERT_EQ(finish(enf.get(), status_a, acls_a, err), 0) << err;
+    EXPECT_EQ(acls_a, (AclVec{{"read", "/public"}}));
 }
 
 } // namespace

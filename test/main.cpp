@@ -9,10 +9,14 @@
 #ifndef PICOJSON_USE_INT64
 #define PICOJSON_USE_INT64
 #endif
+#include <jwt-cpp/jwt.h>
 #include <picojson/picojson.h>
+#include <string>
 #include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 using scitokens_test::SecureTempDir;
 
@@ -1744,6 +1748,260 @@ TEST_F(IssuerSecurityTest, ThunderingHerdPrevention) {
     ASSERT_TRUE(value != nullptr);
     std::unique_ptr<char, decltype(&free)> value_ptr(value, free);
     EXPECT_STREQ(value, test_issuer.c_str());
+}
+
+// The outcome of validating a token must depend only on that token and on the
+// handle's configuration, never on other tokens the same Enforcer handled
+// before it.  Tokens are signed by hand here so each test controls the 'typ'
+// header and the presence of 'nbf' and 'ver'.
+namespace {
+// Namespace-scope rather than static members: they are bound to references
+// (e.g. by std::pair's constructor), which before C++17 would require an
+// out-of-class definition for a static constexpr member.
+constexpr const char *kIssuer = "https://demo.scitokens.org/gtest";
+constexpr const char *kOtherIssuer = "https://demo.scitokens.org/gtest-other";
+constexpr const char *kAudience = "https://demo.scitokens.org/";
+} // namespace
+
+class PerOperationStateTest : public ::testing::Test {
+  protected:
+    using AclVec = std::vector<std::pair<std::string, std::string>>;
+    using TokenPtr = std::unique_ptr<void, decltype(&scitoken_destroy)>;
+    using EnforcerPtr = std::unique_ptr<void, decltype(&enforcer_destroy)>;
+
+    void SetUp() override {
+        char *err_msg = nullptr;
+        ASSERT_EQ(
+            scitoken_store_public_ec_key(kIssuer, "1", ec_public, &err_msg), 0)
+            << err_msg;
+        ASSERT_EQ(scitoken_store_public_ec_key(kOtherIssuer, "1", ec_public_2,
+                                               &err_msg),
+                  0)
+            << err_msg;
+        m_enf = new_enforcer();
+        ASSERT_TRUE(m_enf.get() != nullptr);
+    }
+
+    static EnforcerPtr new_enforcer() {
+        const char *audiences[] = {kAudience, nullptr};
+        char *err_msg = nullptr;
+        EnforcerPtr enf(enforcer_create(kIssuer, audiences, &err_msg),
+                        enforcer_destroy);
+        free(err_msg);
+        return enf;
+    }
+
+    static std::string
+    sign(const std::string &issuer,
+         const std::vector<std::pair<std::string, std::string>> &claims,
+         const std::string &typ = "", bool with_nbf = true) {
+        const bool other = issuer == kOtherIssuer;
+        auto now = std::chrono::system_clock::now();
+        auto builder = jwt::create()
+                           .set_key_id("1")
+                           .set_issuer(issuer)
+                           .set_issued_at(now)
+                           .set_expires_at(now + std::chrono::minutes(5));
+        if (with_nbf) {
+            builder.set_not_before(now);
+        }
+        if (!typ.empty()) {
+            builder.set_type(typ);
+        }
+        for (const auto &claim : claims) {
+            builder.set_payload_claim(claim.first, jwt::claim(claim.second));
+        }
+        return builder.sign(
+            jwt::algorithm::es256(other ? ec_public_2 : ec_public,
+                                  other ? ec_private_2 : ec_private));
+    }
+
+    // Deserialize (and thereby verify) a token with a fresh SciToken handle.
+    static TokenPtr load(const std::string &serialized) {
+        TokenPtr token(scitoken_create(nullptr), scitoken_destroy);
+        char *err_msg = nullptr;
+        if (scitoken_deserialize_v2(serialized.c_str(), token.get(), nullptr,
+                                    &err_msg) != 0) {
+            ADD_FAILURE() << "deserialize failed: "
+                          << (err_msg ? err_msg : "(no message)");
+            token.reset();
+        }
+        free(err_msg);
+        return token;
+    }
+
+    static AclVec to_vec(Acl *acls) {
+        AclVec result;
+        for (int idx = 0; acls && acls[idx].authz && acls[idx].resource;
+             idx++) {
+            result.emplace_back(acls[idx].authz, acls[idx].resource);
+        }
+        if (acls) {
+            enforcer_acl_free(acls);
+        }
+        return result;
+    }
+
+    // enforcer_generate_acls; returns 0 on success, otherwise sets `err`.
+    static int generate(void *enf, const TokenPtr &token, AclVec &acls,
+                        std::string &err) {
+        Acl *raw = nullptr;
+        char *err_msg = nullptr;
+        int rv = enforcer_generate_acls(enf, token.get(), &raw, &err_msg);
+        acls = rv == 0 ? to_vec(raw) : AclVec{};
+        err = err_msg ? err_msg : "";
+        free(err_msg);
+        return rv;
+    }
+
+    // enforcer_generate_acls_start, which must complete immediately because
+    // the issuer's keys are cached and fresh.
+    static int generate_async(void *enf, const TokenPtr &token, AclVec &acls,
+                              std::string &err) {
+        Acl *raw = nullptr;
+        char *err_msg = nullptr;
+        SciTokenStatus status = nullptr;
+        int rv = enforcer_generate_acls_start(enf, token.get(), &status, &raw,
+                                              &err_msg);
+        EXPECT_EQ(status, nullptr) << "operation unexpectedly pending";
+        acls = rv == 0 ? to_vec(raw) : AclVec{};
+        err = err_msg ? err_msg : "";
+        free(err_msg);
+        return rv;
+    }
+
+    EnforcerPtr m_enf{nullptr, enforcer_destroy};
+};
+
+// A legacy (SciTokens 1.0, no 'ver') token carrying a claim that nothing
+// verifies must be rejected, even after the Enforcer saw an at+jwt token.
+TEST_F(PerOperationStateTest, AtJwtFromOtherIssuerDoesNotRelaxLegacyToken) {
+    auto legacy = load(sign(kIssuer, {{"aud", kAudience},
+                                      {"scope", "read:/public"},
+                                      {"unverified", "value"}}));
+    auto other_at_jwt =
+        load(sign(kOtherIssuer,
+                  {{"aud", kAudience}, {"scope", "write:/secret"}}, "at+jwt"));
+    ASSERT_TRUE(legacy && other_at_jwt);
+
+    AclVec acls;
+    std::string err;
+
+    // Baseline: a fresh Enforcer rejects the legacy token.
+    auto fresh = new_enforcer();
+    ASSERT_NE(generate(fresh.get(), legacy, acls, err), 0);
+    EXPECT_NE(err.find("'unverified' claim verification is mandatory"),
+              std::string::npos)
+        << err;
+
+    // The at+jwt token is rejected because of its issuer ...
+    ASSERT_NE(generate(m_enf.get(), other_at_jwt, acls, err), 0);
+    EXPECT_NE(err.find("not in list of allowed issuers"), std::string::npos)
+        << err;
+
+    // ... and must not change how the next token is checked.
+    EXPECT_NE(generate(m_enf.get(), legacy, acls, err), 0)
+        << "legacy token accepted with ACLs of size " << acls.size();
+    EXPECT_NE(err.find("'unverified' claim verification is mandatory"),
+              std::string::npos)
+        << err;
+    EXPECT_NE(generate_async(m_enf.get(), legacy, acls, err), 0);
+}
+
+// Same as above, but the at+jwt token is from the Enforcer's own issuer and is
+// accepted.
+TEST_F(PerOperationStateTest, AcceptedAtJwtDoesNotRelaxLegacyToken) {
+    auto legacy = load(sign(kIssuer, {{"aud", kAudience},
+                                      {"scope", "read:/public"},
+                                      {"unverified", "value"}}));
+    auto at_jwt = load(sign(
+        kIssuer, {{"aud", kAudience}, {"scope", "read:/atjwt"}}, "at+jwt"));
+    ASSERT_TRUE(legacy && at_jwt);
+
+    AclVec acls;
+    std::string err;
+    ASSERT_EQ(generate(m_enf.get(), at_jwt, acls, err), 0) << err;
+    EXPECT_EQ(acls, (AclVec{{"read", "/atjwt"}}));
+
+    EXPECT_NE(generate(m_enf.get(), legacy, acls, err), 0)
+        << "legacy token accepted with ACLs of size " << acls.size();
+
+    // And the at+jwt token is still treated as at+jwt afterwards.
+    ASSERT_EQ(generate(m_enf.get(), at_jwt, acls, err), 0) << err;
+    EXPECT_EQ(acls, (AclVec{{"read", "/atjwt"}}));
+}
+
+// A token without 'nbf' gets the same result on the first and later calls on
+// one Enforcer, whatever profile the previous token had.
+TEST_F(PerOperationStateTest, TokenWithoutNbfSameResultOnReuse) {
+    auto no_nbf = load(sign(
+        kIssuer,
+        {{"aud", kAudience}, {"scope", "read:/data"}, {"ver", "scitoken:2.0"}},
+        "", false));
+    auto legacy_no_nbf = load(sign(
+        kIssuer, {{"aud", kAudience}, {"scope", "read:/legacy"}}, "", false));
+    auto with_nbf = load(sign(kIssuer, {{"aud", kAudience},
+                                        {"scope", "read:/other"},
+                                        {"ver", "scitoken:2.0"}}));
+    ASSERT_TRUE(no_nbf && legacy_no_nbf && with_nbf);
+
+    AclVec first, again;
+    std::string err;
+    ASSERT_EQ(generate(m_enf.get(), no_nbf, first, err), 0) << err;
+    EXPECT_EQ(first, (AclVec{{"read", "/data"}}));
+
+    EXPECT_EQ(generate(m_enf.get(), no_nbf, again, err), 0) << err;
+    EXPECT_EQ(again, first);
+
+    ASSERT_EQ(generate(m_enf.get(), with_nbf, again, err), 0) << err;
+    EXPECT_EQ(generate(m_enf.get(), no_nbf, again, err), 0) << err;
+    EXPECT_EQ(again, first);
+
+    EXPECT_EQ(generate(m_enf.get(), legacy_no_nbf, again, err), 0) << err;
+    EXPECT_EQ(again, (AclVec{{"read", "/legacy"}}));
+    EXPECT_EQ(generate(m_enf.get(), legacy_no_nbf, again, err), 0) << err;
+    EXPECT_EQ(again, (AclVec{{"read", "/legacy"}}));
+}
+
+// ACLs from one call never appear in the next call's result, including when
+// the earlier call failed part-way through the scope list.
+TEST_F(PerOperationStateTest, AclsDoNotCarryOverBetweenCalls) {
+    auto secret = load(sign(kIssuer, {{"aud", kAudience},
+                                      {"scope", "write:/secret"},
+                                      {"ver", "scitoken:2.0"}}));
+    auto partial = load(sign(kIssuer, {{"aud", kAudience},
+                                       {"scope", "write:/secret read:/a/.."},
+                                       {"ver", "scitoken:2.0"}}));
+    auto pub = load(sign(kIssuer, {{"aud", kAudience},
+                                   {"scope", "read:/public"},
+                                   {"ver", "scitoken:2.0"}}));
+    ASSERT_TRUE(secret && partial && pub);
+
+    const AclVec expected{{"read", "/public"}};
+    AclVec acls;
+    std::string err;
+
+    ASSERT_EQ(generate(m_enf.get(), secret, acls, err), 0) << err;
+    EXPECT_EQ(acls, (AclVec{{"write", "/secret"}}));
+    ASSERT_EQ(generate(m_enf.get(), pub, acls, err), 0) << err;
+    EXPECT_EQ(acls, expected);
+
+    // 'write:/secret' is added before the bad path makes the scope fail.
+    ASSERT_NE(generate(m_enf.get(), partial, acls, err), 0);
+    ASSERT_EQ(generate(m_enf.get(), pub, acls, err), 0) << err;
+    EXPECT_EQ(acls, expected);
+
+    ASSERT_NE(generate_async(m_enf.get(), partial, acls, err), 0);
+    ASSERT_EQ(generate_async(m_enf.get(), pub, acls, err), 0) << err;
+    EXPECT_EQ(acls, expected);
+
+    // A failed enforcer_test leaves nothing behind either.
+    Acl acl{"read", "/elsewhere"};
+    char *err_msg = nullptr;
+    EXPECT_NE(enforcer_test(m_enf.get(), partial.get(), &acl, &err_msg), 0);
+    free(err_msg);
+    ASSERT_EQ(generate(m_enf.get(), pub, acls, err), 0) << err;
+    EXPECT_EQ(acls, expected);
 }
 
 int main(int argc, char **argv) {
