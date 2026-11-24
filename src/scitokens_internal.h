@@ -972,36 +972,28 @@ class Validator {
             }
         });
 
-        // If token has a typ header claim (RFC8725 Section 3.11), trust that in
-        // COMPAT mode.
-        if (jwt.has_type()) {
-            std::string t_type = jwt.get_type();
-            if (m_validate_profile == SciToken::Profile::COMPAT) {
-                if (t_type == "at+jwt" || t_type == "application/at+jwt") {
-                    m_profile = SciToken::Profile::AT_JWT;
-                }
-            } else if (m_validate_profile == SciToken::Profile::AT_JWT) {
-                if (t_type != "at+jwt" && t_type != "application/at+jwt") {
-                    throw JWTVerificationException(
-                        "'typ' header claim must be at+jwt");
-                }
-                m_profile = SciToken::Profile::AT_JWT;
-            }
-        } else {
-            if (m_validate_profile == SciToken::Profile::AT_JWT) {
+        // When only at+jwt tokens are accepted, the typ header claim
+        // (RFC8725 Section 3.11) must say so.  The token's profile itself is
+        // determined in verify_async_continue, once the signature is checked.
+        if (m_validate_profile == SciToken::Profile::AT_JWT) {
+            if (!jwt.has_type()) {
                 throw JWTVerificationException(
                     "'typ' header claim must be set for at+jwt tokens");
+            }
+            if (!has_at_jwt_type(jwt)) {
+                throw JWTVerificationException(
+                    "'typ' header claim must be at+jwt");
             }
         }
         if (!jwt.has_payload_claim("iat")) {
             throw JWTVerificationException("'iat' claim is mandatory");
         }
-        if (m_profile == SciToken::Profile::SCITOKENS_1_0 ||
-            m_profile == SciToken::Profile::SCITOKENS_2_0) {
-            if (!jwt.has_payload_claim("nbf")) {
-                throw JWTVerificationException("'nbf' claim is mandatory");
-            }
-        }
+        // Note: there is intentionally no "'nbf' claim is mandatory" check
+        // here.  One used to exist, keyed on the profile left behind by the
+        // previous token validated with this object; since the profile is not
+        // yet known at this point it never fired on a fresh Validator and
+        // only fired on reused ones.  'nbf', when present, is still checked
+        // by the signature verifier.
         if (!jwt.has_payload_claim("exp")) {
             throw JWTVerificationException("'exp' claim is mandatory");
         }
@@ -1092,6 +1084,15 @@ class Validator {
             throw;
         }
 
+        // The profile is derived only from this token; nothing is carried
+        // over from earlier (possibly failed or interleaved) validations.
+        SciToken::Profile profile = SciToken::Profile::COMPAT;
+        if (has_at_jwt_type(jwt) &&
+            (m_validate_profile == SciToken::Profile::COMPAT ||
+             m_validate_profile == SciToken::Profile::AT_JWT)) {
+            profile = SciToken::Profile::AT_JWT;
+        }
+
         bool must_verify_everything = true;
         if (jwt.has_payload_claim("ver")) {
             const jwt::claim &claim = jwt.get_payload_claim("ver");
@@ -1108,7 +1109,7 @@ class Validator {
                     throw JWTVerificationException(
                         "Invalidate token type; not expecting a SciToken 2.0.");
                 }
-                m_profile = SciToken::Profile::SCITOKENS_2_0;
+                profile = SciToken::Profile::SCITOKENS_2_0;
                 if (!jwt.has_payload_claim("aud")) {
                     throw JWTVerificationException(
                         "'aud' claim required for SciTokens 2.0 profile");
@@ -1120,7 +1121,7 @@ class Validator {
                     throw JWTVerificationException(
                         "Invalidate token type; not expecting a SciToken 1.0.");
                 }
-                m_profile = SciToken::Profile::SCITOKENS_1_0;
+                profile = SciToken::Profile::SCITOKENS_1_0;
             } else {
                 std::stringstream ss;
                 ss << "Unknown profile version in token: " << ver_string;
@@ -1134,7 +1135,7 @@ class Validator {
                     "Invalidate token type; not expecting a WLCG 1.0.");
             }
 
-            m_profile = SciToken::Profile::WLCG_1_0;
+            profile = SciToken::Profile::WLCG_1_0;
             must_verify_everything = false;
             const jwt::claim &claim = jwt.get_payload_claim("wlcg.ver");
             if (claim.get_type() != jwt::json::type::string) {
@@ -1151,8 +1152,8 @@ class Validator {
                 throw JWTVerificationException(
                     "Malformed token: 'aud' claim required for WLCG profile");
             }
-        } else if (m_profile == SciToken::Profile::AT_JWT) {
-            // detected early above from typ header claim.
+        } else if (profile == SciToken::Profile::AT_JWT) {
+            // detected above from this token's typ header claim.
             must_verify_everything = false;
         } else {
             if ((m_validate_profile != SciToken::Profile::COMPAT) &&
@@ -1161,9 +1162,14 @@ class Validator {
                     "Invalidate token type; not expecting a SciToken 1.0.");
             }
 
-            m_profile = SciToken::Profile::SCITOKENS_1_0;
+            profile = SciToken::Profile::SCITOKENS_1_0;
             must_verify_everything = m_validate_all_claims;
         }
+
+        // Publish this token's profile for get_profile(); the claim
+        // validators below (e.g. the Enforcer's aud and scope validators)
+        // run within this call and read it from there.
+        m_profile = profile;
 
         auto claims = jwt.get_payload_json();
         for (const auto &claim_pair : claims) {
@@ -1278,6 +1284,10 @@ class Validator {
     /**
      * Get the profile of the last validated token.
      *
+     * The profile is set from the token alone when its validation completes,
+     * just before the claim validators run, so claim validators may call this
+     * to learn the profile of the token being validated.
+     *
      * If there has been no validation - or the validation failed,
      * then the return value is unspecified.
      *
@@ -1367,6 +1377,18 @@ class Validator {
     static bool store_public_keys(const std::string &issuer,
                                   const picojson::value &keys,
                                   int64_t next_update, int64_t expires);
+
+    /**
+     * True if the token's typ header claim marks it as an at+jwt token.
+     */
+    static bool
+    has_at_jwt_type(const jwt::decoded_jwt<jwt::traits::kazuho_picojson> &jwt) {
+        if (!jwt.has_type()) {
+            return false;
+        }
+        const std::string t_type = jwt.get_type();
+        return t_type == "at+jwt" || t_type == "application/at+jwt";
+    }
 
     /**
      * Safely format an issuer for error messages.
@@ -1493,6 +1515,10 @@ class Enforcer {
     std::unique_ptr<AsyncStatus>
     generate_acls_continue(std::unique_ptr<AsyncStatus> status,
                            AclsList &acls) {
+        // Other operations (test, generate_acls, or another async operation)
+        // may have run on this Enforcer since this one was started; start
+        // from a clean slate so only this token's scopes end up in `acls`.
+        reset_state();
         auto result = m_validator.verify_async_continue(std::move(status));
         if (result->m_done) {
             acls = m_gen_acls;
@@ -1549,6 +1575,11 @@ class Enforcer {
 
     SciToken::Profile m_validate_profile{SciToken::Profile::COMPAT};
 
+    // Per-call state for scope_validator.  The claim validators run inside
+    // the Validator call that completes an operation, so every public method
+    // above that calls into m_validator first calls reset_state(); these
+    // members therefore only ever hold state for the token whose validation
+    // completes during the current call.
     std::string m_test_path;
     std::string m_test_authz;
     AclsList m_gen_acls;
