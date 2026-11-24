@@ -172,6 +172,8 @@ SIGNING_KEY=$RUNDIR/signing-key.pem
 SIGNING_PUB=$RUNDIR/signing-pub.pem
 JWKS_FILE=$RUNDIR/jwks.json
 READY_FILE=$READY_FILE
+PLAIN_HTTP_PORT=$PLAIN_HTTP_PORT
+PLAIN_HTTP_HITS=$PLAIN_HTTP_HITS
 EOF
 
 echo "Setup complete. Environment written to $TEST_DIR/setup.sh"

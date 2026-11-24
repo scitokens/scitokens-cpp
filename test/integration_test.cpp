@@ -2474,6 +2474,161 @@ TEST_F(PerOperationStateIntegrationTest,
     EXPECT_EQ(acls_a, (AclVec{{"read", "/public"}}));
 }
 
+// Tests that an issuer's public keys are only ever downloaded over HTTPS.
+// The test server publishes extra issuers under path prefixes of the main
+// HTTPS issuer (see serve_key_scheme_test in jwks_server.py) whose metadata
+// points the key set at plain HTTP, redirects it to plain HTTP, or uses a
+// non-HTTP scheme.  The plain-HTTP endpoint serves the real key set and
+// records every connection it receives, so a successful verification or a new
+// recorded connection both mean the library fetched keys insecurely.
+class HttpsOnlyKeyFetchTest : public IntegrationTest {
+  protected:
+    void SetUp() override {
+        IntegrationTest::SetUp();
+        if (HasFatalFailure()) {
+            return;
+        }
+        hits_file_ = TestEnvironment::getInstance().get("PLAIN_HTTP_HITS");
+        ASSERT_FALSE(hits_file_.empty()) << "PLAIN_HTTP_HITS not set";
+    }
+
+    // Number of connections the plain-HTTP endpoint has received so far.
+    size_t plain_http_hits() const {
+        std::ifstream ifs(hits_file_);
+        size_t count = 0;
+        std::string line;
+        while (std::getline(ifs, line)) {
+            if (!line.empty()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    // Create a correctly signed token for the given issuer.
+    std::string make_token(const std::string &issuer) {
+        char *err_msg = nullptr;
+        std::unique_ptr<void, decltype(&scitoken_key_destroy)> key(
+            scitoken_key_create("test-key-1", "ES256", public_key_.c_str(),
+                                private_key_.c_str(), &err_msg),
+            scitoken_key_destroy);
+        EXPECT_TRUE(key.get() != nullptr)
+            << "Failed to create key: " << (err_msg ? err_msg : "unknown");
+        free(err_msg);
+        err_msg = nullptr;
+        if (!key) {
+            return "";
+        }
+
+        std::unique_ptr<void, decltype(&scitoken_destroy)> token(
+            scitoken_create(key.get()), scitoken_destroy);
+        EXPECT_TRUE(token.get() != nullptr);
+        if (!token) {
+            return "";
+        }
+        auto rv = scitoken_set_claim_string(token.get(), "iss", issuer.c_str(),
+                                            &err_msg);
+        EXPECT_EQ(rv, 0) << (err_msg ? err_msg : "");
+        free(err_msg);
+        err_msg = nullptr;
+        rv = scitoken_set_claim_string(token.get(), "sub", "test-subject",
+                                       &err_msg);
+        EXPECT_EQ(rv, 0) << (err_msg ? err_msg : "");
+        free(err_msg);
+        err_msg = nullptr;
+        scitoken_set_lifetime(token.get(), 3600);
+
+        char *token_value = nullptr;
+        rv = scitoken_serialize(token.get(), &token_value, &err_msg);
+        EXPECT_EQ(rv, 0) << (err_msg ? err_msg : "");
+        free(err_msg);
+        if (rv != 0 || !token_value) {
+            return "";
+        }
+        std::string result(token_value);
+        free(token_value);
+        return result;
+    }
+
+    // Deserialize (and therefore verify) a token with no issuer allow-list,
+    // as an application accepting arbitrary issuers would.  Returns the C API
+    // return code; any error message is stored in err.
+    int verify(const std::string &token_value, std::string &err) {
+        err.clear();
+        std::unique_ptr<void, decltype(&scitoken_destroy)> verify_token(
+            scitoken_create(nullptr), scitoken_destroy);
+        if (!verify_token) {
+            err = "scitoken_create failed";
+            return -1;
+        }
+        char *err_msg = nullptr;
+        int rv = scitoken_deserialize_v2(token_value.c_str(),
+                                         verify_token.get(), nullptr, &err_msg);
+        if (err_msg) {
+            err = err_msg;
+            free(err_msg);
+        }
+        return rv;
+    }
+
+    // Verify a token from issuer_url_ + suffix; expect it to be rejected
+    // without the plain-HTTP endpoint ever being contacted.
+    void expect_rejected(const std::string &suffix, std::string &err) {
+        auto token_value = make_token(issuer_url_ + suffix);
+        ASSERT_FALSE(token_value.empty());
+        auto hits_before = plain_http_hits();
+        int rv = verify(token_value, err);
+        std::cout << "Verification error for " << suffix << ": " << err
+                  << std::endl;
+        EXPECT_NE(rv, 0) << "Keys for issuer " << suffix
+                         << " were accepted from a non-HTTPS location";
+        EXPECT_EQ(plain_http_hits(), hits_before)
+            << "The plain-HTTP key endpoint was contacted for " << suffix;
+    }
+
+    std::string hits_file_;
+};
+
+TEST_F(HttpsOnlyKeyFetchTest, HttpsIssuerStillWorks) {
+    auto token_value = make_token(issuer_url_);
+    ASSERT_FALSE(token_value.empty());
+    std::string err;
+    EXPECT_EQ(verify(token_value, err), 0) << err;
+}
+
+TEST_F(HttpsOnlyKeyFetchTest, RejectsHttpJwksUri) {
+    std::string err;
+    expect_rejected("/insecure-jwks-uri", err);
+    EXPECT_NE(err.find("jwks_uri"), std::string::npos)
+        << "Error should explain that the jwks_uri is not HTTPS: " << err;
+}
+
+TEST_F(HttpsOnlyKeyFetchTest, RejectsRedirectToHttp) {
+    std::string err;
+    expect_rejected("/redirect-to-http", err);
+}
+
+TEST_F(HttpsOnlyKeyFetchTest, RejectsNonHttpJwksUri) {
+    std::string err;
+    expect_rejected("/non-http-jwks-uri", err);
+    EXPECT_NE(err.find("jwks_uri"), std::string::npos)
+        << "Error should explain that the jwks_uri is not HTTPS: " << err;
+}
+
+TEST_F(HttpsOnlyKeyFetchTest, FollowsRedirectToHttps) {
+    auto token_value = make_token(issuer_url_ + "/redirect-to-https");
+    ASSERT_FALSE(token_value.empty());
+    std::string err;
+    EXPECT_EQ(verify(token_value, err), 0) << err;
+}
+
+TEST_F(HttpsOnlyKeyFetchTest, AcceptsUppercaseHttpsScheme) {
+    auto token_value = make_token(issuer_url_ + "/uppercase-https-scheme");
+    ASSERT_FALSE(token_value.empty());
+    std::string err;
+    EXPECT_EQ(verify(token_value, err), 0) << err;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {

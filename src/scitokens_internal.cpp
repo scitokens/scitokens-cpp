@@ -1,4 +1,5 @@
 
+#include <cctype>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -32,6 +33,10 @@ struct CurlRaii {
 };
 
 CurlRaii myCurl;
+
+// Maximum number of HTTP redirects followed when fetching issuer metadata or
+// keys.
+constexpr long max_curl_redirects = 5;
 
 std::mutex key_refresh_mutex;
 
@@ -216,6 +221,35 @@ SimpleCurlGet::GetStatus SimpleCurlGet::perform_start(const std::string &url) {
     if (rv != CURLE_OK) {
         throw CurlException("Failed to set CURLOPT_FOLLOWLOCATION.");
     }
+    // Only ever talk HTTPS: both for the initial request and for any redirect
+    // libcurl follows.  The URLs fetched here (issuer metadata and the
+    // jwks_uri it names) come from the token and from the issuer, so they must
+    // not be able to downgrade to plain HTTP or switch to another protocol.
+#if LIBCURL_VERSION_NUM >= 0x075500 // 7.85.0 added the *_STR variants
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_PROTOCOLS_STR, "https");
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_PROTOCOLS_STR.");
+    }
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_REDIR_PROTOCOLS_STR, "https");
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_REDIR_PROTOCOLS_STR.");
+    }
+#else
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_PROTOCOLS,
+                          static_cast<long>(CURLPROTO_HTTPS));
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_PROTOCOLS.");
+    }
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_REDIR_PROTOCOLS,
+                          static_cast<long>(CURLPROTO_HTTPS));
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_REDIR_PROTOCOLS.");
+    }
+#endif
+    rv = curl_easy_setopt(m_curl.get(), CURLOPT_MAXREDIRS, max_curl_redirects);
+    if (rv != CURLE_OK) {
+        throw CurlException("Failed to set CURLOPT_MAXREDIRS.");
+    }
     // Disable signal handling to avoid issues in multi-threaded contexts.
     rv = curl_easy_setopt(m_curl.get(), CURLOPT_NOSIGNAL, 1L);
     if (rv != CURLE_OK) {
@@ -292,6 +326,12 @@ SimpleCurlGet::GetStatus SimpleCurlGet::perform_continue() {
             curl_multi_remove_handle(m_curl_multi.get(), easy_handle);
         }
     } while (msg);
+    if (res == CURLE_UNSUPPORTED_PROTOCOL) {
+        // Most likely a redirect to a non-HTTPS URL, which perform_start
+        // forbids.
+        throw CurlException(std::string(curl_easy_strerror(res)) +
+                            " (only https:// URLs and redirects are allowed)");
+    }
     if (res) {
         throw CurlException(curl_easy_strerror(res));
     }
@@ -376,6 +416,20 @@ void parse_url(const std::string &url, std::string &schema, std::string &netloc,
     std::string::const_iterator query_iter =
         std::find(path_iter, url.end(), '?');
     path.assign(path_iter, query_iter);
+}
+
+// Returns true if the URL's scheme is https (compared case-insensitively).
+bool is_https_url(const std::string &url) {
+    const std::string prefix("https://");
+    if (url.size() < prefix.size()) {
+        return false;
+    }
+    for (size_t idx = 0; idx < prefix.size(); idx++) {
+        if (std::tolower(static_cast<unsigned char>(url[idx])) != prefix[idx]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void get_metadata_endpoint(const std::string &issuer,
@@ -974,6 +1028,12 @@ std::unique_ptr<AsyncStatus> Validator::get_public_keys_from_web_continue(
                                     " is missing 'jwks_uri' string value");
             }
             auto jwks_uri = iter->second.get<std::string>();
+            if (!is_https_url(jwks_uri)) {
+                throw IssuerLookupException(
+                    "Metadata resource " + status->m_cget->get_url() +
+                    " has a 'jwks_uri' that is not an https:// URL; refusing "
+                    "to download the issuer's public keys insecurely");
+            }
             status->m_has_metadata = true;
             status->m_state = AsyncStatus::DOWNLOAD_PUBLIC_KEY;
             status->m_cget.reset(new internal::SimpleCurlGet());
