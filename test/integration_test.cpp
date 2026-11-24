@@ -1570,10 +1570,13 @@ TEST_F(IntegrationTest, ConcurrentNewIssuerLookup) {
         << NUM_THREADS << " concurrent requests";
 
     // The expired_keys counter tracks entries into the "no cached keys" path.
-    // With a fresh cache, all threads should hit this path because they all
-    // check the DB before acquiring the per-issuer lock.
-    EXPECT_EQ(new_expired_keys, static_cast<uint64_t>(NUM_THREADS))
-        << "All threads should enter the expired_keys code path";
+    // The fetching thread always takes it, but a thread scheduled after the
+    // keys were stored finds them on its first DB check and skips it, so the
+    // count is between 1 and NUM_THREADS depending on scheduling.
+    EXPECT_GE(new_expired_keys, 1u)
+        << "At least the fetching thread should enter the expired_keys path";
+    EXPECT_LE(new_expired_keys, static_cast<uint64_t>(NUM_THREADS))
+        << "At most one expired_keys entry per thread";
 
     // unique_cache destructor will clean up the temporary cache directory
 }

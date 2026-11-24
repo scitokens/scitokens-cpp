@@ -1,64 +1,73 @@
 name: Lint
 
-# Linter Action documentation at https://github.com/marketplace/actions/lint-action
-
-# One thing to note is that this action is currently configured automatically fix and re-push the linted code to the repo on a pull request.
-# Because the github token used for authenticating this commit comes from the upstream repo (ie scitokens/scitokens-cpp), those linter changes will not be pushed
-# to the fork that is providing the pull request. A manual git fetch will have to be run by the fork after the PR is merged to update the fork to the linted code.
-# The linter does not have authorization to lint any code in the repo's .github/workflows/ directory.
-
-# If the linter fails, the PR can still be completed, but none of the linter changes will be made.
+# Checks C/C++ formatting with clang-format and the repository's .clang-format.
+#
+# This runs on `pull_request`, not `pull_request_target`, so code from a fork
+# never runs with a write token: GitHub gives fork pull requests a read-only
+# GITHUB_TOKEN. For every pull request and push the job fails if any file
+# needs reformatting, annotates the changed lines, and prints the diff to
+# apply. For pull requests from branches in this repository it also posts the
+# fixes as review suggestions.
+#
+# To fix locally: clang-format -i -style=file <files>
 
 on:
-  # push: # Can specify more circumstances under which to run the linter. 
-  #   branches: # Not specifying input to "branches:" causes the action to run on push for all branches.            
   push:
     branches:
       - master
-  # Trigger the workflow on pull request,
-  # but only for master
-  pull_request_target:
+  pull_request:
     branches:
       - master
 
 permissions:
-  checks: write
   contents: read
-  pull-requests: write
 
 jobs:
   run-linters:
     name: Run linters
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Only used for review suggestions on same-repository pull requests;
+      # fork pull requests always get a read-only token.
+      pull-requests: write
 
     steps:
-      - name: Check out repository (push)
-        if: ${{ github.event_name == 'push' }}
-        uses: actions/checkout@v3
-      
-      - name: Check out repository (pull_request_target)
-        if: ${{ github.event_name == 'pull_request_target' }}
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Install ClangFormat
         run: sudo apt-get install -y clang-format
 
-      - name: Run linters
-        uses: wearerequired/lint-action@v2
-        with:
-          github_token: ${{ secrets.github_token }} # For providing the commit authorization for the auto_fix feature
-          clang_format: true
-          clang_format_auto_fix: true
-          auto_fix: true
-          commit: false
-          continue_on_error: false
-          git_email: github.event.commits[0].author.name # Uses the author's git email instead of the default git email associated with the action ("lint-action@samuelmeuli.com")
-          clang_format_args: -style=file # Any additional arguments for clang_format
+      - name: Run clang-format
+        run: |
+          clang-format --version
+          git ls-files -z -- '*.c' '*.cc' '*.cpp' '*.h' '*.hpp' '*.m' '*.mm' \
+            ':!:vendor/' | xargs -0 clang-format -i -style=file
 
-      - name: suggester / lint
+      - name: Suggest fixes
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
         uses: reviewdog/action-suggester@v1
         with:
           tool_name: lint
 
+      - name: Check formatting
+        run: |
+          if git diff --quiet; then
+            echo "All files are clang-formatted."
+            exit 0
+          fi
+          git diff -U0 --no-color | awk '
+            /^--- a\// { file = substr($0, 7) }
+            /^@@ / {
+              split($2, range, ",")
+              line = substr(range[1], 2)
+              if (line == 0) line = 1
+              printf "::error file=%s,line=%s::Not clang-formatted; run clang-format -i -style=file %s\n", file, line, file
+            }'
+          echo "These files need clang-format; apply this diff or run"
+          echo "clang-format -i -style=file on them:"
+          git diff --no-color
+          exit 1
