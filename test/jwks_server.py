@@ -11,6 +11,7 @@ import signal
 import socket
 import ssl
 import sys
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -36,15 +37,59 @@ class JWKSHandler(BaseHTTPRequestHandler):
             self.serve_discovery()
         elif self.path == '/oauth2/certs' or self.path == '/jwks':
             self.serve_jwks()
+        elif self.serve_key_scheme_test():
+            pass
         else:
             self.send_error(404, "Not Found")
 
-    def serve_discovery(self):
+    def serve_key_scheme_test(self):
+        """
+        Serve the extra issuers used to check that keys are only fetched
+        over HTTPS.  Each one lives under its own path prefix on this server,
+        so its issuer URL is e.g. https://localhost:PORT/insecure-jwks-uri.
+        Returns False if the path is not one of them.
+        """
+        base = self.server.issuer_url
+        plain = getattr(self.server, 'plain_http_url', None)
+        if not plain:
+            return False
+        jwks_uris = {
+            # (a) metadata points at a plain-HTTP key set
+            '/insecure-jwks-uri': f"{plain}/jwks",
+            # (b) HTTPS key set URL that redirects to plain HTTP
+            '/redirect-to-http': f"{base}/redirect-to-http/oauth2/certs",
+            # (c) key set URL with a scheme that is not HTTP at all
+            '/non-http-jwks-uri': f"gopher://{plain.split('://', 1)[1]}/_jwks",
+            # Controls that must keep working
+            '/redirect-to-https': f"{base}/redirect-to-https/oauth2/certs",
+            '/uppercase-https-scheme':
+                "HTTPS://" + base.split('://', 1)[1] + "/oauth2/certs",
+        }
+        redirects = {
+            '/redirect-to-http/oauth2/certs': f"{plain}/jwks",
+            '/redirect-to-https/oauth2/certs': f"{base}/oauth2/certs",
+        }
+        for prefix, jwks_uri in jwks_uris.items():
+            if self.path == prefix + '/.well-known/openid-configuration':
+                self.serve_discovery(base + prefix, jwks_uri)
+                return True
+        if self.path in redirects:
+            self.send_response(302)
+            self.send_header('Location', redirects[self.path])
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return True
+        return False
+
+    def serve_discovery(self, issuer=None, jwks_uri=None):
         """Serve OIDC discovery document."""
-        issuer = self.server.issuer_url
+        if issuer is None:
+            issuer = self.server.issuer_url
+        if jwks_uri is None:
+            jwks_uri = f"{issuer}/oauth2/certs"
         discovery = {
             "issuer": issuer,
-            "jwks_uri": f"{issuer}/oauth2/certs",
+            "jwks_uri": jwks_uri,
             "token_endpoint": f"{issuer}/token",
             "authorization_endpoint": f"{issuer}/authorize",
         }
@@ -67,6 +112,19 @@ class JWKSHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(content)))
         self.end_headers()
         self.wfile.write(content)
+
+
+class PlainHTTPHandler(JWKSHandler):
+    """
+    Plain-HTTP (no TLS) endpoint that serves the real JWKS.  The library must
+    never contact it, so every connection is recorded in a hits file that the
+    integration tests read.
+    """
+
+    def handle(self):
+        with open(self.server.hits_file, 'a') as f:
+            f.write("%s\n" % self.client_address[0])
+        super().handle()
 
 
 def main():
@@ -124,12 +182,28 @@ def main():
     port = server.server_address[1]
     issuer_url = f"{protocol}://localhost:{port}"
     server.issuer_url = issuer_url
-    
+
+    # Plain-HTTP server used by the HTTPS-only key fetch tests.  It must never
+    # be contacted by the library; connections are recorded in hits_file.
+    hits_file = test_dir / 'plain_http_hits'
+    hits_file.write_text('')
+    plain_server = HTTPServer(('localhost', 0), PlainHTTPHandler)
+    plain_server.jwks_file = args.jwks
+    plain_server.log_file = str(log_file)
+    plain_server.hits_file = str(hits_file)
+    plain_port = plain_server.server_address[1]
+    plain_server.issuer_url = f"http://localhost:{plain_port}"
+    threading.Thread(target=plain_server.serve_forever, daemon=True).start()
+    if use_https:
+        server.plain_http_url = plain_server.issuer_url
+
     # Write server info to ready file
     with open(ready_file, 'w') as f:
         f.write(f"PID={os.getpid()}\n")
         f.write(f"ISSUER_URL={issuer_url}\n")
         f.write(f"PORT={port}\n")
+        f.write(f"PLAIN_HTTP_PORT={plain_port}\n")
+        f.write(f"PLAIN_HTTP_HITS={hits_file}\n")
     
     print(f"Server started on {issuer_url}", flush=True)
     print(f"Server PID: {os.getpid()}", flush=True)

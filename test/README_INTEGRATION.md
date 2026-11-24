@@ -32,6 +32,8 @@ The setup script writes the following information to `setup.sh`:
 - `SIGNING_KEY`: Path to the EC private key
 - `SIGNING_PUB`: Path to the EC public key
 - `JWKS_FILE`: Path to the JWKS file
+- `PLAIN_HTTP_PORT`: Port of the plain-HTTP (no TLS) endpoint used by the HTTPS-only key fetch tests
+- `PLAIN_HTTP_HITS`: File that records one line per connection to that plain-HTTP endpoint
 
 ### Test (`integration_test.cpp`)
 
@@ -85,6 +87,12 @@ The Python test server (`jwks_server.py`) implements:
 - **JWKS Endpoint**: Serves the JWKS at `/oauth2/certs`
 - **HTTPS Support**: Uses TLS with generated certificates
 - **Dynamic Port Allocation**: Binds to port 0 for automatic port selection
+- **HTTPS-only key fetch issuers**: Extra issuers under path prefixes of the
+  main issuer (`/insecure-jwks-uri`, `/redirect-to-http`, `/non-http-jwks-uri`,
+  `/redirect-to-https`, `/uppercase-https-scheme`) whose metadata points the key
+  set at plain HTTP, redirects it, or uses another scheme. A second, plain-HTTP
+  server serves the real JWKS and records every connection in `PLAIN_HTTP_HITS`,
+  so the `HttpsOnlyKeyFetchTest` tests can check it is never contacted.
 
 The server is designed to be minimal and focused solely on the requirements for integration testing.
 
