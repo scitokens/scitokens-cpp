@@ -525,6 +525,8 @@ int config_set_int(const char *key, int value, char **err_msg);
  * (milliseconds, default 60000)
  * - "keycache.refresh_threshold_ms": Time before next_update when background
  * refresh triggers (milliseconds, default 600000)
+ * - "validation.clock_skew_s": Allowed clock skew between the token issuer
+ * and this host when checking the 'iat' and 'nbf' claims (seconds, default 60)
  */
 int scitoken_config_set_int(const char *key, int value, char **err_msg);
 
@@ -546,6 +548,8 @@ int config_get_int(const char *key, char **err_msg);
  * (milliseconds, default 60000)
  * - "keycache.refresh_threshold_ms": Time before next_update when background
  * refresh triggers (milliseconds, default 600000)
+ * - "validation.clock_skew_s": Allowed clock skew between the token issuer
+ * and this host when checking the 'iat' and 'nbf' claims (seconds, default 60)
  */
 int scitoken_config_get_int(const char *key, char **err_msg);
 

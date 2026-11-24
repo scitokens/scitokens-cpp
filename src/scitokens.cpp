@@ -43,7 +43,7 @@ void load_config_from_environment() {
         bool is_int;
     };
 
-    const std::array<ConfigMapping, 9> known_configs = {
+    const std::array<ConfigMapping, 10> known_configs = {
         {{"keycache.update_interval_s", "KEYCACHE_UPDATE_INTERVAL_S", true},
          {"keycache.expiration_interval_s", "KEYCACHE_EXPIRATION_INTERVAL_S",
           true},
@@ -54,7 +54,8 @@ void load_config_from_environment() {
          {"monitoring.file_interval_s", "MONITORING_FILE_INTERVAL_S", true},
          {"keycache.refresh_interval_ms", "KEYCACHE_REFRESH_INTERVAL_MS", true},
          {"keycache.refresh_threshold_ms", "KEYCACHE_REFRESH_THRESHOLD_MS",
-          true}}};
+          true},
+         {"validation.clock_skew_s", "VALIDATION_CLOCK_SKEW_S", true}}};
 
     const char *prefix = "SCITOKEN_CONFIG_";
 
@@ -139,6 +140,9 @@ std::atomic_int configurer::Configuration::m_refresh_interval_ms{
     60000}; // 60 seconds
 std::atomic_int configurer::Configuration::m_refresh_threshold_ms{
     600000}; // 10 minutes
+
+// Validation config
+std::atomic_int configurer::Configuration::m_clock_skew_s{60}; // 60 seconds
 
 SciTokenKey scitoken_key_create(const char *key_id, const char *alg,
                                 const char *public_contents,
@@ -1322,6 +1326,17 @@ int scitoken_config_set_int(const char *key, int value, char **err_msg) {
         return 0;
     }
 
+    else if (_key == "validation.clock_skew_s") {
+        if (value < 0) {
+            if (err_msg) {
+                *err_msg = strdup("Clock skew cannot be negative.");
+            }
+            return -1;
+        }
+        configurer::Configuration::set_clock_skew(value);
+        return 0;
+    }
+
     else {
         if (err_msg) {
             *err_msg = strdup("Key not recognized.");
@@ -1361,6 +1376,10 @@ int scitoken_config_get_int(const char *key, char **err_msg) {
 
     else if (_key == "keycache.refresh_threshold_ms") {
         return configurer::Configuration::get_refresh_threshold();
+    }
+
+    else if (_key == "validation.clock_skew_s") {
+        return configurer::Configuration::get_clock_skew();
     }
 
     else {
