@@ -2230,12 +2230,14 @@ TEST_F(IntegrationTest, VerifySucceedsWithInMemoryCache) {
 // the same Enforcer while it was waiting for a key download.
 // =============================================================================
 
+// Namespace-scope rather than a static member, so that it never needs an
+// out-of-class definition before C++17 if it is bound to a reference.
+constexpr const char *kAudience = "https://per-operation.test/";
+
 class PerOperationStateIntegrationTest : public IntegrationTest {
   protected:
     using AclVec = std::vector<std::pair<std::string, std::string>>;
     using TokenPtr = std::unique_ptr<void, decltype(&scitoken_destroy)>;
-
-    static constexpr const char *kAudience = "https://per-operation.test/";
 
     void SetUp() override {
         IntegrationTest::SetUp();

@@ -1736,16 +1736,20 @@ TEST_F(IssuerSecurityTest, ThunderingHerdPrevention) {
 // handle's configuration, never on other tokens the same Enforcer handled
 // before it.  Tokens are signed by hand here so each test controls the 'typ'
 // header and the presence of 'nbf' and 'ver'.
+namespace {
+// Namespace-scope rather than static members: they are bound to references
+// (e.g. by std::pair's constructor), which before C++17 would require an
+// out-of-class definition for a static constexpr member.
+constexpr const char *kIssuer = "https://demo.scitokens.org/gtest";
+constexpr const char *kOtherIssuer = "https://demo.scitokens.org/gtest-other";
+constexpr const char *kAudience = "https://demo.scitokens.org/";
+} // namespace
+
 class PerOperationStateTest : public ::testing::Test {
   protected:
     using AclVec = std::vector<std::pair<std::string, std::string>>;
     using TokenPtr = std::unique_ptr<void, decltype(&scitoken_destroy)>;
     using EnforcerPtr = std::unique_ptr<void, decltype(&enforcer_destroy)>;
-
-    static constexpr const char *kIssuer = "https://demo.scitokens.org/gtest";
-    static constexpr const char *kOtherIssuer =
-        "https://demo.scitokens.org/gtest-other";
-    static constexpr const char *kAudience = "https://demo.scitokens.org/";
 
     void SetUp() override {
         char *err_msg = nullptr;
