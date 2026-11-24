@@ -960,6 +960,10 @@ class KeycacheTest : public ::testing::Test {
 };
 
 TEST_F(KeycacheTest, RefreshTest) {
+    if (std::getenv("SCITOKENS_SKIP_ONLINE_TESTS")) {
+        GTEST_SKIP() << "Skipping online test (SCITOKENS_SKIP_ONLINE_TESTS is "
+                        "set)";
+    }
     char *err_msg = nullptr;
     auto rv = keycache_refresh_jwks(demo_scitokens_url.c_str(), &err_msg);
     ASSERT_TRUE(rv == 0) << err_msg;
@@ -976,6 +980,10 @@ TEST_F(KeycacheTest, RefreshTest) {
 }
 
 TEST_F(KeycacheTest, RefreshInvalid) {
+    if (std::getenv("SCITOKENS_SKIP_ONLINE_TESTS")) {
+        GTEST_SKIP() << "Skipping online test (SCITOKENS_SKIP_ONLINE_TESTS is "
+                        "set)";
+    }
     char *err_msg = nullptr, *jwks;
     auto rv =
         keycache_refresh_jwks("https://demo.scitokens.org/invalid", &err_msg);
@@ -1169,6 +1177,10 @@ TEST_F(KeycacheTest, SetInvalidExpirationTest) {
 }
 
 TEST_F(KeycacheTest, RefreshExpiredTest) {
+    if (std::getenv("SCITOKENS_SKIP_ONLINE_TESTS")) {
+        GTEST_SKIP() << "Skipping online test (SCITOKENS_SKIP_ONLINE_TESTS is "
+                        "set)";
+    }
     char *err_msg = nullptr, *jwks;
     int new_expiration_interval = 0;
     std::string key = "keycache.expiration_interval_s";
@@ -1191,6 +1203,10 @@ TEST_F(KeycacheTest, RefreshExpiredTest) {
 }
 
 TEST_F(KeycacheTest, NegativeCacheTest) {
+    if (std::getenv("SCITOKENS_SKIP_ONLINE_TESTS")) {
+        GTEST_SKIP() << "Skipping online test (SCITOKENS_SKIP_ONLINE_TESTS is "
+                        "set)";
+    }
     // This test verifies that failed issuer lookups are cached as negative
     // entries and that subsequent attempts fail quickly with the right counter
     char *err_msg = nullptr;
@@ -1339,6 +1355,10 @@ TEST_F(KeycacheTest, LoadJwksTest) {
 }
 
 TEST_F(KeycacheTest, LoadJwksMissingTest) {
+    if (std::getenv("SCITOKENS_SKIP_ONLINE_TESTS")) {
+        GTEST_SKIP() << "Skipping online test (SCITOKENS_SKIP_ONLINE_TESTS is "
+                        "set)";
+    }
     // Test load API with missing issuer - should attempt refresh
     char *err_msg = nullptr;
     char *jwks = nullptr;
@@ -1352,6 +1372,10 @@ TEST_F(KeycacheTest, LoadJwksMissingTest) {
 }
 
 TEST_F(KeycacheTest, LoadJwksTriggersRefreshWhenStale) {
+    if (std::getenv("SCITOKENS_SKIP_ONLINE_TESTS")) {
+        GTEST_SKIP() << "Skipping online test (SCITOKENS_SKIP_ONLINE_TESTS is "
+                        "set)";
+    }
     // Force next_update in the past so load_jwks triggers a refresh
     char *err_msg = nullptr;
 
