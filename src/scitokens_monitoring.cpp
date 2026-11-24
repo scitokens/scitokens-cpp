@@ -83,6 +83,13 @@ std::string MonitoringStats::get_json() const {
         const std::string &issuer = entry.first;
         const IssuerStats &stats = entry.second;
 
+        // Entries survive reset() with zeroed counters (in-flight
+        // validations may hold references to them); don't report them
+        // until they see activity again.
+        if (!stats.has_activity()) {
+            continue;
+        }
+
         picojson::object issuer_obj;
         issuer_obj["successful_validations"] =
             picojson::value(static_cast<int64_t>(
@@ -166,7 +173,17 @@ std::string MonitoringStats::get_json() const {
 
 void MonitoringStats::reset() {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_issuer_stats.clear();
+    // Never erase IssuerStats entries: get_issuer_stats() hands out
+    // references that in-flight validations hold across the whole
+    // verification (its contract promises they live as long as the
+    // singleton).  Erasing them here would be a use-after-free for any
+    // concurrent verify(); zero the counters in place instead.  Entries
+    // with all-zero counters are omitted from get_json().
+    for (auto &entry : m_issuer_stats) {
+        entry.second.reset_counters();
+    }
+    // The failed-issuer map stores plain values that are only accessed
+    // under m_mutex, so clearing it is safe.
     m_failed_issuer_lookups.clear();
 }
 
