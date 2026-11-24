@@ -661,7 +661,10 @@ class SciToken {
         m_deserialize_profile = profile;
     }
 
-    const jwt::claim get_claim(const std::string &key) { return m_claims[key]; }
+    const jwt::claim get_claim(const std::string &key) {
+        auto iter = m_claims.find(key);
+        return iter == m_claims.end() ? jwt::claim() : iter->second;
+    }
 
     bool has_claim(const std::string &key) const {
         return m_claims.find(key) != m_claims.end();
@@ -678,16 +681,16 @@ class SciToken {
     }
 
     // Return a claim as a string
-    // If the claim is not a string, it can throw
+    // If the claim is not a string (or not present), it can throw
     // a std::bad_cast() exception.
     const std::string get_claim_string(const std::string &key) {
-        return m_claims[key].as_string();
+        return get_claim(key).as_string();
     }
 
     const std::vector<std::string> get_claim_list(const std::string &key) {
         picojson::array array;
         try {
-            array = m_claims[key].as_array();
+            array = get_claim(key).as_array();
         } catch (std::bad_cast &) {
             throw JsonException("Claim's value is not a JSON list");
         }
@@ -761,7 +764,10 @@ class SciToken {
     Profile m_deserialize_profile{Profile::COMPAT};
     std::unordered_map<std::string, jwt::claim> m_claims;
     std::unique_ptr<jwt::decoded_jwt<jwt::traits::kazuho_picojson>> m_decoded;
-    SciTokenKey &m_key;
+    // Owned by value: scitoken_deserialize (and callers that destroy the
+    // key handle before serializing) previously left a dangling reference
+    // here to a stack- or heap-allocated key.
+    SciTokenKey m_key;
 };
 
 class Validator {
