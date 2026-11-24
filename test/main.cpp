@@ -908,11 +908,29 @@ class KeycacheTest : public ::testing::Test {
         return -1;
     }
 
+    // Several tests change the keycache intervals; restore them so a later
+    // test (e.g. LoadJwksTest after RefreshExpiredTest) doesn't run with an
+    // expiration interval of 0 and see its cached keys expire mid-test.
+    int original_update_interval = 0;
+    int original_expiration_interval = 0;
+
     void SetUp() override {
         char *err_msg = nullptr;
+        original_update_interval =
+            scitoken_config_get_int("keycache.update_interval_s", &err_msg);
+        original_expiration_interval =
+            scitoken_config_get_int("keycache.expiration_interval_s", &err_msg);
         auto rv = keycache_set_jwks(demo_scitokens_url.c_str(),
                                     demo_scitokens.c_str(), &err_msg);
         ASSERT_TRUE(rv == 0) << err_msg;
+    }
+
+    void TearDown() override {
+        char *err_msg = nullptr;
+        scitoken_config_set_int("keycache.update_interval_s",
+                                original_update_interval, &err_msg);
+        scitoken_config_set_int("keycache.expiration_interval_s",
+                                original_expiration_interval, &err_msg);
     }
 
     // Reference copy of the keys at https://demo.scitokens.org/oauth2/certs;
